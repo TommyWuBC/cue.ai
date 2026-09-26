@@ -168,6 +168,14 @@ screen they meet. This is why `voice.startListening()` runs **before**
 `aura.js` declines to forward utterances to the server while calibrating, so
 the calibration's own listener is the only consumer.
 
+While a calibration screen is up, "next" and the accuracy modal's "continue
+anyway" / "try again" are accepted **without the wake word**. Push-to-talk is
+off for that whole screen, and the prompts quote the phrases they want back,
+so the echo filter used to swallow them. `calibrationCommand()` in
+`client/voice.js` sits in front of both gates, and it cancels the prompt
+before the verdict is spoken. Do not route those phrases through the normal
+wake-word path.
+
 ### Tracking quality, and dropping focus
 
 `checkQuality()` runs on the dwell loop. Bad tracking is not always noisy — a
