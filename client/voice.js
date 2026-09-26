@@ -1,5 +1,6 @@
 import { bus } from "./bus.js";
 import * as mic from "./mic.js";
+import { url } from "./config.js";
 
 // STT mishears the wake word constantly. Accept the near-misses it actually
 // produces, and keep the old name working so nothing breaks mid-demo.
@@ -141,7 +142,7 @@ export async function startListening() {
   // Grok first. It is dramatically better in a loud room and it is the only
   // one of the two with real push-to-talk finalisation.
   let health = null;
-  try { health = await (await fetch("/health")).json(); } catch {}
+  try { health = await (await fetch(url("/health"))).json(); } catch {}
   if (health?.stt?.ready) {
     if (await mic.start()) {
       state.listening = true; state.provider = "grok";
@@ -269,7 +270,7 @@ export async function speak(text) {
   // We deliberately do NOT mute the mic here: barge-in has to keep working.
   speakingText = text;
   try {
-    const res = await fetch("/tts?text=" + encodeURIComponent(text));
+    const res = await fetch(url("/tts?text=" + encodeURIComponent(text)));
     const ct = res.headers.get("content-type") || "";
     if (ct.startsWith("audio/")) {
       const url = URL.createObjectURL(await res.blob());

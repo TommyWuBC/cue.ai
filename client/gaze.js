@@ -360,8 +360,8 @@ function qualityModal(acc, attempt) {
           <button class="cue-btn cue-btn-primary" data-act="recal">Try again</button>
           <button class="cue-btn" data-act="continue">Continue anyway</button>
         </div>
-        ${attempt >= 3 ? `<p class="cue-modal-foot">Still struggling? Continue anyway — you can
-          pick items by number instead, and everything else works normally.</p>` : ""}
+        <p class="cue-modal-foot">Either way you can pick items by saying the number
+          shown on them, and Cue gets more accurate the more you do.</p>
       </div>`;
     document.body.appendChild(ov);
 
@@ -384,7 +384,7 @@ function qualityModal(acc, attempt) {
   });
 }
 
-export async function calibrate({ allowRetry = true, maxAttempts = 4 } = {}) {
+export async function calibrate({ allowRetry = true, maxAttempts = 2 } = {}) {
   for (let attempt = 1; ; attempt++) {
     const acc = await runCalibration(attempt);
 
@@ -526,6 +526,44 @@ function degrade(why, sigma) {
   bus.emit("STATE", { calibrated: true, mode: "mouse", gazeError: why });
   return "mouse";
 }
+
+// ── Learning from what the voice confirms ───────────────────────────────────
+// Webgazer's built-in click training assumes you were looking wherever you
+// clicked, which is often false — that assumption is most of why the stored
+// model was so bad. But Cue has something better: when you SAY "two", we know
+// with certainty which item you meant, and the badge was only on screen
+// because you were already looking near it. That is a true training pair,
+// handed to us by the interaction itself.
+//
+// So every spoken selection quietly improves the model. Calibration stops
+// being a thing you do once at the start and decays from; it gets better the
+// more you use it.
+const LEARN_MAX_PX = 420;     // beyond this the pair is not credible
+let learned = 0;
+
+export function learnFromSelection(target) {
+  if (state.mode !== "webgazer" || !state.calibrated || !target?.el) return false;
+  const r = target.el.getBoundingClientRect();
+  if (!r.width) return false;
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+
+  // Only learn when the eyes were plausibly already there. If someone names an
+  // item while looking out the window, that pair is a lie and would undo the
+  // work the calibration just did.
+  const p = state.point;
+  if (!p || Math.hypot(p.x - cx, p.y - cy) > LEARN_MAX_PX) return false;
+
+  // Feed it in the raw prediction frame, undoing our affine correction —
+  // webgazer trains on its own output, not on ours.
+  try {
+    window.webgazer?.recordScreenPosition(cx, cy, "click");
+    learned++;
+    if (learned % 5 === 0) console.log(`[cue] learned from ${learned} spoken selections`);
+    return true;
+  } catch { return false; }
+}
+
+export const getLearned = () => learned;
 
 // Voice-driven selection ("the second one"). Locks out dwell briefly so the
 // follow-up command acts on what was just named.

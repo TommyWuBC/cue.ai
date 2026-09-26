@@ -8,6 +8,7 @@
 // and Chrome kills the session every ~60 seconds.
 
 import { bus } from "./bus.js";
+import { wsUrl, url } from "./config.js";
 
 const TARGET_RATE   = 16000;
 const CHUNK_SAMPLES = 1600;          // 100 ms — xAI's suggested frame size
@@ -71,8 +72,8 @@ export async function start() {
     return false;
   }
 
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const ws = new WebSocket(`${proto}//${location.host}/stt`);
+  // Absolute, from config: on an injected page location.host is the STORE.
+  const ws = new WebSocket(wsUrl("/stt"));
   ws.binaryType = "arraybuffer";
   st.ws = ws;
 

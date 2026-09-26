@@ -4,6 +4,7 @@ load_dotenv(pathlib.Path(__file__).parent.parent / ".env")
 
 from fastapi import FastAPI, Response, WebSocket, UploadFile, File
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -11,6 +12,19 @@ import fallback, router, stt, tts
 
 ROOT = pathlib.Path(__file__).parent.parent
 app = FastAPI(title="Cue")
+
+
+# Injected into a third-party page, every call to us is cross-origin. This is
+# a localhost dev server driven by its own extension, so the permissive policy
+# is the correct one — it is not reachable from anywhere but this machine.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=".*",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["x-cue-tts", "x-aura-tts"],
+)
 
 
 class Utterance(BaseModel):

@@ -3,18 +3,8 @@ import * as gaze from "./gaze.js";
 import * as voice from "./voice.js";
 import { scan, nth, invalidate } from "./resolver.js";
 import * as badges from "./badges.js";
+import { CONFIG, url } from "./config.js";
 
-const qs = new URLSearchParams(location.search);
-const CONFIG = {
-  gazeMode: qs.get("gaze") || "webgazer",      // webgazer | mouse | sim
-  autoCal: qs.get("cal") !== "0",
-  sigma: +(qs.get("sigma") || 70),             // sim mode: synthetic noise, px
-  keepData: qs.get("keepdata") === "1",        // reuse the stored gaze model
-  // Filter overrides, for sweeping the tuning against sim mode. Omit in normal use.
-  tune: qs.has("mc") ? {
-    minCutoff: +qs.get("mc"), beta: +(qs.get("beta") ?? 0.002), dCutoff: +(qs.get("dc") ?? 0.3),
-  } : null,
-};
 
 // ── Overlay chrome ──────────────────────────────────────────────────────────
 const ui = {};
@@ -162,7 +152,7 @@ bus.on("UTTERANCE", async ({ text, final }) => {
   if (!final || inflight) return;
   inflight = true;
   try {
-    const res = await fetch("/utterance", {
+    const res = await fetch(url("/utterance"), {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ text, context: context() }),
     });
@@ -227,8 +217,13 @@ function perform(verb, args) {
     case "focus_nth":
     case "focus_number": {
       const t = pickNumbered(args.n);
-      if (t) gaze.setFocus(t);
-      else {
+      if (t) {
+        // Naming an item tells us exactly where the eyes were. Hand that back
+        // to the tracker as a true training pair — this is the one moment we
+        // have ground truth, and it is free.
+        gaze.learnFromSelection(t);
+        gaze.setFocus(t);
+      } else {
         const total = scan().filter((x) => x.kind === "product").length;
         bus.emit("SAY", { text: `I only see ${total} item${total === 1 ? "" : "s"}.` });
       }
