@@ -109,11 +109,14 @@ class Checkout:
                 raise CheckoutError("Invalid cart item.")
             product = self.catalog.get(item.get("id"))
             size = item.get("size")
-            if not product or size not in product["variants"]:
-                raise CheckoutError("A cart item or size is unavailable.")
+            color = item.get("color")
+            if (not product or size not in product["variants"] or
+                    color not in [option["name"] for option in product["colors"]]):
+                raise CheckoutError("A cart item, size, or color is unavailable.")
             price = cents(product["price"])
             lines.append({"id": product["id"], "title": product["title"],
-                          "size": size, "unit_price_cents": price, "currency": product["currency"]})
+                          "size": size, "color": color,
+                          "unit_price_cents": price, "currency": product["currency"]})
             total += price
         if total > self.order_limit:
             raise CheckoutError("This order exceeds your per-order spending limit.")

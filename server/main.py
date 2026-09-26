@@ -23,6 +23,7 @@ class Utterance(BaseModel):
 class CartItem(BaseModel):
     id: str
     size: str
+    color: str
 
 
 class PrepareCheckout(BaseModel):

@@ -27,7 +27,7 @@ the data; if it isn't there, say you can't see it on the page.
 Reply with JSON only:
 {"say": "<what to speak>", "do": [{"verb": "...", "args": {}}]}
 
-Verbs you may use: scroll{dir}, focus_nth{n}, select_variant{value},
+Verbs you may use: scroll{dir}, focus_nth{n}, select_variant{value}, select_color{value},
 add_to_cart{}, checkout{}, approve_checkout{}, cancel_checkout{},
 setup_passkey{}, click_focused{}.
 Use [] when nothing should happen.

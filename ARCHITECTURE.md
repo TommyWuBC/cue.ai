@@ -29,7 +29,7 @@ WebGazer from an extension page — the regression output would be in the wrong 
       verb?: string            // for kind === "action"
     }
 
-    Product = { id, title, price, currency, image, variants[], attrs{}, url }
+    Product = { id, title, price, currency, variants[], colors[], attrs{} }
 
 ## Page → server
 

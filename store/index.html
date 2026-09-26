@@ -28,6 +28,12 @@
   .variants button { border:1px solid var(--line); background:#fff; border-radius:9px; padding:7px 13px;
                      font:inherit; font-size:13px; cursor:pointer; }
   .variants button[aria-pressed="true"] { border-color:var(--ink); background:var(--ink); color:#fff; }
+  .option-label { margin:12px 0 3px; color:var(--muted); font-size:12px; font-weight:600; }
+  .colors { display:flex; gap:7px; flex-wrap:wrap; }
+  .colors button { border:1px solid var(--line); background:#fff; border-radius:9px; padding:6px 10px;
+                   font:inherit; font-size:12px; cursor:pointer; }
+  .colors button[aria-pressed="true"] { border-color:#1a1f71; box-shadow:0 0 0 2px #1a1f7133; }
+  .color-dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:5px; vertical-align:-1px; }
   .actions { display:flex; gap:10px; margin-top:16px; }
   .actions button { flex:1; border:0; border-radius:11px; padding:12px; font:inherit; font-weight:600; cursor:pointer; }
   .add { background:#1a1f71; color:#fff; }
@@ -75,7 +81,7 @@
 import { setupCheckout } from "/checkout.js";
 const PRODUCTS = await fetch("/products.json").then(r => r.json());
 const grid = document.getElementById("grid");
-let cart = [], remaining = 25000;
+let cart = [], remaining = 25000, orderLimit = 20000;
 const money = cents => "$" + (cents / 100).toFixed(2);
 function renderCart() {
   document.getElementById("count").textContent = cart.length;
@@ -84,7 +90,7 @@ function renderCart() {
 const checkoutFlow = setupCheckout({
   getCart: () => cart,
   clearCart: () => { cart = []; renderCart(); },
-  onStatus: status => { remaining = status.remaining_cents; renderCart(); },
+  onStatus: status => { remaining = status.remaining_cents; orderLimit = status.order_limit_cents; renderCart(); },
 });
 window.cueCheckout = checkoutFlow;
 window.checkout = checkoutFlow.prepare;
@@ -99,6 +105,11 @@ grid.innerHTML = PRODUCTS.map(p => `
       <div class="variants">${p.variants.map(v => `
         <button data-aura-action="select_variant" data-aura-value="${v}"
                 data-aura-label="Size ${v}" aria-pressed="false">${v}</button>`).join("")}</div>
+      <p class="option-label">Color</p>
+      <div class="colors">${p.colors.map((color, index) => `
+        <button data-aura-action="select_color" data-aura-value="${color.name}"
+                data-tone="${color.tone}" data-aura-label="Color ${color.name}"
+                aria-pressed="${index === 0}"><span class="color-dot" style="background:${color.tone}"></span>${color.name}</button>`).join("")}</div>
       <div class="actions">
         <button class="add" data-aura-action="add_to_cart" data-aura-label="Add ${p.title} to cart"
                 data-id="${p.id}">Add to cart</button>
@@ -112,12 +123,26 @@ grid.addEventListener("click", (e) => {
     v.closest(".variants").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", "false"));
     v.setAttribute("aria-pressed", "true");
   }
+  const color = e.target.closest('[data-aura-action="select_color"]');
+  if (color) {
+    color.closest(".colors").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", "false"));
+    color.setAttribute("aria-pressed", "true");
+    const swatch = color.closest(".card").querySelector(".swatch");
+    swatch.style.background = `linear-gradient(150deg,${color.dataset.tone},${color.dataset.tone}bb)`;
+  }
   const a = e.target.closest('[data-aura-action="add_to_cart"]');
   if (a) {
     const p = PRODUCTS.find(x => x.id === a.dataset.id);
-    const size = a.closest(".card").querySelector('[aria-pressed="true"]')?.dataset.auraValue ?? "M";
-    cart.push({ ...p, size, words: window.cue?.lastActionUtterance || "" });
+    const size = a.closest(".card").querySelector('.variants [aria-pressed="true"]')?.dataset.auraValue;
+    const selectedColor = a.closest(".card").querySelector('.colors [aria-pressed="true"]')?.dataset.auraValue;
+    if (!size) { window.cue?.bus.emit("SAY", { text: `Choose a size for ${p.title} first.` }); return; }
+    const nextTotal = cart.reduce((sum, item) => sum + Math.round(item.price * 100), 0) + Math.round(p.price * 100);
+    if (nextTotal > Math.min(remaining, orderLimit)) {
+      window.cue?.bus.emit("SAY", { text: "That would exceed your spending limit." }); return;
+    }
+    cart.push({ ...p, size, color: selectedColor, words: window.cue?.lastActionUtterance || "" });
     renderCart();
+    window.cue?.bus.emit("SAY", { text: `Added ${p.title}, ${selectedColor}, size ${size}.` });
   }
 });
 window.CART = () => cart;

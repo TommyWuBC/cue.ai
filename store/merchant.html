@@ -51,7 +51,7 @@ async function refresh() {
       meta.className = 'meta';
       meta.textContent = `${new Date(order.created_at).toLocaleString()} · Order ${order.id}`;
       const items = document.createElement('p');
-      items.textContent = order.items.map(item => `${item.title}, ${item.size}, ${money(item.unit_price_cents)}`).join(' · ');
+      items.textContent = order.items.map(item => `${item.title}, ${item.color}, ${item.size}, ${money(item.unit_price_cents)}`).join(' · ');
       const badge = document.createElement('span');
       badge.className = 'badge';
       badge.textContent = 'Passkey approved';

@@ -81,6 +81,10 @@ is at `http://localhost:4173/merchant.html`. Orders and the monthly budget are
 stored in `server/data/cue.sqlite3` (ignored by git). The server sets prices from
 `store/products.json`; cart prices sent by the browser are never accepted.
 
+Say “Cue, the second one” to focus a product, then “Cue, medium, in black”
+to set options. “Cue, add the second one in medium, in black” combines those
+steps. A size is required before adding; no size is silently chosen.
+
 This is a **single shopper, localhost demo**. It has no account enrollment or
 merchant login and must not be deployed to the public internet as-is. It records
 passkey-approved demo orders but does not charge a card. Stripe/Visa sandbox

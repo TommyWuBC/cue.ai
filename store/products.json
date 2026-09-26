@@ -4,7 +4,7 @@
     "title": "Oversized Wool-Blend Coat",
     "price": 129,
     "currency": "USD",
-    "tone": "#3c4a5a",
+    "tone": "#29282c",
     "variants": [
       "XS",
       "S",
@@ -20,8 +20,22 @@
       "sizing": "Runs one size large; size down if between sizes",
       "rating": 4.4,
       "reviews": 218,
-      "warmth": "Heavy — rated for 0 to 10°C"
-    }
+      "warmth": "Heavy \u2014 rated for 0 to 10\u00b0C"
+    },
+    "colors": [
+      {
+        "name": "Black",
+        "tone": "#29282c"
+      },
+      {
+        "name": "Slate",
+        "tone": "#3c4a5a"
+      },
+      {
+        "name": "Camel",
+        "tone": "#8c765d"
+      }
+    ]
   },
   {
     "id": "j2",
@@ -44,8 +58,18 @@
       "sizing": "True to size",
       "rating": 4.1,
       "reviews": 963,
-      "warmth": "Medium — rated for 5 to 15°C"
-    }
+      "warmth": "Medium \u2014 rated for 5 to 15\u00b0C"
+    },
+    "colors": [
+      {
+        "name": "Brown",
+        "tone": "#7a4b32"
+      },
+      {
+        "name": "Black",
+        "tone": "#292a2a"
+      }
+    ]
   },
   {
     "id": "j3",
@@ -67,8 +91,18 @@
       "sizing": "Runs small in the shoulders",
       "rating": 3.9,
       "reviews": 412,
-      "warmth": "Light — layering piece"
-    }
+      "warmth": "Light \u2014 layering piece"
+    },
+    "colors": [
+      {
+        "name": "Blue",
+        "tone": "#4a6480"
+      },
+      {
+        "name": "Black",
+        "tone": "#23242c"
+      }
+    ]
   },
   {
     "id": "j4",
@@ -90,8 +124,18 @@
       "sizing": "True to size",
       "rating": 4.7,
       "reviews": 1504,
-      "warmth": "Medium — breathable"
-    }
+      "warmth": "Medium \u2014 breathable"
+    },
+    "colors": [
+      {
+        "name": "Oat",
+        "tone": "#6b6250"
+      },
+      {
+        "name": "Black",
+        "tone": "#202024"
+      }
+    ]
   },
   {
     "id": "j5",
@@ -113,8 +157,18 @@
       "sizing": "True to size",
       "rating": 4.2,
       "reviews": 87,
-      "warmth": "Light — wind and rain resistant, not insulated"
-    }
+      "warmth": "Light \u2014 wind and rain resistant, not insulated"
+    },
+    "colors": [
+      {
+        "name": "Sand",
+        "tone": "#8a7a5e"
+      },
+      {
+        "name": "Black",
+        "tone": "#252525"
+      }
+    ]
   },
   {
     "id": "j6",
@@ -138,6 +192,16 @@
       "rating": 4,
       "reviews": 640,
       "warmth": "Light"
-    }
+    },
+    "colors": [
+      {
+        "name": "Plum",
+        "tone": "#5c5566"
+      },
+      {
+        "name": "Black",
+        "tone": "#26232a"
+      }
+    ]
   }
 ]

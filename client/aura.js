@@ -89,9 +89,12 @@ bus.on("UTTERANCE", async ({ text, final }) => {
     });
     const out = await res.json();
     window.cue.lastActionUtterance = text;
-    for (const a of out.do ?? []) perform(a.verb, a.args ?? {});
+    let completed = true;
+    for (const a of out.do ?? []) {
+      if (perform(a.verb, a.args ?? {}) === false) { completed = false; break; }
+    }
     window.cue.lastActionUtterance = null;
-    if (out.say) bus.emit("SAY", { text: out.say });
+    if (completed && out.say) bus.emit("SAY", { text: out.say });
   } catch (e) {
     bus.emit("SAY", { text: "Sorry, I lost my connection." });
     console.error(e);
@@ -111,7 +114,7 @@ function perform(verb, args) {
   if (document.getElementById("checkout-dialog")?.open &&
       !["approve_checkout", "cancel_checkout", "setup_passkey"].includes(verb)) {
     bus.emit("SAY", { text: "Finish or cancel this checkout first." });
-    return;
+    return false;
   }
   switch (verb) {
     case "scroll":
@@ -120,14 +123,33 @@ function perform(verb, args) {
     case "focus_nth": {
       const t = nth(args.n);
       if (t) gaze.setFocus(t);
-      else bus.emit("SAY", { text: `I only see ${scan().filter(x => x.kind === "product").length} items.` });
+      else {
+        bus.emit("SAY", { text: `I only see ${scan().filter(x => x.kind === "product").length} items.` });
+        return false;
+      }
       break;
     }
-    case "click_focused": gaze.getFocus()?.el.click(); break;
+    case "click_focused": {
+      const target = gaze.getFocus();
+      if (target?.kind !== "action") {
+        bus.emit("SAY", { text: "Look at a button before asking me to click it." });
+        return false;
+      }
+      target.el.click();
+      break;
+    }
     case "select_variant": {
       const el = scope()?.querySelector(
         `[data-aura-action="select_variant"][data-aura-value="${CSS.escape(String(args.value).toUpperCase())}"]`);
-      if (!el) { bus.emit("SAY", { text: `I don't see size ${args.value} on this one.` }); break; }
+      if (!el) { bus.emit("SAY", { text: `I don't see size ${args.value} on this one.` }); return false; }
+      el.click();
+      break;
+    }
+    case "select_color": {
+      const value = String(args.value);
+      const el = scope()?.querySelector(
+        `[data-aura-action="select_color"][data-aura-value="${CSS.escape(value)}"]`);
+      if (!el) { bus.emit("SAY", { text: `I don't see ${value} on this one.` }); return false; }
       el.click();
       break;
     }
@@ -135,8 +157,10 @@ function perform(verb, args) {
       // MUST be scoped to what they were looking at. A global querySelector here
       // adds the first product on the page — i.e. charges for the wrong item.
       const el = scope()?.querySelector('[data-aura-action="add_to_cart"]');
-      if (!el) { bus.emit("SAY", { text: "Look at the item you want first." }); break; }
+      if (!el) { bus.emit("SAY", { text: "Look at the item you want first." }); return false; }
+      const before = window.CART?.().length;
       el.click();
+      if (before !== undefined && window.CART().length === before) return false;
       break;
     }
     case "checkout":
@@ -151,9 +175,9 @@ function perform(verb, args) {
         bus.emit("SAY", { text: "I couldn't recalibrate. Please check the camera." });
       });
       break;
-    case "navigate": location.href = args.url; break;
-    default: console.warn("[aura] unknown verb", verb, args);
+    default: console.warn("[cue] unknown verb", verb, args); return false;
   }
+  return true;
 }
 
 // ── Boot ────────────────────────────────────────────────────────────────────

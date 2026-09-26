@@ -21,7 +21,7 @@ class ApiTests(unittest.TestCase):
 
     def test_checkout_api_and_merchant_feed(self):
         response = self.client.post('/api/checkout/prepare', json={
-            'items': [{'id': 'j4', 'size': 'M'}], 'customer_words': 'Add the sweater in medium. Check out.'
+            'items': [{'id': 'j4', 'size': 'M', 'color': 'Oat'}], 'customer_words': 'Add the sweater in medium. Check out.'
         })
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['total_cents'], 5999)
