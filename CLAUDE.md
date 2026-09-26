@@ -258,6 +258,30 @@ cannot drift.
   every sentence. Do not blanket-mute during speech instead — that kills
   barge-in entirely, which I tried and had to undo.
 
+### Every voice path falls back: Grok, then ElevenLabs, then the browser
+
+We are in xAI's track, so Grok is always first. `server/tts.py` tries Grok
+TTS, then ElevenLabs, then hands the page spoken text for the browser voice.
+`server/stt.py` tries Grok, then ElevenLabs Scribe, then sends
+`cue.unavailable` and the page starts the browser recogniser.
+
+- **The page speaks one STT dialect, Grok's.** When the server falls back to
+  ElevenLabs it translates both ways in `stt.py` (`_eleven_up`/`_eleven_down`):
+  PCM becomes `input_audio_chunk`, `Finalize` becomes a commit, committed
+  transcripts become a final `transcript.partial`. `client/mic.js` never needs
+  to know which provider answered.
+- **The server always sends a verdict first**: `cue.ready` with the provider,
+  or `cue.unavailable`. `mic.start()` waits for it and returns false on
+  unavailable, which is what makes `voice.js` start the browser recogniser.
+  Before this, an unavailable verdict after the socket opened left Cue deaf.
+- **ElevenLabs accepts the socket even with a bad key** and reports it as the
+  first message. Only `session_started` counts as success.
+- **If Grok's stream dies within 8s of opening, Grok is skipped for 60s**, so
+  the page's automatic reconnect lands on ElevenLabs instead of looping.
+- `curl localhost:4173/health` shows each chain and which provider is live.
+- Testing against a server on another port: the client always calls
+  `localhost:4173` unless you add `?server=http://localhost:<port>`.
+
 ### STT is Grok, proxied
 
 `server/stt.py` bridges the browser to `wss://api.x.ai/v1/stt`. It is a proxy so
@@ -274,15 +298,16 @@ Brave ships no working Web Speech API, so there is **no browser fallback there**
 
 ### TTS
 
-ElevenLabs, `server/tts.py`. Notes:
+Grok first, then ElevenLabs, then the browser voice, in `server/tts.py`. Notes:
 
 - Text is normalised to spoken form server-side (`spoken()`), and the browser
   path is handed the same string, so "$79.99" is never read as digits by either.
 - **128kbps, not 64.** 64 smears sibilants into static and was a real part of
   "the voice sounds robotic".
 - Repeats come from `server/cache/` free. Before rehearsing:
-  `TTS_PROVIDER=eleven .venv/bin/python server/prewarm.py`
-- `ELEVEN_CHAR_BUDGET` hard-stops to the browser voice rather than failing.
+  `.venv/bin/python server/prewarm.py` (same chain as live speech).
+- `XAI_TTS_CHAR_BUDGET` and `ELEVEN_CHAR_BUDGET` hard-stop each provider and
+  fall through to the next rather than failing.
 - Browsers refuse audio before a user gesture and Brave is stricter than Chrome.
   The opening line is held and spoken on first interaction rather than lost.
 

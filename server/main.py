@@ -136,7 +136,7 @@ async def stt_socket(ws: WebSocket):
 async def stt_file(file: UploadFile = File(...)):
     """Batch fallback for when the stream will not hold."""
     if not stt.available():
-        return JSONResponse({"text": "", "error": "grok stt unavailable"}, status_code=503)
+        return JSONResponse({"text": "", "error": "no speech-to-text provider available"}, status_code=503)
     return await stt.transcribe_file(await file.read(), file.filename or "clip.webm")
 
 
