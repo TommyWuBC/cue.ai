@@ -1,6 +1,9 @@
 .venv/
 __pycache__/
+# Secrets: every env file except the committed template.
 .env
+.env.*
+!.env.example
 server/cache/*.mp3
 server/cache/_ledger.json
 vendor/webgazer.orig.js

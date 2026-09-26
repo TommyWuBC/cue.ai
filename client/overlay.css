@@ -75,7 +75,7 @@ body:has(.cue-splash) #aura-root { visibility: hidden; }
   -webkit-backdrop-filter: blur(22px) saturate(1.8);
   border: 1px solid rgba(0,0,0,.06);
   box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 14px 44px rgba(20,24,40,.14); }
-.aura-hud > .cue-avatar { grid-row: 1 / span 4; width: 64px; height: 64px; }
+.aura-hud > .cue-avatar { grid-row: 1 / span 5; width: 64px; height: 64px; cursor: pointer; }
 .aura-hud > :not(.cue-avatar) { grid-column: 2; }
 
 .aura-hud-row { display: flex; align-items: center; gap: 8px; min-height: 22px; margin-top: 2px; }
@@ -234,3 +234,28 @@ body.cue-edge-top::before { top: 0;
   background: linear-gradient(to bottom, rgba(47,107,255,.20), transparent); }
 body.cue-edge-bottom::after { bottom: 0;
   background: linear-gradient(to top, rgba(47,107,255,.20), transparent); }
+
+/* ── The dock answers the avatar's state (set by avatar.js) ───────────────── */
+.aura-hud { transition: border-color .35s var(--cue-ease), box-shadow .35s var(--cue-ease); }
+.aura-hud::after { content: ""; position: absolute; left: 22px; right: 22px; bottom: 0; height: 2px;
+  border-radius: 2px; opacity: 0; transition: opacity .3s;
+  background: linear-gradient(90deg, transparent, var(--cue), transparent) no-repeat;
+  background-size: 38% 100%; }
+.aura-hud[data-cue-state="listening"] { border-color: rgba(47,107,255,.32);
+  box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 14px 44px rgba(20,24,40,.14), 0 0 0 4px rgba(47,107,255,.10);
+  animation: cue-listening 1.8s ease-in-out infinite; }
+@keyframes cue-listening {
+  50% { box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 14px 44px rgba(20,24,40,.14), 0 0 0 7px rgba(47,107,255,.04); } }
+.aura-hud[data-cue-state="thinking"] { border-color: rgba(47,107,255,.2); }
+.aura-hud[data-cue-state="thinking"]::after { opacity: .75; animation: cue-thinking 1.1s linear infinite; }
+@keyframes cue-thinking { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+
+.aura-hud-said.cue-enter { animation: cue-reply .34s var(--cue-ease); }
+@keyframes cue-reply { from { opacity: 0; transform: translateY(4px); } }
+.aura-hud-heard.cue-live::after { content: ""; display: inline-block; width: 1.5px; height: 1em; margin-left: 2px;
+  vertical-align: -2px; background: var(--cue); animation: cue-caret 1s steps(1) infinite; }
+@keyframes cue-caret { 50% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .aura-hud[data-cue-state], .aura-hud::after, .aura-hud-said.cue-enter, .aura-hud-heard.cue-live::after { animation: none; }
+}
