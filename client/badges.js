@@ -10,7 +10,7 @@
 // audience standing three feet behind them.
 
 import { bus } from "./bus.js";
-import { scan } from "./resolver.js";
+import { scan, controls } from "./resolver.js";
 
 // How many candidates to number, and how far out to look for them. Both scale
 // with how accurate gaze actually turned out to be.
@@ -76,11 +76,20 @@ export function update(x, y, focusedId) {
   if (!enabled || !root) return;
 
   const products = scan().filter((t) => t.kind === "product");
-  if (!products.length) { clear(); return; }
+  // Buttons and icons get numbers too, so a shop can be moved through before
+  // any product is tagged. Skip controls that already sit on a numbered card.
+  const chrome = controls()
+    .filter((c) => c.rect.width >= 28 && c.rect.height >= 24)
+    .filter((c) => !c.el.closest?.("[data-cue-product],[data-aura-product]"))
+    .map((c) => ({
+      kind: "control", id: "ctl:" + c.name.toLowerCase(), label: c.name, el: c.el, rect: c.rect,
+    }));
+  const pool = [...products, ...chrome];
+  if (!pool.length) { clear(); return; }
 
   // Reading order, so the numbers a user sees are stable and match "the third
   // one" — two ways of saying the same thing must never disagree.
-  const ordered = [...products].sort(
+  const ordered = [...pool].sort(
     (a, b) => (a.rect.top - b.rect.top) || (a.rect.left - b.rect.left));
 
   const near = ordered

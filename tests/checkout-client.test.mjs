@@ -84,3 +84,12 @@ test('failed cancellation stays unapproved and can be retried', async t => {
   assert.equal(await h.flow.cancel(), true);
   assert.equal(h.dialog.open, false);
 });
+
+test('private mode prepares server-checked order without spoken readback', async t => {
+  const h = setup(t);
+  window.cue.voice.isPrivateMode = () => true;
+  await h.flow.prepare();
+  assert.ok(h.calls.includes('/api/checkout/prepare'));
+  assert.ok(!h.spoken.some(s => s.includes('Total $10.00')));
+  assert.equal(h.dialog.querySelector('.checkout-approve').disabled, false);
+});

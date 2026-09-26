@@ -1,7 +1,8 @@
 // Mark only products for which the live page exposes a title, price, and link
 // or a Product JSON-LD record. Cue's existing gaze/voice pipeline does the rest.
 (() => {
-  if (globalThis.__cueExternalActive) return;
+  if (globalThis.__cueExternalActive && !globalThis.__cueEnded) return;
+  globalThis.__cueEnded = false;
   globalThis.__cueExternalActive = true;
 
   let timer;
@@ -39,15 +40,18 @@
   // Content scripts share a page's Web Storage. Keep product memory in the
   // extension's session area so the store cannot read it from sessionStorage.
   const boot = async () => {
-    let value = null;
-    try { value = (await chrome.runtime.sendMessage({ type: 'cue:memory:read' }))?.value ?? null; }
-    catch { /* Memory still works within this page if storage is unavailable. */ }
+    let bag = {};
+    try {
+      const raw = (await chrome.runtime.sendMessage({ type: 'cue:memory:read' }))?.value ?? null;
+      bag = raw ? JSON.parse(raw) : {};
+      if (!bag || typeof bag !== 'object') bag = {};
+    } catch { bag = {}; }
+    const persist = () => {
+      chrome.runtime.sendMessage({ type: 'cue:memory:write', value: JSON.stringify(bag) }).catch(() => {});
+    };
     globalThis.CUE_MEMORY_STORAGE = {
-      getItem: () => value,
-      setItem: (_key, next) => {
-        value = next;
-        chrome.runtime.sendMessage({ type: 'cue:memory:write', value: next }).catch(() => {});
-      },
+      getItem: (key) => (key in bag ? bag[key] : null),
+      setItem: (key, next) => { bag[key] = next; persist(); },
     };
     const aura = await import(chrome.runtime.getURL('client/aura.js'));
     if (globalThis.__cueExited) {

@@ -88,6 +88,7 @@ async function start(tab) {
     await chrome.scripting.executeScript({
       target,
       func: (server, urls, image, previous) => {
+        globalThis.__cueEnded = false;
         globalThis.CUE_MODELS = urls;
         globalThis.CUE_CONFIG = { server, gazeMode: 'webgazer', autoCal: true,
           keepData: false, models: urls, splashImage: image,
@@ -185,7 +186,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   }
   const tabId = sender.tab?.id;
   if (!Number.isInteger(tabId)) return;
-  if (message?.type === 'cue:exit') {
+  if (message?.type === 'cue:exit' || message?.type === 'cue:stop') {
     updateSession(tabId, async () => {
       await setPaused(tabId, true);
       await chrome.storage.session.remove(sessionKey(tabId));

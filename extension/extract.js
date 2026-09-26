@@ -94,7 +94,43 @@
         url: productUrl, attrs: {} } });
       seen.add(id);
     }
+    for (const card of genericCards(doc)) {
+      if (seen.has(card.product.id)) continue;
+      found.push(card);
+      seen.add(card.product.id);
+      if (found.length >= 40) break;
+    }
     return found.slice(0, 40);
+  }
+
+  // Any shop: a visible card or a large linked image with a real title.
+  // A missing or ambiguous price stays missing. The card is still numbered.
+  function genericCards(doc) {
+    const out = [];
+    const seen = new Set();
+    const nodes = doc.querySelectorAll(
+      'article a[href], li a[href], [role="listitem"] a[href], a[href]');
+    for (const link of nodes) {
+      if (link.closest?.('nav, header, footer, [role="navigation"], [role="banner"], [role="contentinfo"]')) continue;
+      const card = link.closest?.('article, li, [role="listitem"]') || link;
+      if (!rectVisible(card)) continue;
+      const box = card.getBoundingClientRect?.() || link.getBoundingClientRect?.();
+      if (!box || box.width < 80 || box.height < 80) continue;
+      const href = link.href || '';
+      if (!/^https?:/i.test(href) || seen.has(href)) continue;
+      const heading = card.querySelector?.('h1, h2, h3, h4');
+      const title = clean(link.getAttribute?.('aria-label') || heading?.textContent ||
+        link.querySelector?.('img[alt]')?.getAttribute?.('alt') || link.textContent);
+      if (title.length < 6 || title.length > 140) continue;
+      if (/^(search|sign in|log in|account|bag|cart|menu|home)$/i.test(title)) continue;
+      const amount = price(card.textContent || '');
+      seen.add(href);
+      out.push({ el: card, product: {
+        id: clean(href), title, price: amount, currency: 'USD', url: href, attrs: {},
+      } });
+      if (out.length >= 40) break;
+    }
+    return out;
   }
 
   root.CueExtract = { extract, price };

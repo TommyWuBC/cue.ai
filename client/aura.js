@@ -1,15 +1,124 @@
 import { bus } from "./bus.js";
 import * as gaze from "./gaze.js";
 import * as voice from "./voice.js";
-import { scan, nth, invalidate, controls, findControl } from "./resolver.js";
+import { scan, nth, invalidate, controls, controlName, findControl } from "./resolver.js";
 import * as badges from "./badges.js";
 import { CONFIG, url } from "./config.js";
 import { productMemory } from "./product-memory.js";
 import { playSplash } from "./splash.js";
+import { matchCandidates, matchOptions, missingChoices, optionPrompt } from "./intent.js";
+import { shopperStore } from "./shopper.js";
+import { crawlNear, matchPage, pageText } from "./site.js";
 
 let memoryStorage;
 try { memoryStorage = CONFIG.injected ? window.CUE_MEMORY_STORAGE : sessionStorage; } catch {}
 const comparisons = productMemory({ storage: memoryStorage });
+const shopper = shopperStore(memoryStorage);
+const remembered = shopper.load();
+
+// The product the shopper is talking about. Looking somewhere else does not
+// change it, and size or add questions are about this card, not the gaze card.
+let discussed = remembered.discussed;
+let voiceNamed = false;
+let lookedThisTurn = null;
+// Size and color count only when the shopper says them. The card's default
+// color is pressed already, and that is not a choice.
+let stated = { id: remembered.discussed?.id ?? null, size: remembered.size, color: remembered.color };
+
+function persistShopper() {
+  shopper.save({ discussed, size: stated.size, color: stated.color });
+}
+let site = null;
+
+const PRODUCT_VERBS = new Set(["add_to_cart", "select_variant", "select_color"]);
+
+function briefProduct(product) {
+  if (!product?.id || !product.title) return null;
+  return { id: product.id, title: product.title, price: product.price };
+}
+
+function productTarget(id) {
+  return scan().find((t) => t.kind === "product" && t.id === id) ?? null;
+}
+
+// Prefer a visible search box. Northfield's header field still works when the
+// layout has collapsed it, so a spoken search does not depend on the cursor.
+function findSearchField() {
+  const visible = (el) => {
+    if (!el || el.disabled || el.closest?.("#aura-root")) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 8 && r.height > 8;
+  };
+  const nodes = document.querySelectorAll(
+    'input[type="search"], form[role="search"] input:not([type="hidden"]), input[name="q"], input[name="k"], input[aria-label*="search" i], input[placeholder*="search" i]');
+  for (const el of nodes) if (visible(el)) return el;
+  return document.querySelector("#search, form[role='search'] input");
+}
+
+function searchOpener() {
+  const list = controls();
+  const name = (c) => c.name.toLowerCase();
+  return list.find((c) => name(c) === "search")
+      || list.find((c) => /^search\b/.test(name(c)) && name(c).length < 32)
+      || null;
+}
+
+function waitForSearch(ms) {
+  return new Promise((resolve) => {
+    const start = performance.now();
+    const tick = () => {
+      const field = findSearchField();
+      if (field) return resolve(field);
+      if (performance.now() - start > ms) return resolve(null);
+      setTimeout(tick, 120);
+    };
+    tick();
+  });
+}
+
+function writeField(field, q) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  if (setter) setter.call(field, q);
+  else field.value = q;
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  field.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+async function runSearch(q) {
+  let field = findSearchField();
+  if (!field) {
+    const opener = searchOpener();
+    if (!opener) {
+      bus.emit("SAY", { text: "I don't see a search bar or a search button on this page." });
+      return;
+    }
+    bus.emit("SAY", { text: "Opening search." });
+    opener.el.click();
+    field = await waitForSearch(1600);
+  }
+  if (!field) {
+    bus.emit("SAY", { text: "I opened search, but I can't find a field to type in." });
+    return;
+  }
+  field.focus();
+  writeField(field, q);
+  const form = field.form;
+  if (form?.requestSubmit) form.requestSubmit();
+  else field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+  discussed = null;
+  stated = { id: null, size: null, color: null };
+  invalidate();
+  bus.emit("SAY", { text: `Searching for ${q}.` });
+  persistShopper();
+  setTimeout(() => {
+    if (globalThis.__cueEnded) return;
+    const numbered = badges.getShown().filter((b) => !String(b.id).startsWith("ctl:")).slice(0, 3);
+    const count = scan().filter((t) => t.kind === "product").length;
+    if (!count) return;
+    const names = numbered.map((b) => `${b.n}, ${b.label}`).join(". ");
+    bus.emit("SAY", { text: names ? `${count} results. ${names}.` : `${count} results.` });
+  }, 700);
+}
 
 
 // ── Overlay chrome ──────────────────────────────────────────────────────────
@@ -75,7 +184,7 @@ let lastBadge = 0;
 let exited = false;
 
 function frame() {
-  if (exited) return;
+  if (exited || globalThis.__cueEnded) return;
   render.x += (render.tx - render.x) * FOLLOW;
   render.y += (render.ty - render.y) * FOLLOW;
   render.drawnConf += (render.conf - render.drawnConf) * 0.12;
@@ -155,7 +264,7 @@ bus.on("STATE", (s) => {
     ui.outline.dataset.guess = String(!precise);
     ui.foot.innerHTML = precise
       ? 'hold <kbd>space</kbd> to talk · say &ldquo;Cue, &hellip;&rdquo;'
-      : 'say the <b>number</b> on an item · hold <kbd>space</kbd> to talk';
+      : 'say the <b>number</b> on an item or button · hold <kbd>space</kbd> to talk';
   }
 });
 
@@ -168,96 +277,216 @@ addEventListener("scroll", invalidate, { passive: true });
 // ── Look at the edge to scroll ──────────────────────────────────────────────
 // Hands-free browsing needs a way down the page that is not a spoken command
 // every screenful. Hold your gaze in the top or bottom band and the page
-// moves, accelerating the closer to the edge you look, and stopping the
-// moment you look away.
+// moves, accelerating the closer to the edge you look. A brief slip out of
+// the band does not restart the arm timer.
 //
 // The band has to be generous — at 220-350px of error a narrow strip would be
 // unreachable — and it must not fire while calibrating, while a dialog is up,
 // or while the pointer has been abandoned in mouse mode.
-const EDGE_BAND = 130;     // px from the top/bottom that counts as "the edge"
-const EDGE_ARM_MS = 500;   // hold this long before it starts, so a glance is safe
-const EDGE_MAX_PX = 13;    // per frame at the very edge
+const EDGE_ENTER = 150;   // between the old 130px strip and the 180px one
+const EDGE_KEEP = 190;    // a little slack once scrolling, not a wide band
+const EDGE_ARM_MS = 330;  // between the old 500ms hold and the 160ms one
+const EDGE_SLIP_MS = 180; // a frame or two of noise, not a long look away
+const EDGE_MAX_PX = 13;   // per frame at the very edge
 
-let edgeSince = 0, edgeDir = 0;
+let edgeSince = 0, edgeDir = 0, edgeSeen = 0;
 
 function edgeScrollTick() {
   const p = render;
   const gs = gaze.getState();
-  if (gs.calibrating || document.querySelector("dialog[open]") || !gs.point) {
-    edgeSince = 0; edgeDir = 0; document.body.classList.remove("cue-edge-top", "cue-edge-bottom");
-    return;
-  }
-
-  const top = p.y < EDGE_BAND;
-  const bottom = p.y > innerHeight - EDGE_BAND;
-  const dir = top ? -1 : bottom ? 1 : 0;
-
-  if (!dir) {
-    edgeSince = 0; edgeDir = 0;
+  if (gs.calibrating || !gs.point) {
+    edgeSince = 0; edgeDir = 0; edgeSeen = 0;
     document.body.classList.remove("cue-edge-top", "cue-edge-bottom");
     return;
   }
-  if (dir !== edgeDir) { edgeDir = dir; edgeSince = now(); return; }
+
+  const band = edgeDir ? EDGE_KEEP : EDGE_ENTER;
+  const top = p.y < band;
+  const bottom = p.y > innerHeight - band;
+  let dir = top ? -1 : bottom ? 1 : 0;
+  // Gaze error kicks the point out of the band for a frame or two. Keep the
+  // direction through that, or the arm timer restarts and scrolling never gets
+  // going unless they stare at one spot.
+  if (!dir && edgeDir && now() - edgeSeen < EDGE_SLIP_MS) dir = edgeDir;
+
+  if (!dir) {
+    edgeSince = 0; edgeDir = 0; edgeSeen = 0;
+    document.body.classList.remove("cue-edge-top", "cue-edge-bottom");
+    return;
+  }
+  if (dir !== edgeDir) { edgeDir = dir; edgeSince = now(); edgeSeen = now(); return; }
+  if (top || bottom) edgeSeen = now();
   if (now() - edgeSince < EDGE_ARM_MS) return;
 
-  // Deeper into the band = faster, so you can control pace by where you look.
-  const depth = dir < 0
-    ? (EDGE_BAND - p.y) / EDGE_BAND
-    : (p.y - (innerHeight - EDGE_BAND)) / EDGE_BAND;
+  const tightTop = p.y < EDGE_ENTER;
+  const tightBottom = p.y > innerHeight - EDGE_ENTER;
+  const depth = tightTop
+    ? (EDGE_ENTER - p.y) / EDGE_ENTER
+    : tightBottom
+      ? (p.y - (innerHeight - EDGE_ENTER)) / EDGE_ENTER
+      : 0.2;
   const step = dir * EDGE_MAX_PX * Math.min(1, Math.max(0.15, depth));
 
-  const box = scrollableUnderGaze(false);
-  (box ?? window).scrollBy({ top: step, behavior: "instant" });
+  scrollAmount(p.x, dir < 0 ? 8 : innerHeight - 8, step, false);
   document.body.classList.toggle("cue-edge-top", dir < 0);
   document.body.classList.toggle("cue-edge-bottom", dir > 0);
 }
 
 // ── The loop: utterance -> server -> speech + actions ───────────────────────
-function context() {
+function bagBrief() {
+  const items = window.cueBag?.items?.() || [];
+  if (!items.length) return null;
+  return items.slice(0, 5).map((i) => i.title);
+}
+
+function budgetBrief() {
+  const b = window.cueBudget;
+  if (!b || !Number.isFinite(b.remaining)) return null;
+  return { remaining: b.remaining, order: b.order };
+}
+
+function context(utterance = "") {
   const f = gaze.getFocus();
   const focused = f?.kind === "product" ? f.product : null;
+  const asking = /^(?:what|why|how|is|are|do|does|can|tell|describe|compare|which)\b/i.test(utterance);
+  const nearby = (site?.nearby || []).slice(0, 4);
   return {
     focused,
     previous: comparisons.remember(focused),
     focusedAction: f?.kind === "action" ? { verb: f.verb, label: f.label } : null,
-    visible: scan().filter((t) => t.kind === "product").map((t) => t.product),
-    // What a person could click on this page right now. Without this the agent
-    // can describe a page but never move through one.
-    controls: controls().slice(0, 25).map((c) => c.name),
+    visible: scan().filter((t) => t.kind === "product").slice(0, 6).map((t) => t.product),
+    numbered: badges.getShown().slice(0, 9).map((b) => ({ n: b.n, label: b.label })),
+    discussed: discussed ? { id: discussed.id, title: discussed.title } : null,
+    chosen: stated.size || stated.color ? { size: stated.size, color: stated.color } : null,
+    bag: bagBrief(),
+    budget: budgetBrief(),
+    controls: controls().slice(0, 12).map((c) => c.name),
+    site: site ? { title: site.title, pages: (site.pages || []).slice(0, 6).map((p) => p.title).filter(Boolean) } : null,
+    page: asking ? pageText(document).slice(0, 480) : "",
+    nearby: asking ? nearby.map((p) => ({ title: p.title, text: (p.text || "").slice(0, 180) }))
+      : nearby.map((p) => ({ title: p.title })),
     pending: pendingConfirm?.kind ?? null,
+    session: sessionId(),
     url: location.href,
   };
 }
 
+function sessionId() {
+  const key = "cue.session";
+  try {
+    const existing = memoryStorage?.getItem(key);
+    if (existing) return existing;
+    const id = (globalThis.crypto?.randomUUID?.() || String(Date.now()));
+    memoryStorage?.setItem(key, id);
+    return id;
+  } catch { return "visit"; }
+}
+
 let inflight = false;
-bus.on("UTTERANCE", async ({ text, final }) => {
-  if (final && /^(?:exit|quit|stop|go away|shut down|turn (?:yourself )?off|disable)(?: cue)?[.!]?$/i.test(text.trim())) {
-    await exitCue();
+let turnId = 0;
+let pendingSay = "";
+let settleTimer = 0;
+const QUICK = /^(?:yes|yeah|no|nope|cancel|end|cue end|[1-9]|one|two|three|four|five|six|seven|eight|nine)$/i;
+const HALT = /^(?:exit|quit|stop|go away|shut down|turn(?: yourself)? off|disable|end|cue end|stop cue|pause cue)(?: cue)?$/i;
+
+bus.on("UTTERANCE", ({ text, final }) => {
+  if (final && HALT.test(text.trim().toLowerCase().replace(/[.!?,]+/g, "").replace(/\s+/g, " "))) {
+    void exitCue();
     return;
   }
+  if (voice.isPrivateMode?.()) return;
+  if (gaze.getState().calibrating) return;
+  ui.heard.textContent = (final ? "" : "… ") + text;
+  if (!final) return;
+  clearTimeout(settleTimer);
+  try { voice.stopSpeaking(); } catch {}
+  const said = text.trim();
+  if (QUICK.test(said)) {
+    pendingSay = "";
+    beginTurn(said);
+    return;
+  }
+  pendingSay = (pendingSay ? pendingSay + " " : "") + said;
+  ui.heard.textContent = pendingSay;
+  settleTimer = setTimeout(() => {
+    const full = pendingSay.trim();
+    pendingSay = "";
+    if (!full || /^(?:cue|q|queue|kew|cu|aura|ora|aurora)$/i.test(full)) return;
+    beginTurn(full);
+  }, 900);
+});
+
+async function beginTurn(text) {
+  if (voice.isPrivateMode?.()) return;
   // Calibration owns the microphone for "Cue, next". Nothing said there is a
   // shopping command, and echoing it into the HUD just looks like a bug.
   if (gaze.getState().calibrating) return;
-  ui.heard.textContent = (final ? "" : "… ") + text;
-  if (!final || inflight) return;
-
+  const mine = ++turnId;
   // Naming an item and then talking about it must not let gaze quietly take
   // the focus back. The lock used to expire on a 3.5s timer, so "two" ... two
   // questions ... "add it" added whatever the eyes had drifted onto — and at
   // 242px of error that is effectively random. While the conversation
   // continues, what you named stays what you meant.
   gaze.holdFocus();
+  voiceNamed = false;
+  lookedThisTurn = gazedProduct();
+  const aboutGaze = /\bthis one\b|\bthe one i(?:'?m|m| am) looking at\b/i.test(text);
+  const hits = aboutGaze ? [] : matchCandidates(text, visibleProducts());
+  if (hits.length > 1) {
+    const shown = badges.getShown();
+    const line = hits.slice(0, 3).map((p) => {
+      const title = p.title || p.product?.title;
+      const id = p.id || p.product?.id;
+      const badge = shown.find((b) => b.id === id);
+      return badge ? `${badge.n} is the ${title}` : title;
+    }).join(". ");
+    bus.emit("SAY", { text: `Which one? ${line}.` });
+    return;
+  }
+  const named = hits[0];
+  if (aboutGaze && lookedThisTurn) {
+    discussed = lookedThisTurn;
+  } else if (named?.id || named?.product?.id) {
+    discussed = briefProduct(named.product || named);
+    voiceNamed = true;
+    const target = productTarget(discussed.id);
+    if (target) { gaze.setFocus(target); gaze.holdFocus(); }
+  }
+  persistShopper();
+  rememberSpokenOptions(text);
+  if (pendingConfirm?.kind === "options") {
+    if (/\b(?:never mind|cancel|stop)\b/i.test(text)) {
+      pendingConfirm = null;
+      bus.emit("SAY", { text: "Okay, left it." });
+      return;
+    }
+    finishOptions();
+    return;
+  }
+  if (discussed && !/^(?:please |can you |could you )?(?:scroll|go back|back|go forward|forward|page |search|find|look )\b/i.test(text)) {
+    pinDiscussed();
+  }
   inflight = true;
   try {
     const res = await fetch(url("/utterance"), {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text, context: context() }),
+      body: JSON.stringify({ text, context: context(text) }),
     });
     const out = await res.json();
+    // They kept talking, or entered private payment, while this request was out.
+    if (mine !== turnId || voice.isPrivateMode?.() || globalThis.__cueEnded) return;
     window.cue.lastActionUtterance = text;
     let completed = true;
     const fromModel = out.source === "grok";
-    for (const a of out.do ?? []) {
+    const staged = Array.isArray(out.ask) ? out.ask : (out.ask?.verb ? [out.ask] : null);
+    const plan = (out.do?.length ? out.do : staged) ?? [];
+    const namesItem = plan.some((a) => a.verb === "focus_nth" || a.verb === "focus_number");
+    const touchesProduct = plan.some((a) => PRODUCT_VERBS.has(a.verb));
+    if (completed && !namesItem && touchesProduct && discussed && !pinDiscussed()) {
+      bus.emit("SAY", { text: `I can't see the ${discussed.title} on screen any more.` });
+      completed = false;
+    }
+    for (const a of completed ? (out.do ?? []) : []) {
       // Second lock. The server's allowlist already refuses these from the
       // model; this is the one that survives a jailbreak, because it is the
       // page and not the prompt.
@@ -272,9 +501,15 @@ bus.on("UTTERANCE", async ({ text, final }) => {
     // The agent proposed something and asked first. Hold it: the shopper's
     // "yes" is what performs it. This is how Cue is allowed to buy — it never
     // commits on its own, it states exactly what it will do and waits.
-    const staged = Array.isArray(out.ask) ? out.ask : (out.ask?.verb ? [out.ask] : null);
-    if (staged?.length) {
+    if (completed && staged?.length) {
       pendingConfirm = { kind: "action", actions: staged, said: out.say ?? "" };
+    }
+    // Adopt the gazed card only when nothing has been named yet. A later look
+    // does not replace the item the words already picked.
+    if (!voiceNamed && !discussed && lookedThisTurn
+        && (out.source === "grok" || out.source === "fallback" || touchesProduct)) {
+      discussed = lookedThisTurn;
+      rememberSpokenOptions(text);
     }
     window.cue.lastActionUtterance = null;
     if (completed && out.say) bus.emit("SAY", { text: out.say });
@@ -351,11 +586,107 @@ function pickNumbered(n) {
   return badges.byNumber(n) ?? nth(n);
 }
 
-// The card the user is looking at. Every product-specific action is scoped to it.
+// Size and add use the item that was said. Gaze fills in only when nothing
+// has been discussed, or that card is no longer on screen.
 function scope() {
+  const pinned = discussed && productTarget(discussed.id);
+  if (pinned) return pinned.el;
   const f = gaze.getFocus();
   if (!f) return null;
   return f.kind === "product" ? f.el : f.el.closest("[data-cue-product],[data-aura-product]");
+}
+
+function productOn(card) {
+  if (!card) return null;
+  try {
+    return briefProduct(JSON.parse(card.dataset.cueProduct ?? card.dataset.auraProduct ?? "{}"));
+  } catch { return null; }
+}
+
+function productData(card) {
+  if (!card) return null;
+  try { return JSON.parse(card.dataset.cueProduct ?? card.dataset.auraProduct ?? "null"); }
+  catch { return null; }
+}
+
+function addButtonIn(root) {
+  if (!root) return null;
+  return [...root.querySelectorAll("button, [role=button], input[type=submit]")].find((el) => {
+    const name = controlName(el);
+    return /\badd\b/i.test(name) && !/address/i.test(name);
+  }) ?? null;
+}
+
+function addControl(card) {
+  const marked = card?.querySelector('[data-cue-action="add_to_cart"],[data-aura-action="add_to_cart"]');
+  if (marked) return marked;
+  const inside = addButtonIn(card);
+  if (inside) return inside;
+  const visible = scan().filter((t) => t.kind === "product");
+  if (discussed && visible.length === 1 && visible[0].id === discussed.id) return addButtonIn(document.body);
+  return null;
+}
+
+function visibleProducts() {
+  return scan().filter((t) => t.kind === "product").map((t) => t.product);
+}
+
+// What the eyes are on, read before scope() pins the spoken item.
+function gazedProduct() {
+  const f = gaze.getFocus();
+  if (!f?.el) return null;
+  const el = f.kind === "product" ? f.el : f.el.closest?.("[data-cue-product],[data-aura-product]");
+  return productOn(el);
+}
+
+function rememberSpokenOptions(text) {
+  const data = productData(scope());
+  if (!data?.id) return;
+  if (stated.id !== data.id) stated = { id: data.id, size: null, color: null };
+  const heard = matchOptions(text, data);
+  if (heard.size) stated.size = heard.size;
+  if (heard.color) stated.color = heard.color;
+  persistShopper();
+  if (data.variants?.length === 1) stated.size = data.variants[0];
+  if (data.colors?.length === 1) stated.color = data.colors[0].name;
+}
+
+function applyStated(card) {
+  if (!card || stated.id !== productOn(card)?.id) return;
+  if (stated.size) {
+    card.querySelector(`[data-aura-action="select_variant"][data-aura-value="${CSS.escape(stated.size)}"],` +
+      `[data-cue-action="select_variant"][data-cue-value="${CSS.escape(stated.size)}"]`)?.click();
+  }
+  if (stated.color) {
+    card.querySelector(`[data-aura-action="select_color"][data-aura-value="${CSS.escape(stated.color)}"]`)?.click();
+  }
+}
+
+function finishOptions() {
+  const data = productData(scope());
+  if (!data) {
+    pendingConfirm = null;
+    bus.emit("SAY", { text: "I can't see that item any more." });
+    return;
+  }
+  const missing = missingChoices(data, stated);
+  if (missing.size || missing.color) {
+    bus.emit("SAY", { text: optionPrompt(data.title, missing, data) });
+    return;
+  }
+  pendingConfirm = null;
+  pinDiscussed();
+  perform("add_to_cart", {});
+}
+
+// Move focus onto the item being discussed, so a size or add that follows
+// cannot land on whatever the eyes have drifted onto.
+function pinDiscussed() {
+  const target = productTarget(discussed?.id);
+  if (!target) return false;
+  gaze.setFocus(target);
+  gaze.holdFocus();
+  return true;
 }
 
 // Words that COMMIT: they complete a payment or enrol a credential. These may
@@ -370,39 +701,73 @@ const COMMIT_VERBS = new Set(["confirm", "approve_checkout", "setup_passkey"]);
 const checkoutOpen = () =>
   !!(document.getElementById("checkout-dialog")?.open && window.cueCheckout);
 
-// The nearest ancestor of the focused element that can actually scroll in the
-// requested axis. Returns null when that is just the page.
-function scrollableUnderGaze(horizontal) {
-  let el = gaze.getFocus()?.el ?? null;
-  while (el && el !== document.body && el !== document.documentElement) {
-    const st = getComputedStyle(el);
-    const flow = horizontal ? st.overflowX : st.overflowY;
-    const room = horizontal
-      ? el.scrollWidth - el.clientWidth
-      : el.scrollHeight - el.clientHeight;
-    if (/(auto|scroll)/.test(flow) && room > 8) return el;
-    el = el.parentElement;
+function canScroll(el, horizontal) {
+  if (!el) return false;
+  const st = getComputedStyle(el);
+  const flow = horizontal ? st.overflowX : st.overflowY;
+  const room = horizontal ? el.scrollWidth - el.clientWidth : el.scrollHeight - el.clientHeight;
+  return room > 12 && /(auto|scroll|overlay)/.test(flow);
+}
+
+// Many shops leave the window still and scroll a panel instead. Walk from the
+// point under the gaze, then the biggest panel on the page.
+let hostScroller = null, hostAt = 0;
+function pageScroller() {
+  const t = performance.now();
+  if (t - hostAt < 800) return hostScroller;
+  hostAt = t;
+  const root = document.scrollingElement || document.documentElement;
+  if (root.scrollHeight - root.clientHeight > 40) { hostScroller = null; return null; }
+  let best = null, room = 40;
+  const nodes = document.querySelectorAll("main, [role='main'], body > div, body > div > div");
+  for (const el of nodes) {
+    if (el.id === "aura-root" || el.closest?.("#aura-root")) continue;
+    if (el.clientHeight < innerHeight * 0.45) continue;
+    const extra = el.scrollHeight - el.clientHeight;
+    if (extra <= room) continue;
+    if (!/(auto|scroll|overlay)/.test(getComputedStyle(el).overflowY)) continue;
+    room = extra; best = el;
   }
-  return null;
+  hostScroller = best;
+  return best;
+}
+
+function scrollerAt(x, y, horizontal) {
+  const stack = document.elementsFromPoint?.(x, y) || [document.elementFromPoint(x, y)].filter(Boolean);
+  for (const hit of stack) {
+    if (!hit || hit.id === "aura-root" || hit.closest?.("#aura-root")) continue;
+    let el = hit;
+    while (el && el !== document.documentElement) {
+      if (canScroll(el, horizontal)) return el;
+      el = el.parentElement;
+    }
+  }
+  return pageScroller();
+}
+
+function scrollAmount(x, y, delta, horizontal) {
+  const box = scrollerAt(x, y, horizontal);
+  const key = horizontal ? "left" : "top";
+  if (box) box.scrollBy({ [key]: delta, behavior: "instant" });
+  else window.scrollBy({ [key]: delta, behavior: "instant" });
 }
 
 // What is about to go in the bag, in the words the shopper will hear. For some
 // users this is the only description of the purchase they get, so it names the
 // item, the chosen options and the price.
 function describeAdd(card) {
-  let p = {};
-  try { p = JSON.parse(card?.dataset?.cueProduct ?? card?.dataset?.auraProduct ?? "{}"); } catch {}
+  const p = productData(card) || {};
   const title = p.title ?? "this one";
-  const size = card?.querySelector('.variants [aria-pressed="true"]')?.dataset?.auraValue
-            ?? card?.querySelector('[data-cue-action="select_variant"][aria-pressed="true"]')?.dataset?.cueValue;
-  const color = card?.querySelector('.colors [aria-pressed="true"]')?.dataset?.auraValue;
-  const needsSize = !!card?.querySelector('.variants [data-aura-action="select_variant"]') && !size;
-  const bits = [title, color, size && `size ${size}`].filter(Boolean);
+  const size = stated.id === p.id ? stated.size : null;
+  const color = stated.id === p.id ? stated.color : null;
+  const missing = missingChoices(p, { size, color });
+  const bits = [title, color, size && size !== "One size" && `size ${size}`].filter(Boolean);
   const price = typeof p.price === "number" ? `, $${p.price.toFixed(2)}` : "";
-  return { title, size, color, missing: needsSize, line: `${bits.join(", ")}${price}.` };
+  return { title, size, color, missing, line: `${bits.join(", ")}${price}.` };
 }
 
 function perform(verb, args, opts = {}) {
+  if (voice.isPrivateMode?.() && !["approve_checkout", "cancel_checkout", "setup_passkey", "confirm", "cancel"].includes(verb)) return false;
   // While the passkey dialog is up, nothing else may act — but recalibrate
   // and confirm/cancel must still get through, or losing tracking mid-dialog
   // traps you in it with no way out.
@@ -416,21 +781,17 @@ function perform(verb, args, opts = {}) {
     case "scroll":
       if (!["up", "down", "left", "right", "top", "bottom"].includes(args.dir)) return false;
       if (args.dir === "top" || args.dir === "bottom") {
-        scrollTo({ top: args.dir === "top" ? 0 : document.documentElement.scrollHeight, behavior: "smooth" });
+        const box = pageScroller();
+        const top = args.dir === "top" ? 0 : (box ? box.scrollHeight : document.documentElement.scrollHeight);
+        (box || window).scrollTo({ top, behavior: "smooth" });
       } else {
         const horizontal = args.dir === "left" || args.dir === "right";
         const step = args.dir === "up" || args.dir === "left" ? -1 : 1;
-        // Scroll whatever actually scrolls under the gaze — a drawer, a filter
-        // rail, a dialog — falling back to the window. Always scrolling the
-        // window looks like nothing happened when the content is in a panel.
-        const box = scrollableUnderGaze(horizontal);
-        if (box) {
-          box.scrollBy({ [horizontal ? "left" : "top"]:
-            step * (horizontal ? box.clientWidth : box.clientHeight) * 0.75, behavior: "smooth" });
-          break;
-        }
-        scrollBy({ [horizontal ? "left" : "top"]: step * (horizontal ? innerWidth : innerHeight) * 0.75,
-          behavior: "smooth" });
+        const box = scrollerAt(innerWidth / 2, innerHeight / 2, horizontal);
+        const amount = step * ((box ? (horizontal ? box.clientWidth : box.clientHeight)
+          : (horizontal ? innerWidth : innerHeight)) * 0.75);
+        if (box) box.scrollBy({ [horizontal ? "left" : "top"]: amount, behavior: "smooth" });
+        else window.scrollBy({ [horizontal ? "left" : "top"]: amount, behavior: "smooth" });
       }
       break;
     case "history":
@@ -442,24 +803,48 @@ function perform(verb, args, opts = {}) {
     // locally (the few near your gaze) while nth() counts every product on the
     // page, so resolving them differently would make the two phrasings disagree
     // — and the user has no way to know which one Cue is using.
+    case "describe_number": {
+      const item = badges.byNumber(args.n);
+      bus.emit("SAY", { text: item ? `${args.n} is ${item.label}.` : "That number isn't on screen." });
+      break;
+    }
     case "focus_nth":
     case "focus_number": {
       const t = pickNumbered(args.n);
       if (!t) {
-        const total = scan().filter((x) => x.kind === "product").length;
-        bus.emit("SAY", { text: `I only see ${total} item${total === 1 ? "" : "s"}.` });
+        const shown = badges.getShown().length;
+        bus.emit("SAY", { text: shown
+          ? `I only have ${shown} things numbered.`
+          : "I don't see anything numbered yet." });
         return false;
+      }
+      // A number on a button opens it. A number on a product only focuses it,
+      // so "two" cannot add to the bag by itself. Money buttons stay the same.
+      if (t.kind === "control") {
+        gaze.setFocus(t);
+        if (/add to|checkout|check out|buy now|\bpay\b|place order/i.test(t.label)) {
+          bus.emit("SAY", { text: `${t.label}. Say it if you want me to use it.` });
+          break;
+        }
+        bus.emit("SAY", { text: `Opening ${t.label}.` });
+        t.el.click();
+        break;
       }
       // Naming an item tells us exactly where the eyes were. Hand that back to
       // the tracker as a true training pair — the one moment we have ground
       // truth, and it is free.
       if (gaze.learnFromSelection(t)) persistCalibration();
       gaze.setFocus(t);
-      if (t.kind === "product") comparisons.remember(t.product);
+      voiceNamed = true;
+      if (t.kind === "product") {
+        discussed = briefProduct(t.product);
+        comparisons.remember(t.product);
+        persistShopper();
+      }
       break;
     }
-    case "recalibrate":
-      recalibrate();
+    case "stop_cue":
+      stopCue();
       break;
     case "click_focused": {
       const target = gaze.getFocus();
@@ -476,6 +861,7 @@ function perform(verb, args, opts = {}) {
         `[data-aura-action="select_variant"][data-aura-value="${CSS.escape(String(args.value).toUpperCase())}"]`);
       if (!el) { bus.emit("SAY", { text: `I don't see size ${args.value} on this one.` }); return false; }
       el.click();
+      if (stated.id) stated.size = String(args.value).toUpperCase();
       break;
     }
     case "select_color": {
@@ -484,29 +870,39 @@ function perform(verb, args, opts = {}) {
         `[data-aura-action="select_color"][data-aura-value="${CSS.escape(value)}"]`);
       if (!el) { bus.emit("SAY", { text: `I don't see ${value} on this one.` }); return false; }
       el.click();
+      if (stated.id) stated.color = value;
       break;
     }
     case "add_to_cart": {
       // MUST be scoped to what they were looking at. A global querySelector here
       // adds the first product on the page — i.e. charges for the wrong item.
       const card = scope();
-      const el = card?.querySelector('[data-cue-action="add_to_cart"],[data-aura-action="add_to_cart"]');
-      if (!el) { bus.emit("SAY", { text: "Look at the item you want first." }); return false; }
+      const named = discussed?.title;
+      const el = addControl(card);
+      if (!el) {
+        bus.emit("SAY", { text: named
+          ? `I heard ${named}, but I don't see an add button for it on this page.`
+          : "Tell me which item to add." });
+        return false;
+      }
 
       // The bag is where a wrong item first gets in, and at 300px of gaze
       // error that is a live possibility on every add. So an add is read back
       // and waits, exactly like a charge. Done here rather than per-caller so
       // the spoken command and the agent are held to the same bar.
       if (!opts.confirmed) {
+        applyStated(card);
         const d = describeAdd(card);
-        if (d.missing) {
-          bus.emit("SAY", { text: `Which size for the ${d.title}?` });
+        if (d.missing.size || d.missing.color) {
+          pendingConfirm = { kind: "options" };
+          bus.emit("SAY", { text: optionPrompt(d.title, d.missing, productData(card)) });
           return false;
         }
         pendingConfirm = { kind: "add", el, said: d.line };
         bus.emit("SAY", { text: `${d.line} Add it?` });
         break;
       }
+      applyStated(card);
 
       const before = window.CART?.().length;
       el.click();
@@ -588,7 +984,7 @@ function perform(verb, args, opts = {}) {
       if (window.cueCheckout?.register) window.cueCheckout.register();
       else bus.emit("SAY", { text: "There's no passkey set-up on this page." });
       break;
-    case "recalibrate":
+    case "recalibrate": {
       const cameraUnavailable = gaze.getState().mode !== "webgazer" || !gaze.getState().running;
       if (gaze.getState().mode !== "webgazer") {
         bus.emit("SAY", { text: "Eye tracking is not running. I'll try the camera again." });
@@ -601,12 +997,30 @@ function perform(verb, args, opts = {}) {
       // the camera is still in mouse fallback mode.
       if (cameraUnavailable) return false;
       break;
+    }
     // "click the bag", "open women's coats", "go to checkout" — resolve a
     // spoken phrase against the page's own accessibility names and click it.
     // Works on a page nobody tagged for Cue, which is the whole point.
+    case "search": {
+      const q = String(args.query || "").trim().slice(0, 80);
+      if (q.length < 2) {
+        bus.emit("SAY", { text: "What should I search for?" });
+        return false;
+      }
+      void runSearch(q);
+      break;
+    }
     case "click_named":
     case "open_named": {
       const c = findControl(args.name ?? args.text ?? "");
+      const page = c ? null : matchPage(args.name ?? args.text ?? "", site);
+      if (!c && page?.url) {
+        const link = [...document.querySelectorAll("a[href]")].find((a) => a.href === page.url);
+        bus.emit("SAY", { text: `Opening ${page.name || page.title}.` });
+        if (link) link.click();
+        else location.assign(page.url);
+        break;
+      }
       if (!c) {
         const near = controls().slice(0, 6).map((x) => x.name).filter(Boolean);
         bus.emit("SAY", { text: near.length
@@ -705,7 +1119,9 @@ async function recalibrate() {
 export async function exitCue() {
   if (exited) return;
   exited = true;
+  globalThis.__cueEnded = true;
   pendingConfirm = null;
+  voice.exitPrivateMode?.();
   voice.stopListening();
   gaze.stop();
   badges.clear();
@@ -725,6 +1141,19 @@ export async function boot() {
   requestAnimationFrame(frame);
   const splash = CONFIG.injected && CONFIG.autoCal && !CONFIG.resuming
     ? playSplash(CONFIG.splashImage) : null;
+  const fetched = new Map();
+  const refreshSite = () => {
+    const point = gaze.getState?.().point;
+    crawlNear(document, location.href, (page) => {
+      if (!fetched.has(page)) {
+        fetched.set(page, fetch(page).then((res) => res.ok ? res.text() : "").catch(() => ""));
+      }
+      return fetched.get(page);
+    }, point, { workers: 2, limit: 3 }).then((found) => { if (!globalThis.__cueEnded) site = found; }).catch(() => {});
+  };
+  refreshSite();
+  document.addEventListener("routechange", refreshSite);
+  bus.on("STATE", (s) => { if (s.calibrated) refreshSite(); });
 
   // Ask for the mic BEFORE the camera prompt and before calibration. Chrome
   // will not reliably prompt for it later once a video stream is live, which
@@ -754,6 +1183,8 @@ export async function boot() {
     announced = true;
   } else if (actual === "webgazer" && CONFIG.autoCal) {
     await gaze.calibrate();
+  }
+  if (actual === "webgazer") {
     gaze.hideCamera();
     await persistCalibration();
     // calibrate() already said how it went and what to do next. Adding "Cue is
@@ -819,7 +1250,12 @@ bus.on("GAZE", ({ confidence }) => {
 
 // say() is how you drive Cue with no mic: from the console, from a test, or
 // from the on-stage fallback if the demo floor is too loud to be heard.
-const say = (text) => bus.emit("UTTERANCE", { text, final: true });
+const say = (text) => { if (!voice.isPrivateMode?.()) bus.emit("UTTERANCE", { text, final: true }); };
+
+function stopCue() {
+  void exitCue();
+}
+bus.on("STOP", stopCue);
 
 window.cue = { bus, gaze, voice, badges, context, perform, boot, say, recalibrate, exit: exitCue, CONFIG,
                measure: (...a) => gaze.measure(...a),

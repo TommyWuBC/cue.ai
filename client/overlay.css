@@ -1,6 +1,8 @@
 /* Cue's layer over any store page. Everything Cue draws lives here; the store's
    own styles never reach in. Falls back to system fonts on pages without base.css. */
 #aura-root {
+  display: block !important; visibility: visible !important; opacity: 1 !important;
+  position: fixed !important; inset: 0 !important; z-index: 2147483000 !important;
   --cue: #2f6bff; --cue-soft: rgba(47,107,255,.14);
   --cue-ink: #1d1d1f; --cue-muted: #6e6e73;
   --cue-font: var(--sans, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif);
@@ -22,7 +24,8 @@ body:has(dialog:modal) .aura-outline, body:has(dialog:modal) .cue-badges { displ
    longer applies and everything in here paints over the page. Hide the whole
    root during calibration rather than listing pieces: the HUD would cover the
    lower-left training point and the number badges floated over the dots. */
-body:has(.aura-cal) #aura-root { display: none; }
+body:has(.aura-cal) #aura-root,
+body:has(.cue-splash) #aura-root { display: none !important; visibility: hidden !important; }
 /* visibility:hidden was not enough: the dock's backdrop-filter still sampled
    and composited the page behind it, leaving a soft blue rectangle over the
    lower-left training point. */
@@ -42,7 +45,8 @@ body:has(.aura-cal) #aura-root { display: none; }
 body:has(.cue-splash) #aura-root { visibility: hidden; }
 
 /* ── Gaze ─────────────────────────────────────────────────────────────────── */
-.aura-reticle { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px;
+.aura-reticle { display: block !important; visibility: visible !important;
+  position: absolute !important; width: 18px; height: 18px; margin: -9px 0 0 -9px;
   border-radius: 50%; border: 1.5px solid rgba(47,107,255,.75); background: rgba(47,107,255,.1);
   box-shadow: 0 0 0 3px rgba(255,255,255,.7), 0 2px 10px rgba(47,107,255,.25);
   opacity: 0; transition: transform 70ms linear; will-change: transform; }
@@ -124,8 +128,10 @@ body:has(.cue-splash) #aura-root { visibility: hidden; }
   background: rgba(25,25,25,.92); border: 1px solid rgba(255,255,255,.14);
   box-shadow: 0 8px 28px rgba(0,0,0,.45);
   color: #f5f5f3; font: 14px var(--cue-font); letter-spacing: -.005em; }
-.aura-cal-dot { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px;
-  padding: 0; border: 0; border-radius: 50%; background: var(--cue); cursor: pointer;
+.aura-cal-dot { position: absolute; width: 22px !important; height: 22px !important;
+  min-width: 0 !important; min-height: 0 !important; max-width: none !important;
+  margin: -11px 0 0 -11px !important;
+  padding: 0 !important; border: 0; border-radius: 50%; background: var(--cue); cursor: pointer;
   box-shadow: 0 0 0 6px rgba(255,255,255,.16), 0 0 0 0 rgba(255,255,255,.35);
   transition: left .55s var(--cue-ease), top .55s var(--cue-ease), transform .2s var(--cue-ease);
   animation: cue-cal 1.6s ease-out infinite; }
@@ -134,6 +140,12 @@ body:has(.cue-splash) #aura-root { visibility: hidden; }
   box-shadow: 0 0 0 10px rgba(52,199,89,.18); }
 .aura-cal-dot.armed::after { background: #34c759; }
 @keyframes cue-cal { 70% { box-shadow: 0 0 0 6px rgba(255,255,255,.16), 0 0 0 26px rgba(255,255,255,0); } }
+/* A shop's own CSS must not stretch the camera preview. The face mesh is fit
+   to that video; a page rule of video { width: 100% } throws the gaze off. */
+#webgazerVideoContainer, #webgazerVideoFeed, #webgazerVideoCanvas,
+#webgazerFaceOverlay, #webgazerFaceFeedbackBox {
+  max-width: none !important; box-sizing: content-box !important;
+}
 
 @media (max-width: 520px) {
   .aura-hud { left: 12px; right: 12px; bottom: 12px; width: auto; }

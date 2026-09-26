@@ -7,49 +7,27 @@ import router
 
 
 class RouterTests(unittest.TestCase):
-    def test_recalibrate_command(self):
-        result = router.route('please recalibrate')
-        self.assertEqual(result['do'], [{'verb': 'recalibrate', 'args': {}}])
-
-    def test_unmatched_question_goes_to_agent(self):
-        self.assertIsNone(router.route('Is this wool?'))
-
-    def test_checkout_confirmation_and_passkey_setup(self):
+    def test_fast_path_is_only_the_exact_commands(self):
         self.assertEqual(router.route('yes')['do'][0]['verb'], 'approve_checkout')
-        self.assertEqual(router.route('set up passkey')['do'][0]['verb'], 'setup_passkey')
         self.assertEqual(router.route('no')['do'][0]['verb'], 'cancel_checkout')
-        self.assertEqual(router.route('cancel')['do'][0]['verb'], 'cancel_checkout')
-        self.assertIsNone(router.route('cancel checkout')['say'])
+        self.assertEqual(router.route('check out')['do'][0]['verb'], 'checkout')
+        self.assertEqual(router.route('end')['do'][0]['verb'], 'stop_cue')
+        self.assertEqual(router.route('two')['do'], [{'verb': 'focus_number', 'args': {'n': 2}}])
+        self.assertEqual(router.route("what's two")['do'], [{'verb': 'describe_number', 'args': {'n': 2}}])
+        self.assertEqual(router.route('set up passkey')['do'][0]['verb'], 'setup_passkey')
+        self.assertEqual(router.route('please recalibrate')['do'][0]['verb'], 'recalibrate')
 
-    def test_add_second_item_with_options_is_one_safe_sequence(self):
-        self.assertEqual(router.route('Add the second one in medium, in black')['do'], [
-            {'verb': 'focus_nth', 'args': {'n': 2}},
-            {'verb': 'select_variant', 'args': {'value': 'M'}},
-            {'verb': 'select_color', 'args': {'value': 'Black'}},
-            {'verb': 'add_to_cart', 'args': {}},
-        ])
-        self.assertEqual(router.route('Medium, in black. Add it')['do'][-1]['verb'], 'add_to_cart')
-        self.assertEqual(router.route('medium in black')['do'], [
-            {'verb': 'select_variant', 'args': {'value': 'M'}},
-            {'verb': 'select_color', 'args': {'value': 'Black'}},
-        ])
-
-    def test_questions_and_negations_do_not_act(self):
-        self.assertIsNone(router.route('Should I add it?'))
-        self.assertEqual(router.route("Don't add it")['do'], [])
-        self.assertEqual(router.route("Don't check out")['do'], [])
-        self.assertEqual(router.route('Add it in pink')['do'], [])
-        self.assertEqual(router.route('Add it but not in black')['do'], [])
-        self.assertEqual(router.route('Add it in size medium')['do'][:1], [
-            {'verb': 'select_variant', 'args': {'value': 'M'}},
-        ])
-        self.assertIsNone(router.route('Is this black?'))
-
-    def test_browser_navigation_is_explicit(self):
-        self.assertEqual(router.route('scroll to bottom')['do'], [{'verb': 'scroll', 'args': {'dir': 'bottom'}}])
-        self.assertEqual(router.route('page up')['do'], [{'verb': 'scroll', 'args': {'dir': 'up'}}])
-        self.assertEqual(router.route('go back')['do'], [{'verb': 'history', 'args': {'dir': 'back'}}])
-        self.assertEqual(router.route('click this')['do'], [{'verb': 'click_focused', 'args': {}}])
+    def test_everything_else_is_the_agents_job(self):
+        for phrase in (
+            'Is this wool?',
+            'Add the second one in medium, in black',
+            "Don't add it",
+            'search for wool coats',
+            'scroll to bottom',
+            'go back',
+            'find the second one',
+        ):
+            self.assertIsNone(router.route(phrase), phrase)
 
 
 if __name__ == '__main__':

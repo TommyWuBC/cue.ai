@@ -20,7 +20,7 @@ from webauthn import (
     options_to_json, verify_authentication_response, verify_registration_response,
 )
 from webauthn.helpers.structs import (
-    AuthenticatorSelectionCriteria, PublicKeyCredentialDescriptor,
+    AuthenticatorAttachment, AuthenticatorSelectionCriteria, PublicKeyCredentialDescriptor,
     ResidentKeyRequirement, UserVerificationRequirement,
 )
 from trust import AgentTrust
@@ -155,6 +155,7 @@ class Checkout:
             rp_id=self.rp_id, rp_name="Cue demo store", user_name="Cue shopper",
             user_id=b"cue-local-demo-shopper", challenge=challenge,
             authenticator_selection=AuthenticatorSelectionCriteria(
+                authenticator_attachment=AuthenticatorAttachment.PLATFORM,
                 resident_key=ResidentKeyRequirement.PREFERRED,
                 user_verification=UserVerificationRequirement.REQUIRED),
         )

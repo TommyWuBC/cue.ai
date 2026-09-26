@@ -38,6 +38,36 @@ test('a homepage recommendation is not mistaken for its main product', () => {
   assert.deepEqual(extract(doc, 'https://store.example/'), []);
 });
 
+test('a product card with no shop-specific class is still numbered', () => {
+  const card = {
+    ...visible,
+    textContent: 'Relaxed linen shirt',
+    closest: () => null,
+    querySelector: (sel) => sel.startsWith('h') ? { textContent: 'Relaxed linen shirt' } : null,
+  };
+  const link = {
+    href: 'https://shop.example/items/linen-shirt',
+    closest: (sel) => sel.includes('nav') ? null : card,
+    getAttribute: () => null,
+    querySelector: () => null,
+    textContent: 'Relaxed linen shirt',
+    getBoundingClientRect: visible.getBoundingClientRect,
+  };
+  card.querySelector = (sel) => sel.startsWith('h') ? { textContent: 'Relaxed linen shirt' } : null;
+  const doc = {
+    querySelectorAll: (selector) => {
+      if (selector.startsWith('script')) return [];
+      if (selector.includes('a[href]')) return [link];
+      return [];
+    },
+    querySelector: () => null,
+  };
+  const result = extract(doc, 'https://shop.example/shop');
+  assert.equal(result.length, 1);
+  assert.equal(result[0].product.title, 'Relaxed linen shirt');
+  assert.equal(result[0].el, card);
+});
+
 test('ambiguous prices are not presented as fact', () => {
   assert.equal(price('$120 $80'), null);
   assert.equal(price('$99.00$99.00'), 99);

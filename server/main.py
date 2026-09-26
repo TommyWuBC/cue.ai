@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-import fallback, router, stt, tts
+import fallback, memory, router, stt, tts
 from checkout import Checkout, CheckoutError
 from trust import TrustError, MERCHANT_PATH, MAX_BODY
 import httpx
@@ -16,6 +16,7 @@ import httpx
 ROOT = pathlib.Path(__file__).parent.parent
 app = FastAPI(title="Cue")
 checkout = Checkout()
+shopper = memory.ShopperMemory()
 
 
 # Injected into a third-party page, every call to us is cross-origin. This is
@@ -153,17 +154,23 @@ def merchant_orders():
 
 @app.post("/utterance")
 def utterance(u: Utterance):
+    session = (u.context or {}).get("session") if isinstance(u.context, dict) else None
     fast = router.route(u.text)
     if fast:
+        shopper.note(session, u.text, fast)
         return _trace(u.text, fast)
     if os.getenv("XAI_API_KEY"):
         try:
             import agent
-            return _trace(u.text, agent.respond(u.text, u.context))
+            out = agent.respond(u.text, u.context, shopper.prompt_block(session))
+            shopper.note(session, u.text, out)
+            return _trace(u.text, out)
         except Exception as e:
             # Never let a dead key or saturated venue wifi kill the demo.
             print(f"[agent] {type(e).__name__}: {e} -> falling back to local answerer", flush=True)
-    return _trace(u.text, fallback.answer(u.text, u.context))
+    out = fallback.answer(u.text, u.context)
+    shopper.note(session, u.text, out)
+    return _trace(u.text, out)
 
 
 # ── Speech in ───────────────────────────────────────────────────────────────

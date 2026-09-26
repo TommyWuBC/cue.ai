@@ -206,6 +206,22 @@ added whatever the eyes had drifted onto — effectively random at 242px. Every
 utterance now calls `gaze.holdFocus()`. Gaze regains control once the
 conversation stops.
 
+The product a turn was about is `discussed`. A product named in the sentence
+(`client/intent.js`) replaces it. Looking somewhere else does not, except
+"this one" or "the one I'm looking at". Size and color are recorded only
+when spoken — the card's default color is not a choice — and an add asks for
+whichever of them is still missing before the readback. "Search for wool coats" uses whatever search field is on the page. If the
+shop only shows a search icon, Cue opens that control, then types. A few
+same-origin pages already linked from the current page are read so Cue can
+open a section by name. Product numbers come from visible cards, not from
+one shop's class names. Buttons and icons near the gaze are numbered too, and
+saying that number opens them. Add-to-bag and checkout stay spoken on purpose.
+Edge scrolling follows whichever box is actually scrolling under the gaze.
+Many shops do not scroll the window. Learning extra pages happens in the
+background and does not delay calibration. Edge scroll sits
+between the original hold and the looser one: 330ms to start, 150px from the
+edge, and about 180ms of slack once it is moving.
+
 ### The filter
 
 One Euro, not an EMA. `client/gaze.js` top of file.
@@ -345,6 +361,12 @@ it had failed when it had actually worked.
 
 ---
 
+## The agent is the brain
+
+`server/router.py` is a latency shortcut, not the understanding. It handles an exact handful: yes, no, checkout, a bare number, "what's two", "Cue, end", recalibrate, and passkey setup. Those last two stay there because the page refuses them when they come from the model. Every other phrase goes to `server/agent.py`.
+
+The model sees the last ten turns of this browser tab, plus a shopper profile that survives visits. Both live in the same SQLite file as orders (`server/memory.py`, shopper id `local`, session id from the tab). The profile records sizes, colours, price sensitivity, and short notes from what the shopper actually said, and recent purchases are read from the orders table. There is no account login.
+
 ## Who says what
 
 The **page** announces outcomes only it can know: "Added.", the over-budget
@@ -448,6 +470,11 @@ the whole sequence was already read back; otherwise a yes would ask again.
 
 ## Nothing charges on one utterance
 
+`checkout` opens private payment mode first (`store/private-payment.js`).
+The microphone and speaker turn off. The shopper dwells on a gaze keypad to
+enter the fictional demo card shown on screen. Only a matching fixture
+continues to the order review. Looking at Approve with passkey opens the
+Mac passkey prompt, which on this laptop is Touch ID. Nothing is charged.
 `checkout` **stages** an order and reads it back — item, total, remaining
 budget. A separate `confirm` completes it. Budget is enforced at add time, in
 the page, not at checkout.
@@ -573,10 +600,13 @@ Everything it touches (`render`, `ui.*`, `badges`) must exist before boot.
 - The HUD has no Shadow DOM, so host-page CSS will leak into it.
 - `window.cueStore` is provided only by the demo store, so checkout/confirm is
   dead on any other page.
-- `extension/` now contains an experimental Chrome content script adapter.
-  It tags visible products and imports the same client modules in the page's
-  viewport. Build it with `python3 tools/build-extension.py`. Checkout remains
-  on the demo store. Reload the tab to stop an injected session.
+- `extension/` is the Chrome adapter. The shopper approves a store once from
+  the toolbar icon. Later visits to that store start Cue on their own, show
+  the logo, then calibrate. Moving to another page on the same store restores
+  the gaze model and skips the logo and the dots. "Cue, end" or "Cue, exit"
+  stops the camera and pauses that tab until the icon is clicked again.
+  Build it with `python3 tools/build-extension.py`. Checkout remains on the
+  demo store.
 
 ## Things that are true and surprising
 

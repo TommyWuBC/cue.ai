@@ -2,6 +2,7 @@
 // time — see CLAUDE.md "Nothing spends money on one utterance"), and every
 // surface that shows it: header count, bag bar, drawer, toast, order review.
 import { setupCheckout } from "/checkout.js";
+import { setupPrivatePayment } from "/private-payment.js";
 import { photo, money, cents, byId } from "./data.js";
 import { esc } from "./util.js";
 
@@ -136,23 +137,31 @@ const flow = setupCheckout({
   clearCart: () => {
     const placed = cart.length;
     cart = []; changed();
-    if (placed) toast({ id: "", title: "Approved with your passkey. No card was charged.", color: "" }, "Order placed");
+    if (placed) toast({ id: "", title: "Demo order recorded. No charge occurred.", color: "" }, "Demo order confirmed");
   },
   onStatus: s => {
     limits = { remaining: s.remaining_cents, order: s.order_limit_cents,
       monthly: s.monthly_limit_cents ?? limits.monthly, passkey: s.passkey_registered };
+    window.cueBudget = { remaining: limits.remaining, order: limits.order };
     changed();
   },
   onPrepared: pending => review(pending.items, pending.total_cents),
 });
+const privatePayment = setupPrivatePayment({
+  onApproved: () => {
+    if (cart.length) review(cart, total());
+    return flow.prepare();
+  },
+});
+
 window.checkout = () => {
   if (bag.open) bag.close();
-  if (cart.length) review(cart, total());
-  return flow.prepare();
+  if (!cart.length) { window.cue?.bus.emit("SAY", { text: "Your cart is empty." }); return; }
+  return privatePayment.start({ total: total() });
 };
 // aura.js calls cueCheckout.prepare() directly for "check out"; route it
 // through the same path so the bag drawer closes and the review fills first.
-window.cueCheckout = { ...flow, prepare: window.checkout };
+window.cueCheckout = { ...flow, prepare: window.checkout, privatePayment };
 window.CART = () => cart;
 
 // Voice needs a way OUT of the bag, not just in. Gaze picks the wrong item
