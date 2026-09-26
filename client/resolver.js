@@ -35,7 +35,8 @@ export function scan() {
   const out = [];
   for (const el of document.querySelectorAll(PRODUCT_SEL)) {
     const r = el.getBoundingClientRect();
-    if (r.width === 0 || r.bottom < 0 || r.top > (globalThis.innerHeight ?? Infinity)) continue;
+    const g = globalThis, vw = g.innerWidth ?? Infinity, vh = g.innerHeight ?? Infinity;
+    if (r.width === 0 || r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
     let product;
     try { product = JSON.parse(productJson(el)); }
     catch { console.warn("[cue] bad product json", el); continue; }
@@ -43,12 +44,11 @@ export function scan() {
   }
   for (const el of document.querySelectorAll(ACTION_SEL)) {
     const r = el.getBoundingClientRect();
-    if (r.width === 0 || r.bottom < 0 || r.top > (globalThis.innerHeight ?? Infinity)) continue;
+    const g = globalThis, vw = g.innerWidth ?? Infinity, vh = g.innerHeight ?? Infinity;
+    if (r.width === 0 || r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
     const verb = actionVerb(el);
-    // Scope the id to the owning product, not to rect.top. Mine embedded the
-    // y position, so every id changed on scroll and focus could never be held
-    // across one. Theirs is right; this keeps it while still honouring the
-    // data-cue-* spelling.
+    // Scope the id to the owning product, not to rect.top: mine embedded the y
+    // position so every id changed on scroll. Honour both attribute spellings.
     const owner = el.closest(PRODUCT_SEL);
     let productId = "page";
     if (owner) {

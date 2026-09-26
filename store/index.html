@@ -3,144 +3,412 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Northfield — Outerwear</title>
+<title>Coats &amp; jackets | Northfield</title>
+<meta name="theme-color" content="#ffffff">
+<link rel="preload" href="/assets/fonts/geist.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/newsreader.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/base.css">
+<link rel="stylesheet" href="/store.css">
 <link rel="stylesheet" href="/client/overlay.css">
-<style>
-  :root { --ink:#15171f; --muted:#6b7280; --line:#e6e7eb; --bg:#fbfbfc; }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink);
-         font:15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",sans-serif; }
-  header { padding:26px 40px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:20px;
-           background:#fff; position:sticky; top:0; z-index:10; }
-  header h1 { font-size:20px; margin:0; letter-spacing:-.02em; }
-  header span { color:var(--muted); font-size:13px; }
-  .cart { margin-left:auto; font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; }
-  .cart b { color:var(--ink); }
-  .cart.over b#budget { color:#c0392b; }
-  main { max-width:1160px; margin:0 auto; padding:36px 40px 120px; }
-  h2 { font-size:15px; font-weight:600; margin:0 0 20px; color:var(--muted); letter-spacing:.04em; text-transform:uppercase; }
-  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:26px; }
-  .card { background:#fff; border:1px solid var(--line); border-radius:16px; overflow:hidden; }
-  .swatch { height:230px; }
-  .body { padding:16px 18px 18px; }
-  .title { font-weight:600; margin:0 0 4px; letter-spacing:-.01em; }
-  .price { font-variant-numeric:tabular-nums; }
-  .meta { color:var(--muted); font-size:13px; margin-top:6px; }
-  .variants { display:flex; gap:7px; margin-top:14px; flex-wrap:wrap; }
-  .variants button { border:1px solid var(--line); background:#fff; border-radius:9px; padding:7px 13px;
-                     font:inherit; font-size:13px; cursor:pointer; }
-  .variants button[aria-pressed="true"] { border-color:var(--ink); background:var(--ink); color:#fff; }
-  .actions { display:flex; gap:10px; margin-top:16px; }
-  .actions button { flex:1; border:0; border-radius:11px; padding:12px; font:inherit; font-weight:600; cursor:pointer; }
-  .add { background:#1a1f71; color:#fff; }
-  .checkout-bar { position:fixed; right:24px; bottom:24px; }
-  .checkout-bar button { background:#f7b600; border:0; border-radius:13px; padding:15px 26px;
-                         font:inherit; font-weight:700; font-size:15px; cursor:pointer;
-                         box-shadow:0 10px 28px rgba(0,0,0,.16); }
-  .merchant-link { color:#1a1f71; font-size:13px; }
-  #checkout-dialog { width:min(92vw,520px); border:0; border-radius:18px; padding:28px;
-                     box-shadow:0 24px 80px rgba(0,0,0,.28); color:var(--ink); }
-  #checkout-dialog::backdrop { background:rgba(14,16,28,.65); }
-  #checkout-dialog h2 { margin:0 0 12px; color:var(--ink); font-size:21px; text-transform:none; }
-  #checkout-dialog p { margin:10px 0; }
-  .checkout-details { font-weight:600; }
-  .checkout-message { min-height:40px; color:#5b4210; }
-  .checkout-controls { display:flex; gap:9px; flex-wrap:wrap; margin-top:20px; }
-  .checkout-controls button { border:0; border-radius:9px; padding:11px 14px; font:inherit; font-weight:600; cursor:pointer; }
-  .checkout-approve { background:#1a1f71; color:#fff; }
-  .checkout-setup { background:#f7b600; color:#191919; }
-  .checkout-controls button:disabled { opacity:.45; cursor:not-allowed; }
-</style>
 </head>
 <body>
-<header>
-  <h1>Northfield</h1><span>Outerwear · Autumn</span>
-  <div class="cart" id="cartbar">Cart <b id="count">0</b> · Budget left <b id="budget">$250</b></div>
-  <a class="merchant-link" href="/merchant.html" target="_blank" rel="noopener">Merchant view</a>
-</header>
-<main><h2>Jackets &amp; Coats</h2><div class="grid" id="grid"></div></main>
-<div class="checkout-bar" id="checkoutbar">
-  <button data-cue-action="checkout" data-cue-label="Check out" onclick="window.cue?.perform('checkout', {})">Check out</button>
+<div class="notice">
+  <div class="notice-inner">
+    <span>Free shipping over $150 and free returns within 30 days</span>
+    <a href="/merchant.html" target="_blank" rel="noopener">Merchant view</a>
+  </div>
 </div>
+
+<header class="site-header" id="site-header">
+  <div class="header-inner">
+    <a class="wordmark" href="/">Northfield</a>
+    <nav class="nav" aria-label="Main">
+      <a href="#collection">New in</a>
+      <a href="#collection" aria-current="page">Coats &amp; jackets</a>
+      <a href="#collection">Knitwear</a>
+      <a href="#stories">Journal</a>
+    </nav>
+    <div class="tools">
+      <label class="search">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="7" cy="7" r="5.2"/><path d="M11 11l3.5 3.5" stroke-linecap="round"/></svg>
+        <span class="visually-hidden">Search</span>
+        <input id="search" type="search" placeholder="Search" autocomplete="off">
+      </label>
+      <button class="icon-btn" id="bag-open" type="button" aria-label="Bag, 0 items">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 8h14l-1 12.2a1 1 0 0 1-1 .8H7a1 1 0 0 1-1-.8L5 8z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8" stroke-linecap="round"/></svg>
+        <span class="bag-count" id="count">0</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="hero-frame">
+      <img src="/assets/editorial/hero-2.jpg" alt="" fetchpriority="high">
+      <div class="hero-copy">
+        <h2>For the first cold morning</h2>
+        <p>Wool coats, quilted jackets and soft knits, cut to layer through autumn.</p>
+        <a class="btn" href="#collection">Shop the collection</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="collection" id="collection">
+    <p class="crumbs"><a href="/">Home</a><span>/</span>Outerwear</p>
+    <div class="collection-head">
+      <h1>Coats &amp; jackets<small id="result-count"></small></h1>
+      <label class="sort">Sort by
+        <select id="sort">
+          <option value="featured">Featured</option>
+          <option value="price-asc">Price, low to high</option>
+          <option value="price-desc">Price, high to low</option>
+          <option value="rating">Top rated</option>
+        </select>
+      </label>
+    </div>
+    <div class="grid" id="grid"></div>
+    <p class="drawer-empty" id="no-results" hidden>No styles match that search.</p>
+  </section>
+
+  <section class="stories" id="stories">
+    <a class="story" href="#collection">
+      <img src="/assets/editorial/cat-coats.jpg" alt="" loading="lazy">
+      <div><h3>The long coat</h3><p>Four ways to wear it this season</p></div>
+    </a>
+    <a class="story" href="#collection">
+      <img src="/assets/editorial/cat-knitwear.jpg" alt="" loading="lazy">
+      <div><h3>Knitwear, explained</h3><p>Merino, rib and how to care for both</p></div>
+    </a>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <span class="wordmark">Northfield</span>
+      <p>Outerwear made to be worn for years, and repaired when it needs to be.</p>
+    </div>
+    <div><h4>Help</h4><ul><li><a href="#">Shipping</a></li><li><a href="#">Returns</a></li><li><a href="#">Size guide</a></li><li><a href="#">Contact us</a></li></ul></div>
+    <div><h4>About</h4><ul><li><a href="#">Materials</a></li><li><a href="#">Repairs</a></li><li><a href="#">Stores</a></li></ul></div>
+    <div><h4>Shopping with Cue</h4><ul><li><a href="/merchant.html" target="_blank" rel="noopener">Merchant view</a></li><li>Hold space to talk</li><li>Say “Cue, recalibrate”</li></ul></div>
+    <div class="footer-legal">
+      <span>© 2026 Northfield. A demo store built for HackGT.</span>
+      <span>Orders are recorded and approved with a passkey. No card is charged.</span>
+    </div>
+  </div>
+</footer>
+
+<!-- The one checkout target on the page: big, fixed, easy to look at. -->
+<button class="bag-bar" id="bag-bar" type="button" data-aura-action="checkout" data-aura-label="Check out" onclick="checkout()">
+  <span class="bag-thumbs" id="bag-thumbs"></span>
+  <span class="bag-sum"><small id="bag-items">0 items</small><b class="tabular" id="bag-total">$0.00</b></span>
+  <span class="bag-go">Check out</span>
+</button>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<dialog class="drawer" id="bag" aria-labelledby="bag-title">
+  <div class="drawer-head">
+    <h2 id="bag-title">Your bag</h2>
+    <button class="icon-btn" type="button" data-close aria-label="Close bag">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body" id="bag-lines"></div>
+  <div class="drawer-foot" id="bag-foot">
+    <div class="subtotal"><span>Subtotal</span><b class="tabular" id="bag-subtotal">$0.00</b></div>
+    <div class="limits" id="bag-limits"></div>
+    <button class="btn btn-primary" type="button" id="bag-checkout">Check out</button>
+  </div>
+</dialog>
+
 <dialog id="checkout-dialog" aria-labelledby="checkout-title">
-  <h2 id="checkout-title">Review demo order</h2>
-  <p class="checkout-details"></p>
-  <p class="checkout-message" role="status" aria-live="polite"></p>
-  <div class="checkout-controls">
-    <button class="checkout-setup" type="button" disabled>Set up passkey</button>
-    <button class="checkout-approve" type="button" disabled>Approve with passkey</button>
-    <button class="checkout-cancel" type="button">Cancel</button>
+  <div class="review">
+    <div class="review-head">
+      <h2 id="checkout-title">Review your order</h2>
+      <p>Cue will read this back before anything is approved.</p>
+    </div>
+    <ul class="review-lines" id="review-lines"></ul>
+    <p class="checkout-details visually-hidden"></p>
+    <div class="review-total"><span>Total</span><b class="tabular" id="review-total"></b></div>
+    <div class="limits" id="review-limits"></div>
+    <div class="approval" id="approval">
+      <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M4 12V8a4 4 0 0 1 4-4h4M28 4h4a4 4 0 0 1 4 4v4M36 28v4a4 4 0 0 1-4 4h-4M12 36H8a4 4 0 0 1-4-4v-4"/>
+        <path d="M14 14v3M26 14v3M20 14v8h-2M15 27c3 2.4 7 2.4 10 0"/>
+      </svg>
+      <p class="checkout-message" role="status" aria-live="polite"></p>
+    </div>
+    <div class="checkout-controls">
+      <button class="btn btn-quiet checkout-cancel" type="button">Cancel</button>
+      <button class="btn btn-secondary checkout-setup" type="button" disabled>Set up passkey</button>
+      <button class="btn btn-trust checkout-approve" type="button" disabled>Approve with passkey</button>
+    </div>
   </div>
 </dialog>
 
 <script type="module">
 import { setupCheckout } from "/checkout.js";
+import { photo, altPhoto, MERCH, money } from "/catalog.js";
+
 const PRODUCTS = await fetch("/products.json").then(r => r.json());
-const grid = document.getElementById("grid");
-let cart = [], remaining = 25000;
-const money = cents => "$" + (cents / 100).toFixed(2);
-function renderCart() {
-  const left = remaining - cart.reduce((sum, p) => sum + Math.round(p.price * 100), 0);
-  document.getElementById("count").textContent = cart.length;
-  document.getElementById("budget").textContent = money(left);
-  document.getElementById("cartbar").classList.toggle("over", left < 0);
-}
-const checkoutFlow = setupCheckout({
-  getCart: () => cart,
-  clearCart: () => { cart = []; renderCart(); },
-  onStatus: status => { remaining = status.remaining_cents; renderCart(); },
-});
-window.cueCheckout = checkoutFlow;
-window.checkout = checkoutFlow.prepare;
+const $ = id => document.getElementById(id);
+const grid = $("grid");
+const cents = p => Math.round(p.price * 100);
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
-grid.innerHTML = PRODUCTS.map(p => `
-  <article class="card" data-cue-product='${JSON.stringify(p).replace(/'/g, "&#39;")}'>
-    <div class="swatch" style="background:linear-gradient(150deg,${p.tone},${p.tone}bb)"></div>
-    <div class="body">
-      <p class="title">${p.title}</p>
-      <div class="price">$${p.price.toFixed(2)}</div>
-      <div class="meta">${p.attrs.material.split(",")[0]} · ★ ${p.attrs.rating} (${p.attrs.reviews})</div>
-      <div class="variants">${p.variants.map(v => `
-        <button data-cue-action="select_variant" data-cue-value="${v}"
-                data-cue-label="Size ${v}" aria-pressed="false">${v}</button>`).join("")}</div>
-      <div class="actions">
-        <button class="add" data-cue-action="add_to_cart" data-cue-label="Add ${p.title} to cart"
-                data-id="${p.id}">Add to cart</button>
-      </div>
+let cart = [];
+let limits = { remaining: 25000, order: 20000, monthly: 25000 };
+
+// ── Catalog ─────────────────────────────────────────────────────────────────
+function card(p) {
+  const m = MERCH[p.id] ?? {};
+  const first = p.colors[0].name;
+  const fit = /true to size/i.test(p.attrs.sizing) ? "" : p.attrs.sizing;
+  return `
+  <article class="card" data-id="${p.id}" data-aura-product='${esc(JSON.stringify(p))}'>
+    <div class="media">
+      ${m.badge ? `<span class="tag">${esc(m.badge)}</span>` : ""}
+      <img class="main" src="${photo(p.id, first)}" alt="${esc(p.title)} in ${esc(first)}" loading="lazy">
+      <img class="alt" src="${altPhoto(p.id)}" alt="" loading="lazy">
     </div>
-  </article>`).join("");
+    <div class="info">
+      <div class="title-row"><h3 class="title">${esc(p.title)}</h3><span class="price">${money(cents(p))}</span></div>
+      <p class="blurb">${esc(m.blurb ?? p.attrs.material)}</p>
+      <div class="rating" aria-label="Rated ${p.attrs.rating} out of 5 from ${p.attrs.reviews} reviews">
+        <span class="stars"><i></i><i style="width:${(p.attrs.rating / 5) * 100}%"></i></span>
+        <span>${p.attrs.rating.toFixed(1)} (${p.attrs.reviews.toLocaleString()})</span>
+      </div>
+      <div class="option">
+        <div class="option-head"><span>Color <b class="color-name">${esc(first)}</b></span></div>
+        <div class="colors">${p.colors.map((c, i) => `
+          <button type="button" data-aura-action="select_color" data-aura-value="${esc(c.name)}"
+                  data-aura-label="Color ${esc(c.name)}" aria-label="${esc(c.name)}" aria-pressed="${i === 0}"
+                  style="--tone:${esc(c.tone)}"></button>`).join("")}</div>
+      </div>
+      <div class="option">
+        <div class="option-head"><span>Size</span></div>
+        <div class="variants">${p.variants.map(v => `
+          <button type="button" data-aura-action="select_variant" data-aura-value="${esc(v)}"
+                  data-aura-label="Size ${esc(v)}" aria-pressed="false">${esc(v)}</button>`).join("")}</div>
+        ${fit ? `<p class="fit">${esc(fit)}</p>` : ""}
+      </div>
+      <button class="btn btn-primary add" type="button" data-aura-action="add_to_cart"
+              data-aura-label="Add ${esc(p.title)} to bag" data-id="${p.id}">Add to bag</button>
+    </div>
+  </article>`;
+}
+grid.innerHTML = PRODUCTS.map(card).join("");
+grid.querySelectorAll(".media .alt").forEach(img => {
+  const ready = () => img.classList.add("ready");
+  img.complete && img.naturalWidth ? ready() : img.addEventListener("load", ready, { once: true });
+});
 
-grid.addEventListener("click", (e) => {
-  const v = e.target.closest('[data-cue-action="select_variant"]');
-  if (v) {
-    v.closest(".variants").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", "false"));
-    v.setAttribute("aria-pressed", "true");
+function countVisible() {
+  const n = grid.querySelectorAll(".card:not([hidden])").length;
+  $("result-count").textContent = `${n} ${n === 1 ? "style" : "styles"}`;
+  $("no-results").hidden = n > 0;
+}
+countVisible();
+
+$("sort").addEventListener("change", e => {
+  const by = {
+    "featured": (a, b) => PRODUCTS.indexOf(a) - PRODUCTS.indexOf(b),
+    "price-asc": (a, b) => a.price - b.price,
+    "price-desc": (a, b) => b.price - a.price,
+    "rating": (a, b) => b.attrs.rating - a.attrs.rating,
+  }[e.target.value];
+  [...PRODUCTS].sort(by).forEach(p => grid.appendChild(grid.querySelector(`.card[data-id="${p.id}"]`)));
+});
+$("search").addEventListener("input", e => {
+  const q = e.target.value.trim().toLowerCase();
+  for (const p of PRODUCTS) {
+    const hay = `${p.title} ${p.attrs.material} ${p.colors.map(c => c.name).join(" ")}`.toLowerCase();
+    grid.querySelector(`.card[data-id="${p.id}"]`).hidden = q && !hay.includes(q);
   }
-  const a = e.target.closest('[data-cue-action="add_to_cart"]');
+  countVisible();
+});
+
+// ── Card interactions (mouse, keyboard, and Cue's clicks all land here) ─────
+grid.addEventListener("click", (e) => {
+  const cardEl = e.target.closest(".card");
+  if (!cardEl) return;
+  const p = PRODUCTS.find(x => x.id === cardEl.dataset.id);
+
+  const v = e.target.closest('[data-aura-action="select_variant"]');
+  if (v) {
+    cardEl.querySelectorAll(".variants button").forEach(b => b.setAttribute("aria-pressed", "false"));
+    v.setAttribute("aria-pressed", "true");
+    cardEl.classList.remove("needs-size");
+  }
+
+  const color = e.target.closest('[data-aura-action="select_color"]');
+  if (color && color.getAttribute("aria-pressed") !== "true") {
+    cardEl.querySelectorAll(".colors button").forEach(b => b.setAttribute("aria-pressed", "false"));
+    color.setAttribute("aria-pressed", "true");
+    const name = color.dataset.auraValue;
+    cardEl.querySelector(".color-name").textContent = name;
+    const img = cardEl.querySelector(".media .main");
+    const next = photo(p.id, name);
+    if (!img.src.endsWith(next)) {
+      img.classList.add("swap");
+      const pre = new Image();
+      pre.onload = pre.onerror = () => {
+        img.src = next; img.alt = `${p.title} in ${name}`;
+        requestAnimationFrame(() => img.classList.remove("swap"));
+      };
+      pre.src = next;
+    }
+  }
+
+  const a = e.target.closest('[data-aura-action="add_to_cart"]');
   if (a) {
-    const p = PRODUCTS.find(x => x.id === a.dataset.id);
-    // The page confirms, not the router: only here do we know the click landed.
-    // Saying "Added." optimistically up front meant a refused item was
-    // announced as added one breath later.
-    const spent = cart.reduce((sum, x) => sum + Math.round(x.price * 100), 0);
-    const left = remaining - spent;
-    if (Math.round(p.price * 100) > left) {
-      window.cue?.bus.emit("SAY", {
-        text: `The ${p.title} is $${p.price.toFixed(2)} and you have ${money(left)} left. That would put you over your budget.` });
+    const size = cardEl.querySelector('.variants [aria-pressed="true"]')?.dataset.auraValue;
+    const selectedColor = cardEl.querySelector('.colors [aria-pressed="true"]')?.dataset.auraValue;
+    if (!size) {
+      cardEl.classList.remove("needs-size"); void cardEl.offsetWidth; cardEl.classList.add("needs-size");
+      window.cue?.bus.emit("SAY", { text: `Choose a size for ${p.title} first.` });
       return;
     }
-    const size = a.closest(".card").querySelector('[aria-pressed="true"]')?.dataset.auraValue
-              ?? a.closest(".card").querySelector('[aria-pressed="true"]')?.dataset.cueValue ?? "M";
-    // Keep the customer's own words with the item — the intent record on the
-    // order is the whole point of the trust story.
-    cart.push({ ...p, size, words: window.cue?.lastActionUtterance || "" });
-    renderCart();
-    window.cue?.bus.emit("SAY", { text: "Added." });
+    const nextTotal = total() + cents(p);
+    if (nextTotal > Math.min(limits.remaining, limits.order)) {
+      window.cue?.bus.emit("SAY", { text: "That would exceed your spending limit." });
+      return;
+    }
+    const item = { ...p, size, color: selectedColor, words: window.cue?.lastActionUtterance || "" };
+    cart.push(item);
+    renderCart(true);
+    showAdded(item);
+    a.classList.add("done"); a.textContent = "Added";
+    setTimeout(() => { a.classList.remove("done"); a.textContent = "Add to bag"; }, 1400);
+    window.cue?.bus.emit("SAY", { text: `Added ${p.title}, ${selectedColor}, size ${size}.` });
   }
 });
+
+// ── Bag ─────────────────────────────────────────────────────────────────────
+const total = () => cart.reduce((sum, item) => sum + cents(item), 0);
+const plural = n => `${n} ${n === 1 ? "item" : "items"}`;
+
+function limitsHTML(thisOrder, heading) {
+  const spent = limits.monthly - limits.remaining;
+  const pct = v => `${Math.max(0, Math.min(100, (v / limits.monthly) * 100))}%`;
+  const after = limits.remaining - thisOrder;
+  return `
+    <div class="limits-row"><span>${heading}</span><b class="tabular">${money(Math.max(0, after))} left</b></div>
+    <div class="meter" aria-hidden="true"><span class="spent" style="width:${pct(spent)}"></span><span class="this" style="left:${pct(spent)};width:${pct(thisOrder)}"></span></div>
+    <div class="note">Monthly budget ${money(limits.monthly)}. Orders over ${money(limits.order)} are blocked.</div>`;
+}
+
+function renderCart(bump = false) {
+  const n = cart.length, t = total();
+  const count = $("count");
+  count.textContent = n;
+  count.classList.toggle("on", n > 0);
+  if (bump) { count.classList.remove("bump"); void count.offsetWidth; count.classList.add("bump"); }
+  $("bag-open").setAttribute("aria-label", `Bag, ${plural(n)}`);
+
+  $("bag-bar").classList.toggle("on", n > 0);
+  $("bag-items").textContent = plural(n);
+  $("bag-total").textContent = money(t);
+  $("bag-thumbs").innerHTML = cart.slice(-3).reverse()
+    .map(i => `<img src="${photo(i.id, i.color)}" alt="">`).join("");
+
+  $("bag-lines").innerHTML = n ? cart.map((i, idx) => `
+    <div class="line">
+      <img src="${photo(i.id, i.color)}" alt="">
+      <div>
+        <p class="line-title">${esc(i.title)}</p>
+        <p class="line-meta">${esc(i.color)}, size ${esc(i.size)}</p>
+        <button class="line-remove" type="button" data-remove="${idx}">Remove</button>
+      </div>
+      <span class="line-price">${money(cents(i))}</span>
+    </div>`).join("")
+    : `<div class="drawer-empty"><p>Your bag is empty.</p><button class="btn btn-secondary" type="button" data-close>Keep shopping</button></div>`;
+  $("bag-foot").hidden = !n;
+  $("bag-subtotal").textContent = money(t);
+  $("bag-limits").innerHTML = limitsHTML(t, "Budget after this bag");
+}
+
+const bag = $("bag");
+$("bag-open").addEventListener("click", () => { renderCart(); bag.showModal(); });
+bag.addEventListener("click", e => {
+  if (e.target === bag || e.target.closest("[data-close]")) bag.close();
+  const r = e.target.closest("[data-remove]");
+  if (r) { cart.splice(Number(r.dataset.remove), 1); renderCart(); }
+});
+$("bag-checkout").addEventListener("click", () => { bag.close(); checkout(); });
+
+let toastTimer;
+function showAdded(item, heading = "Added to bag") {
+  const t = $("toast");
+  t.innerHTML = `
+    ${item.id ? `<img src="${photo(item.id, item.color)}" alt="">` : `<span class="toast-seal" aria-hidden="true"></span>`}
+    <div>
+      <p class="toast-head"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 8.5l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>${heading}</p>
+      <p>${esc(item.title)}</p>
+      <p class="muted">${item.size ? `${esc(item.color)}, size ${esc(item.size)}` : esc(item.color)}</p>
+      ${item.size ? `<button class="btn btn-secondary" type="button">View bag</button>` : ""}
+    </div>`;
+  t.querySelector("button")?.addEventListener("click", () => { t.classList.remove("on"); renderCart(); bag.showModal(); });
+  t.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("on"), 3600);
+}
+
+// ── Checkout ────────────────────────────────────────────────────────────────
+function reviewLines(items) {
+  $("review-lines").innerHTML = items.map(i => `
+    <li><img src="${photo(i.id, i.color)}" alt="">
+      <div><p class="line-title">${esc(i.title)}</p><p class="line-meta">${esc(i.color)}, size ${esc(i.size)}</p></div>
+      <span class="line-price">${money(i.unit_price_cents ?? cents(i))}</span></li>`).join("");
+}
+
+const checkoutFlow = setupCheckout({
+  getCart: () => cart,
+  clearCart: () => {
+    const placed = cart.length;
+    cart = []; renderCart();
+    if (placed) showAdded({ id: "", title: "Approved with your passkey. No card was charged.", color: "" }, "Order placed");
+  },
+  onStatus: s => {
+    limits = { remaining: s.remaining_cents, order: s.order_limit_cents, monthly: s.monthly_limit_cents ?? limits.monthly };
+    renderCart();
+  },
+  onPrepared: (pending) => {
+    reviewLines(pending.items);
+    $("review-total").textContent = money(pending.total_cents);
+    $("review-limits").innerHTML = limitsHTML(pending.total_cents, "Budget after this order");
+  },
+});
+window.cueCheckout = checkoutFlow;
+window.checkout = () => {
+  if (bag.open) bag.close();
+  if (cart.length) {
+    reviewLines(cart);
+    $("review-total").textContent = money(total());
+    $("review-limits").innerHTML = limitsHTML(total(), "Budget after this order");
+  }
+  return checkoutFlow.prepare();
+};
+
+// The approval panel mirrors checkout.js's status line: waiting, or a problem.
+const approval = $("approval"), message = approval.querySelector(".checkout-message");
+new MutationObserver(() => {
+  const text = message.textContent;
+  approval.classList.toggle("waiting", /waiting|create a passkey|checking|reading back/i.test(text));
+  approval.classList.toggle("error", !!text && !/waiting|create|checking|reading|say|set up|passkey ready/i.test(text));
+}).observe(message, { childList: true, characterData: true, subtree: true });
+
+// ── Chrome ──────────────────────────────────────────────────────────────────
+const header = $("site-header");
+addEventListener("scroll", () => header.classList.toggle("scrolled", scrollY > 8), { passive: true });
+
+renderCart();
 window.CART = () => cart;
 </script>
 <script src="/vendor/webgazer.js"></script>
 <script type="module" src="/client/aura.js"></script>
+<script type="module" src="/client/avatar.js"></script>
 </body>
 </html>

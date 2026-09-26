@@ -51,6 +51,7 @@ def _trace(text: str, out: dict):
 class CartItem(BaseModel):
     id: str
     size: str
+    color: str
 
 
 class PrepareCheckout(BaseModel):

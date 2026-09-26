@@ -439,11 +439,11 @@ function runCalibration(attempt) {
   return new Promise((done) => {
     const cleanup = [];
     const ov = document.createElement("div");
-    ov.className = "cue-cal";
-    ov.innerHTML = `<div class="cue-cal-hint"></div><div class="cue-cal-dot"></div>`;
+    ov.className = "aura-cal";
+    ov.innerHTML = `<div class="aura-cal-hint"></div><div class="aura-cal-dot"></div>`;
     document.body.appendChild(ov);
-    const dot  = ov.querySelector(".cue-cal-dot");
-    const hint = ov.querySelector(".cue-cal-hint");
+    const dot  = ov.querySelector(".aura-cal-dot");
+    const hint = ov.querySelector(".aura-cal-hint");
     let i = 0;
 
     // Space is push-to-talk everywhere else. Tell voice.js to stand down.
@@ -651,12 +651,12 @@ export async function measure() {
     return null;
   }
   const ov = document.createElement("div");
-  ov.className = "cue-cal";
-  ov.innerHTML = `<div class="cue-cal-hint">Just look at each dot — measuring, not changing anything</div><div class="cue-cal-dot"></div>`;
+  ov.className = "aura-cal";
+  ov.innerHTML = `<div class="aura-cal-hint">Just look at each dot — measuring, not changing anything</div><div class="aura-cal-dot"></div>`;
   document.body.appendChild(ov);
   bus.emit("STATE", { calibrating: true });
   try {
-    const obs = await sweep(ov.querySelector(".cue-cal-dot"), ov.querySelector(".cue-cal-hint"));
+    const obs = await sweep(ov.querySelector(".aura-cal-dot"), ov.querySelector(".aura-cal-hint"));
     if (obs.length < 25) {
       const st = obs.stats || {};
       const why = st.noFace > st.nulls / 2
@@ -992,6 +992,22 @@ export function setFocus(target, lockMs = 3500) {
   state.candSince = performance.now();
   state.lockUntil = performance.now() + lockMs;
   bus.emit("FOCUS", { target, prev });
+}
+
+// Keep the outline and action scope tied to the current viewport. Voice must
+// never act on an item that was visible before a scroll.
+export function refreshFocus() {
+  const focused = state.focus;
+  if (!focused) return;
+  if (!focused.el.isConnected) { setFocus(null, 0); return; }
+  const rect = focused.el.getBoundingClientRect();
+  if (!rect.width || !rect.height || rect.bottom <= 0 || rect.top >= innerHeight ||
+      rect.right <= 0 || rect.left >= innerWidth) {
+    setFocus(null, 0);
+    return;
+  }
+  state.focus = { ...focused, rect };
+  bus.emit("FOCUS", { target: state.focus, prev: focused });
 }
 
 export function hideCamera() { try { window.webgazer?.showVideoPreview(false); } catch {} }

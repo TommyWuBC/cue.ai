@@ -40,7 +40,7 @@ function requestOptions(options) {
     allowCredentials: (options.allowCredentials || []).map(c => ({ ...c, id: decode(c.id) })) };
 }
 
-export function setupCheckout({ getCart, clearCart, onStatus }) {
+export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
   const dialog = document.getElementById('checkout-dialog');
   const details = dialog.querySelector('.checkout-details');
   const message = dialog.querySelector('.checkout-message');
@@ -82,10 +82,11 @@ export function setupCheckout({ getCart, clearCart, onStatus }) {
       const words = [...cart.map(item => item.words).filter(Boolean),
         window.cue?.lastActionUtterance || 'Checkout button pressed'].join(' | ');
       pending = await api('/api/checkout/prepare', {
-        items: cart.map(item => ({ id: item.id, size: item.size })), customer_words: words.slice(0, 500),
+        items: cart.map(item => ({ id: item.id, size: item.size, color: item.color })), customer_words: words.slice(0, 500),
       });
       const status = await refresh();
-      details.textContent = pending.items.map(item => `${item.title}, size ${item.size}, ${money(item.unit_price_cents)}`).join('; ');
+      onPrepared?.(pending, status);
+      details.textContent = pending.items.map(item => `${item.title}, ${item.color}, size ${item.size}, ${money(item.unit_price_cents)}`).join('; ');
       const readback = `${details.textContent}. Total ${money(pending.total_cents)}. ` +
         `You would have ${money(pending.remaining_after_cents)} left this month. ` +
         'Say yes and approve with your passkey to record this demo order. No payment will be charged.';

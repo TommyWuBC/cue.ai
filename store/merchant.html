@@ -3,69 +3,316 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cue · Merchant view</title>
+<title>Orders | Northfield merchant</title>
+<link rel="stylesheet" href="/base.css">
 <style>
-  * { box-sizing:border-box; }
-  body { margin:0; background:#f4f6fa; color:#181b27; font:15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",sans-serif; }
-  header { background:#1a1f71; color:white; padding:24px max(24px,calc((100vw - 1000px)/2)); }
-  h1 { margin:0; font-size:24px; }
-  header p { margin:5px 0 0; opacity:.75; }
-  main { max-width:1000px; padding:28px 24px; margin:auto; }
-  .summary { padding:16px 20px; background:#fff; border-radius:12px; border:1px solid #e0e3eb; }
-  .orders { display:grid; gap:16px; margin-top:20px; }
-  article { background:#fff; border:1px solid #e0e3eb; border-radius:14px; padding:20px; }
-  article h2 { margin:0 0 8px; font-size:17px; }
-  .meta { color:#5c6576; font-size:13px; }
-  .badge { display:inline-block; border-radius:999px; background:#dff6e7; color:#155c31; padding:4px 9px; font-size:12px; font-weight:700; }
-  .warning { background:#fff4d1; color:#614800; }
-  blockquote { margin:12px 0 0; padding:8px 12px; border-left:3px solid #1a1f71; background:#f7f8fc; }
-  .error { color:#9b2424; }
+  body { background: #fafafb; }
+
+  .bar { position: sticky; top: 0; z-index: 5; background: rgba(255,255,255,.86);
+    backdrop-filter: saturate(1.6) blur(16px); -webkit-backdrop-filter: saturate(1.6) blur(16px);
+    border-bottom: 1px solid var(--hair); }
+  .bar-inner { max-width: 1080px; margin: 0 auto; padding: 0 var(--gutter); height: 60px;
+    display: flex; align-items: center; gap: 14px; }
+  .wordmark { font: 500 22px/1 var(--serif); letter-spacing: -.02em; }
+  .bar-section { color: var(--graphite); font-size: 14px; padding-left: 14px; border-left: 1px solid var(--hair); }
+  .bar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .live { display: inline-flex; align-items: center; gap: 7px; color: var(--graphite); }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); position: relative; }
+  .live-dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%;
+    border: 1.5px solid var(--ok); opacity: 0; animation: ping 2.4s var(--ease) infinite; }
+  .live[data-state="down"] .live-dot { background: #b3261e; }
+  .live[data-state="down"] .live-dot::after { display: none; }
+  @keyframes ping { 0% { transform: scale(.6); opacity: .7; } 80%, 100% { transform: scale(1.6); opacity: 0; } }
+  .demo-pill { padding: 5px 11px; border-radius: 999px; background: #fdf3e1; color: var(--warn); font-weight: 500; }
+
+  main { max-width: 1080px; margin: 0 auto; padding: 44px var(--gutter) 96px; }
+  h1 { font: 400 44px/1.05 var(--serif); letter-spacing: -.025em; margin: 0; }
+  .lede { color: var(--graphite); margin: 10px 0 0; max-width: 60ch; text-wrap: pretty; }
+
+  .figures { display: grid; grid-template-columns: repeat(3, 1fr); margin: 36px 0 44px;
+    border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
+  .figure { padding: 18px 24px 20px; }
+  .figure + .figure { border-left: 1px solid var(--hair); }
+  .figure:first-child { padding-left: 0; }
+  .figure dt { color: var(--graphite); font-size: 13px; }
+  .figure dd { margin: 6px 0 0; font: 400 30px/1.1 var(--serif); letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums; }
+  .figure small { font: 14px var(--sans); color: var(--graphite); letter-spacing: 0; }
+  .meter { height: 4px; border-radius: 999px; background: var(--mist); margin-top: 12px; overflow: hidden; }
+  .meter span { display: block; height: 100%; background: var(--ink); border-radius: inherit;
+    transition: width .6s var(--ease); }
+
+  .feed-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+  .feed-head h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  .feed-head span { color: var(--graphite); font-size: 13px; }
+  .feed { display: grid; gap: 14px; }
+
+  .order { background: var(--paper); border: 1px solid var(--hair); border-radius: 14px;
+    padding: 22px 24px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px 40px; }
+  .order-top { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 12px; }
+  .order-id { font-weight: 600; font-size: 15px; }
+  .order-time { color: var(--graphite); font-size: 13px; }
+  .order-total { margin-left: auto; font: 400 26px/1 var(--serif); letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums; }
+
+  .lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; align-content: start; }
+  .line { display: grid; grid-template-columns: 48px 1fr auto; gap: 14px; align-items: center; }
+  .thumb { width: 48px; height: 60px; border-radius: 4px; background: var(--mist); overflow: hidden; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .line-title { font-weight: 500; font-size: 14px; }
+  .line-meta { color: var(--graphite); font-size: 13px; }
+  .line-price { font-size: 14px; font-variant-numeric: tabular-nums; }
+
+  .intent { border-left: 2px solid var(--trust); padding: 2px 0 2px 18px; align-self: start; }
+  .intent-label { color: var(--graphite); font-size: 13px; margin: 0 0 8px; }
+  .intent blockquote { margin: 0; font: italic 400 19px/1.35 var(--serif); letter-spacing: -.01em; }
+  .intent blockquote + blockquote { margin-top: 6px; }
+  .intent blockquote::before { content: "\201C"; }
+  .intent blockquote::after { content: "\201D"; }
+  .intent .pressed { font-size: 13px; color: var(--graphite); margin: 6px 0 0; }
+
+  .facts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; padding-top: 16px;
+    border-top: 1px solid var(--hair); list-style: none; margin: 0; padding-left: 0; }
+  .fact { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; padding: 5px 11px 5px 9px;
+    border-radius: 999px; background: #eef0fa; color: var(--trust); font-weight: 500; }
+  .fact svg { width: 14px; height: 14px; flex: none; }
+  .fact.demo { background: var(--mist); color: var(--graphite); }
+
+  .order.arrived { animation: arrive .7s var(--spring) both, glow 2.8s var(--ease) .2s both; }
+  @keyframes arrive { from { opacity: 0; transform: translateY(-14px) scale(.985); } }
+  @keyframes glow {
+    0% { box-shadow: 0 0 0 1px var(--trust), 0 0 0 8px rgba(26,31,113,.14), 0 18px 50px rgba(26,31,113,.18); border-color: var(--trust); }
+    100% { box-shadow: 0 0 0 0 transparent, 0 0 0 0 transparent, 0 0 0 transparent; }
+  }
+
+  .notice { position: fixed; top: 76px; left: 50%; z-index: 10; transform: translate(-50%, -12px);
+    opacity: 0; pointer-events: none; display: flex; align-items: center; gap: 14px;
+    background: var(--trust); color: #fff; border-radius: 14px; padding: 12px 20px 12px 14px;
+    box-shadow: 0 18px 50px rgba(26,31,113,.35); transition: opacity .3s var(--ease), transform .45s var(--spring);
+    max-width: calc(100vw - 32px); }
+  .notice.show { opacity: 1; transform: translate(-50%, 0); }
+  .notice-thumb { width: 36px; height: 44px; border-radius: 4px; background: rgba(255,255,255,.15); overflow: hidden; flex: none; }
+  .notice-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .notice-thumb img.missing { visibility: hidden; }
+  .notice b { display: block; font-weight: 600; }
+  .notice span { opacity: .78; font-size: 13px; }
+  .notice-total { margin-left: 8px; font: 400 22px/1 var(--serif); font-variant-numeric: tabular-nums; }
+
+  .empty { border: 1px dashed #d4d4d8; border-radius: 14px; padding: 48px 24px; text-align: center; }
+  .empty h3 { font: 400 24px/1.2 var(--serif); margin: 0 0 8px; letter-spacing: -.015em; }
+  .empty p { color: var(--graphite); margin: 0 auto; max-width: 44ch; }
+  .error { border-radius: 14px; padding: 18px 20px; background: #fbeceb; color: #8c1d18; margin-bottom: 14px; }
+  .error[hidden] { display: none; }
+
+  @media (max-width: 760px) {
+    h1 { font-size: 34px; }
+    .bar-section { display: none; }
+    .figures { grid-template-columns: 1fr; }
+    .figure, .figure:first-child { padding: 16px 0; }
+    .figure + .figure { border-left: 0; border-top: 1px solid var(--hair); }
+    .order { grid-template-columns: 1fr; padding: 18px; gap: 18px; }
+    .order-total { font-size: 22px; }
+  }
+  @media (max-width: 440px) { .live-label { display: none; } }
 </style>
 </head>
 <body>
-<header><h1>Cue merchant view</h1><p>Local demo orders · refreshes automatically</p></header>
+<header class="bar">
+  <div class="bar-inner">
+    <span class="wordmark">Northfield</span>
+    <span class="bar-section">Merchant</span>
+    <div class="bar-right">
+      <span class="live" id="live" data-state="up"><span class="live-dot"></span><span class="live-label">Live</span></span>
+      <span class="demo-pill">Demo mode, no charges</span>
+    </div>
+  </div>
+</header>
+
+<div class="notice" id="notice" role="status" aria-live="polite">
+  <div class="notice-thumb"><img alt=""></div>
+  <div><b>New order from Cue</b><span class="notice-detail"></span></div>
+  <div class="notice-total tabular"></div>
+</div>
+
 <main>
-  <div class="summary" role="status" aria-live="polite" id="summary">Loading orders…</div>
-  <div class="orders" id="orders"></div>
+  <h1>Orders</h1>
+  <p class="lede">Every order a shopper approves through Cue, with the words they used to ask for it.</p>
+
+  <dl class="figures">
+    <div class="figure"><dt>Orders this month</dt><dd id="f-count">–</dd></div>
+    <div class="figure"><dt>Demo revenue this month</dt><dd id="f-revenue">–</dd></div>
+    <div class="figure"><dt>Shopper budget left</dt><dd id="f-budget">–</dd>
+      <div class="meter" aria-hidden="true"><span id="f-meter" style="width:0"></span></div></div>
+  </dl>
+
+  <div class="feed-head"><h2>Recent orders</h2><span id="feed-count"></span></div>
+  <p class="error" id="error" role="alert" hidden></p>
+  <div class="feed" id="feed" aria-live="polite"></div>
 </main>
+
 <script type="module">
-const summary = document.getElementById('summary');
-const list = document.getElementById('orders');
-const money = cents => `$${(cents / 100).toFixed(2)}`;
-let lastIds = '';
+import { photo, money } from "/catalog.js";
+
+const $ = id => document.getElementById(id);
+const feed = $("feed");
+const rendered = new Map();
+let firstLoad = true;
+let noticeTimer = null;
+
+const CHECK = '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const KEY = '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="5.5" cy="8" r="3" stroke="currentColor" stroke-width="1.6"/><path d="M8.5 8h6m-2 0v2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+function thumb(src, cls = "thumb") {
+  const box = el("div", cls);
+  if (!src) return box;
+  const img = el("img");
+  img.alt = ""; img.loading = "lazy"; img.src = src;
+  img.addEventListener("error", () => img.remove(), { once: true });
+  box.append(img);
+  return box;
+}
+
+function ago(iso) {
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (s < 45) return "Just now";
+  if (s < 90) return "1 min ago";
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) { const h = Math.round(s / 3600); return `${h} hr ago`; }
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function fact(html, text, cls = "fact") {
+  const li = el("li", cls);
+  li.innerHTML = html;               // static icon markup only
+  li.append(document.createTextNode(text));
+  return li;
+}
+
+function renderOrder(order) {
+  const card = el("article", "order");
+  card.dataset.id = order.id;
+
+  const top = el("div", "order-top");
+  top.append(el("span", "order-id", `Order ${order.id.slice(0, 8).toUpperCase()}`));
+  const time = el("time", "order-time", ago(order.created_at));
+  time.dateTime = order.created_at;
+  time.title = new Date(order.created_at).toLocaleString();
+  top.append(time, el("span", "order-total", money(order.total_cents)));
+
+  const lines = el("ul", "lines");
+  for (const item of order.items) {
+    const li = el("li", "line");
+    const text = el("div");
+    text.append(el("div", "line-title", item.title),
+      el("div", "line-meta", [item.color, item.size && `size ${item.size}`].filter(Boolean).join(", ")));
+    li.append(thumb(photo(item.id, item.color)), text, el("span", "line-price", money(item.unit_price_cents)));
+    lines.append(li);
+  }
+
+  const intent = el("section", "intent");
+  intent.append(el("p", "intent-label", "In the shopper’s words"));
+  const parts = String(order.customer_words || "").split("|").map(s => s.trim()).filter(Boolean);
+  for (const words of parts) {
+    if (/^checkout button pressed$/i.test(words)) intent.append(el("p", "pressed", "Pressed the Check out button"));
+    else intent.append(el("blockquote", null, words));
+  }
+  if (!parts.length) intent.append(el("p", "pressed", "No words recorded"));
+
+  const facts = el("ul", "facts");
+  if (order.approved_with_passkey) facts.append(fact(KEY, "Approved with passkey"));
+  facts.append(fact(CHECK, "Within spending limits"));
+  if (order.payment_mode === "demo_order_no_charge") facts.append(fact("", "Demo order, no charge", "fact demo"));
+
+  card.append(top, lines, intent, facts);
+  return card;
+}
+
+function announce(order) {
+  const n = $("notice");
+  const first = order.items[0];
+  const img = n.querySelector("img");
+  const src = first && photo(first.id, first.color);
+  img.classList.toggle("missing", !src);
+  img.onerror = () => img.classList.add("missing");
+  if (src) img.src = src; else img.removeAttribute("src");
+  const extra = order.items.length > 1 ? ` and ${order.items.length - 1} more` : "";
+  n.querySelector(".notice-detail").textContent = first
+    ? `${first.title}, ${first.color}, size ${first.size}${extra}` : "";
+  n.querySelector(".notice-total").textContent = money(order.total_cents);
+  n.classList.add("show");
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => n.classList.remove("show"), 5200);
+}
+
+function showEmpty() {
+  const box = el("div", "empty");
+  box.append(el("h3", null, "No orders yet"),
+    el("p", null, "When a shopper asks Cue to check out and approves with their passkey, the order and their own words show up here within a couple of seconds."));
+  feed.replaceChildren(box);
+}
+
+function renderFeed(orders) {
+  if (!orders.length) { rendered.clear(); showEmpty(); return; }
+  feed.querySelector(".empty")?.remove();
+  const ids = new Set(orders.map(o => o.id));
+  for (const [id, node] of rendered) if (!ids.has(id)) { node.remove(); rendered.delete(id); }
+
+  const fresh = [];
+  orders.forEach((order, i) => {
+    let node = rendered.get(order.id);
+    if (!node) {
+      node = renderOrder(order);
+      rendered.set(order.id, node);
+      if (!firstLoad) { node.classList.add("arrived"); fresh.push(order); }
+    } else {
+      const t = node.querySelector(".order-time");
+      t.textContent = ago(order.created_at);
+    }
+    if (feed.children[i] !== node) feed.insertBefore(node, feed.children[i] ?? null);
+  });
+  if (fresh.length) announce(fresh[0]);
+}
+
+function renderFigures(orders, status) {
+  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+  const month = orders.filter(o => new Date(o.created_at) >= monthStart);
+  $("f-count").textContent = month.length;
+  $("f-revenue").textContent = money(month.reduce((s, o) => s + o.total_cents, 0));
+  $("feed-count").textContent = orders.length ? `${orders.length} shown` : "";
+  if (status) {
+    const budget = $("f-budget");
+    budget.replaceChildren(document.createTextNode(money(status.remaining_cents) + " "),
+      el("small", null, `of ${money(status.monthly_limit_cents)}`));
+    $("f-meter").style.width = `${Math.min(100, 100 * status.remaining_cents / status.monthly_limit_cents)}%`;
+  }
+}
+
 async function refresh() {
   try {
-    const response = await fetch('/api/merchant/orders');
-    if (!response.ok) throw new Error('Could not load orders.');
-    const { orders } = await response.json();
-    summary.textContent = `${orders.length} recent demo order${orders.length === 1 ? '' : 's'} · Passkey approved · No payment charged`;
-    const ids = orders.map(order => order.id).join(',');
-    if (ids === lastIds) return;
-    lastIds = ids;
-    list.replaceChildren();
-    for (const order of orders) {
-      const article = document.createElement('article');
-      const title = document.createElement('h2');
-      title.textContent = `${money(order.total_cents)} · ${order.items.length} item${order.items.length === 1 ? '' : 's'}`;
-      const meta = document.createElement('div');
-      meta.className = 'meta';
-      meta.textContent = `${new Date(order.created_at).toLocaleString()} · Order ${order.id}`;
-      const items = document.createElement('p');
-      items.textContent = order.items.map(item => `${item.title}, ${item.size}, ${money(item.unit_price_cents)}`).join(' · ');
-      const badge = document.createElement('span');
-      badge.className = 'badge';
-      badge.textContent = 'Passkey approved';
-      const unpaid = document.createElement('span');
-      unpaid.className = 'badge warning';
-      unpaid.style.marginLeft = '8px';
-      unpaid.textContent = 'Demo · no charge';
-      const words = document.createElement('blockquote');
-      words.textContent = `Customer words: ${order.customer_words}`;
-      article.append(title, meta, items, badge, unpaid, words);
-      list.appendChild(article);
-    }
-  } catch (error) { summary.textContent = error.message; summary.classList.add('error'); }
+    const [res, st] = await Promise.all([fetch("/api/merchant/orders"), fetch("/api/checkout/status").catch(() => null)]);
+    if (!res.ok) throw new Error();
+    const { orders } = await res.json();
+    const status = st?.ok ? await st.json() : null;
+    $("error").hidden = true;
+    $("live").dataset.state = "up";
+    renderFigures(orders, status);
+    renderFeed(orders);
+    firstLoad = false;
+  } catch {
+    $("live").dataset.state = "down";
+    const err = $("error");
+    err.textContent = "Can’t reach the store server. Orders will reappear once it’s running again.";
+    err.hidden = false;
+  }
 }
+
 refresh();
 setInterval(refresh, 2000);
 </script>

@@ -10,45 +10,48 @@ import { CONFIG, url } from "./config.js";
 const ui = {};
 function mountUI() {
   const root = document.createElement("div");
-  root.id = "cue-root";
+  root.id = "aura-root";
   root.innerHTML = `
-    <div class="cue-reticle"></div>
-    <div class="cue-outline"><span class="cue-outline-label"></span></div>
-    <div class="cue-hud">
-      <div class="cue-hud-row"><span class="cue-dot"></span><b>Cue</b><span class="cue-chip cue-mode"></span></div>
-      <div class="cue-hud-heard"></div>
-      <div class="cue-hud-said"></div>
-      <div class="cue-hud-drift">tracking has drifted · say &ldquo;recalibrate&rdquo;</div>
-      <div class="cue-hud-foot">hold <kbd>space</kbd> to talk · say &ldquo;Cue, &hellip;&rdquo;</div>
+    <div class="aura-reticle"></div>
+    <div class="aura-outline"><span class="aura-outline-label"></span></div>
+    <div class="aura-hud">
+      <div class="aura-hud-row"><span class="aura-dot"></span><b>Cue</b><span class="aura-chip aura-mode"></span></div>
+      <div class="aura-hud-heard"></div>
+      <div class="aura-hud-said"></div>
+      <div class="aura-hud-drift">tracking has drifted · say &ldquo;recalibrate&rdquo;</div>
+      <div class="aura-hud-foot">hold <kbd>space</kbd> to talk · say &ldquo;Cue, &hellip;&rdquo;</div>
     </div>
-    <div class="cue-quality" role="status" aria-live="polite" hidden>
+    <div class="aura-quality" role="status" aria-live="polite" hidden>
       <span>Gaze seems uncertain. Say &ldquo;Cue, recalibrate&rdquo; or use the button.</span>
       <button type="button">Recalibrate</button>
     </div>`;
   document.body.appendChild(root);
-  ui.reticle = root.querySelector(".cue-reticle");
-  ui.outline = root.querySelector(".cue-outline");
-  ui.label   = root.querySelector(".cue-outline-label");
-  ui.heard   = root.querySelector(".cue-hud-heard");
-  ui.said    = root.querySelector(".cue-hud-said");
-  ui.mode    = root.querySelector(".cue-mode");
-  ui.dot     = root.querySelector(".cue-dot");
-  ui.drift   = root.querySelector(".cue-hud-drift");
-  ui.foot    = root.querySelector(".cue-hud-foot");
-  ui.quality = root.querySelector(".cue-quality");
+  ui.reticle = root.querySelector(".aura-reticle");
+  ui.outline = root.querySelector(".aura-outline");
+  ui.label   = root.querySelector(".aura-outline-label");
+  ui.heard   = root.querySelector(".aura-hud-heard");
+  ui.said    = root.querySelector(".aura-hud-said");
+  ui.mode    = root.querySelector(".aura-mode");
+  ui.dot     = root.querySelector(".aura-dot");
+  ui.drift   = root.querySelector(".aura-hud-drift");
+  ui.foot    = root.querySelector(".aura-hud-foot");
+  ui.quality = root.querySelector(".aura-quality");
   ui.quality.querySelector("button").addEventListener("click", () => recalibrate());
   badges.mount(root);
 }
 
 // Tracking has gone bad enough that focus was dropped. Offer the way out.
 bus.on("GAZE_QUALITY", ({ low }) => { if (ui.quality) ui.quality.hidden = !low; });
+addEventListener("scroll", () => gaze.refreshFocus(), { passive: true });
+addEventListener("resize", () => gaze.refreshFocus());
 
 // ── Render loop ─────────────────────────────────────────────────────────────
 // GAZE arrives at ~25Hz and in bursts. Writing transform straight from the
 // event gave visible stair-stepping even once the signal itself was clean, so
 // the event only ever moves a TARGET and a rAF loop eases the drawn position
-// toward it. This is also what keeps the outline glued to its element while
-// the page scrolls — the rect captured at FOCUS time goes stale instantly.
+// toward it. That loop also keeps the outline and badges glued to their
+// elements while the page scrolls — a rect captured at FOCUS time goes stale
+// instantly.
 const render = {
   x: innerWidth / 2, y: innerHeight / 2,
   tx: innerWidth / 2, ty: innerHeight / 2,
@@ -75,7 +78,7 @@ function frame() {
     // A wide, soft reticle when the signal is poor reads as honest rather than
     // broken: it shows the user how sure Cue is instead of faking precision.
     const s = 1 + (1 - render.drawnConf) * 0.9;
-    ui.reticle.style.setProperty("--cue-reticle-scale", s.toFixed(2));
+    ui.reticle.style.setProperty("--aura-reticle-scale", s.toFixed(2));
   }
 
   if (render.el && ui.outline) {
@@ -181,9 +184,12 @@ bus.on("UTTERANCE", async ({ text, final }) => {
     });
     const out = await res.json();
     window.cue.lastActionUtterance = text;
-    for (const a of out.do ?? []) perform(a.verb, a.args ?? {});
+    let completed = true;
+    for (const a of out.do ?? []) {
+      if (perform(a.verb, a.args ?? {}) === false) { completed = false; break; }
+    }
     window.cue.lastActionUtterance = null;
-    if (out.say) bus.emit("SAY", { text: out.say });
+    if (completed && out.say) bus.emit("SAY", { text: out.say });
   } catch (e) {
     bus.emit("SAY", { text: "Sorry, I lost my connection." });
     console.error(e);
@@ -245,11 +251,24 @@ function perform(verb, args) {
       !["approve_checkout", "cancel_checkout", "setup_passkey",
         "confirm", "cancel", "recalibrate"].includes(verb)) {
     bus.emit("SAY", { text: "Finish or cancel this checkout first." });
-    return;
+    return false;
   }
   switch (verb) {
     case "scroll":
-      scrollBy({ top: (args.dir === "up" ? -1 : 1) * innerHeight * 0.75, behavior: "smooth" });
+      if (!["up", "down", "left", "right", "top", "bottom"].includes(args.dir)) return false;
+      if (args.dir === "top" || args.dir === "bottom") {
+        scrollTo({ top: args.dir === "top" ? 0 : document.documentElement.scrollHeight, behavior: "smooth" });
+      } else {
+        const horizontal = args.dir === "left" || args.dir === "right";
+        const step = args.dir === "up" || args.dir === "left" ? -1 : 1;
+        scrollBy({ [horizontal ? "left" : "top"]: step * (horizontal ? innerWidth : innerHeight) * 0.75,
+          behavior: "smooth" });
+      }
+      break;
+    case "history":
+      if (args.dir === "back") history.back();
+      else if (args.dir === "forward") history.forward();
+      else return false;
       break;
     // "two" and "the second one" MUST mean the same item. Badges are numbered
     // locally (the few near your gaze) while nth() counts every product on the
@@ -258,27 +277,43 @@ function perform(verb, args) {
     case "focus_nth":
     case "focus_number": {
       const t = pickNumbered(args.n);
-      if (t) {
-        // Naming an item tells us exactly where the eyes were. Hand that back
-        // to the tracker as a true training pair — this is the one moment we
-        // have ground truth, and it is free.
-        gaze.learnFromSelection(t);
-        gaze.setFocus(t);
-      } else {
+      if (!t) {
         const total = scan().filter((x) => x.kind === "product").length;
         bus.emit("SAY", { text: `I only see ${total} item${total === 1 ? "" : "s"}.` });
+        return false;
       }
+      // Naming an item tells us exactly where the eyes were. Hand that back to
+      // the tracker as a true training pair — the one moment we have ground
+      // truth, and it is free.
+      gaze.learnFromSelection(t);
+      gaze.setFocus(t);
       break;
     }
     case "recalibrate":
       recalibrate();
       break;
-    case "click_focused": gaze.getFocus()?.el.click(); break;
+    case "click_focused": {
+      const target = gaze.getFocus();
+      if (target?.kind !== "action") {
+        bus.emit("SAY", { text: "Look at a button before asking me to click it." });
+        return false;
+      }
+      target.el.click();
+      break;
+    }
     case "select_variant": {
       const el = scope()?.querySelector(
         `[data-cue-action="select_variant"][data-cue-value="${CSS.escape(String(args.value).toUpperCase())}"],` +
         `[data-aura-action="select_variant"][data-aura-value="${CSS.escape(String(args.value).toUpperCase())}"]`);
-      if (!el) { bus.emit("SAY", { text: `I don't see size ${args.value} on this one.` }); break; }
+      if (!el) { bus.emit("SAY", { text: `I don't see size ${args.value} on this one.` }); return false; }
+      el.click();
+      break;
+    }
+    case "select_color": {
+      const value = String(args.value);
+      const el = scope()?.querySelector(
+        `[data-aura-action="select_color"][data-aura-value="${CSS.escape(value)}"]`);
+      if (!el) { bus.emit("SAY", { text: `I don't see ${value} on this one.` }); return false; }
       el.click();
       break;
     }
@@ -286,8 +321,10 @@ function perform(verb, args) {
       // MUST be scoped to what they were looking at. A global querySelector here
       // adds the first product on the page — i.e. charges for the wrong item.
       const el = scope()?.querySelector('[data-cue-action="add_to_cart"],[data-aura-action="add_to_cart"]');
-      if (!el) { bus.emit("SAY", { text: "Look at the item you want first." }); break; }
+      if (!el) { bus.emit("SAY", { text: "Look at the item you want first." }); return false; }
+      const before = window.CART?.().length;
       el.click();
+      if (before !== undefined && window.CART().length === before) return false;
       break;
     }
     case "checkout": stageCheckout(); break;
@@ -321,9 +358,19 @@ function perform(verb, args) {
         bus.emit("SAY", { text: "I couldn't recalibrate. Please check the camera." });
       });
       break;
-    case "navigate": location.href = args.url; break;
-    default: console.warn("[cue] unknown verb", verb, args);
+    case "navigate": {
+      let u;
+      try { u = new URL(String(args.url), location.href); } catch { u = null; }
+      if (!u || !/^https?:$/.test(u.protocol)) {
+        console.warn("[cue] refused navigate to", args.url);
+        return false;
+      }
+      location.href = u.href;
+      break;
+    }
+    default: console.warn("[cue] unknown verb", verb, args); return false;
   }
+  return true;
 }
 
 // Voice-reachable recalibration. Gaze drifts when you shift in your seat, and

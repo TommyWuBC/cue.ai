@@ -34,7 +34,7 @@ what survived the wake word / push-to-talk / self-echo gate. Subscribe to
       verb?: string            // for kind === "action"
     }
 
-    Product = { id, title, price, currency, image, variants[], attrs{}, url }
+    Product = { id, title, price, currency, variants[], colors[], attrs{} }
 
 ## Page → server
 
@@ -80,7 +80,7 @@ else is gaze-targetable. That is deliberate: it makes a 5cm gaze error harmless.
 
 ## Who says what
 
-The **page** announces outcomes it alone can know: "Added.", the over-budget
+The **page** announces outcomes it alone can know: "Added…", the over-budget
 refusal. The **router/agent** announces intent it is sure of. The router must
 never say "Added." up front — the click can still be refused, and then the user
 hears the refusal and "Added." one breath apart.
@@ -88,6 +88,11 @@ hears the refusal and "Added." one breath apart.
 ## Hard rules
 
 1. Gaze sets FOCUS. Voice commits. Gaze alone never triggers an action, ever.
-2. Nothing spends money on a single utterance. Stage, read back, confirm.
-3. Every product-scoped action resolves through the focused card. A bare
+   Scroll and resize refresh the focused target's rectangle, or clear it when
+   the element leaves the viewport.
+2. Nothing spends money on a single utterance. Stage, read back, confirm — and
+   for a real order, a verified passkey.
+3. LLM output is filtered on the server to reversible actions only. Cart and
+   order mutations are reachable only through explicit command routes.
+4. Every product-scoped action resolves through the focused card. A bare
    `document.querySelector` grabs item #1 — i.e. charges for the wrong thing.

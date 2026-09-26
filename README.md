@@ -50,6 +50,8 @@ Same code path as speech — only the wake word and STT are bypassed.
     client/resolver.js  gaze point -> nearest tagged element
     client/voice.js     wake word, push-to-talk, barge-in, echo rejection, TTS playback
     client/aura.js      orchestration: utterance -> server -> speech + page actions
+    client/avatar.js    Cue's animated face; reacts to bus events, never emits any
+    store/index.html    the Northfield storefront (design notes: store/DESIGN.md)
     store/checkout.js   spoken order review + browser passkey ceremony
     server/checkout.py  server priced cart, limits, passkey verification, SQLite orders
     server/router.py    regex fast path; the demo's core commands never hit an LLM
@@ -65,9 +67,14 @@ Markup contract and event shapes: see `ARCHITECTURE.md`.
 **Gaze never selects; voice commits.** Gaze sets focus, speech confirms. This is
 the accessibility story and it is also why a few cm of webgazer error is harmless.
 
-**Only tagged elements are targetable.** `data-cue-product` / `data-cue-action`
-(the old `data-aura-*` spelling still works). Six big hit targets on a page beats
-pixel-accurate tracking.
+**AI answers cannot purchase.** Grok can answer questions and suggest reversible
+selection or scrolling. The server filters its action list; adding, clicking,
+checkout and approval are only reached through explicit command routes and the
+passkey step. Partial product data produces an honest "I can't see it" answer.
+
+**Only tagged elements are targetable.** `data-aura-product` / `data-aura-action`
+(the `data-cue-*` spelling is also accepted). Six big hit targets on a page
+beats pixel-accurate tracking.
 
 **Everything in one coordinate frame.** Camera, mic, calibration and overlay all
 run in the store page. Running webgazer from a separate extension page would put
@@ -116,6 +123,15 @@ passkey prompt. A nearby phone may be offered by the browser. The merchant view
 is at `http://localhost:4173/merchant.html`. Orders and the monthly budget are
 stored in `server/data/cue.sqlite3` (ignored by git). The server sets prices from
 `store/products.json`; cart prices sent by the browser are never accepted.
+
+Say “Cue, the second one” to focus a product, then “Cue, medium, in black”
+to set options. “Cue, add the second one in medium, in black” combines those
+steps. A size is required before adding; no size is silently chosen.
+
+For page control, say “Cue, scroll down”, “Cue, scroll to top”, “Cue, go
+back”, or “Cue, click this” while looking at a button. Scrolling or resizing
+clears focus when its target leaves the viewport, so “add it” cannot reuse an
+off-screen item.
 
 This is a **single shopper, localhost demo**. It has no account enrollment or
 merchant login and must not be deployed to the public internet as-is. It records

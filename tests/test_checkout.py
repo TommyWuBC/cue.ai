@@ -18,19 +18,21 @@ class CheckoutTests(unittest.TestCase):
         self.shop = module.Checkout(db_path=Path(self.tmp.name) / 'orders.sqlite3')
 
     def test_server_reprices_and_rejects_invalid_items(self):
-        quote = self.shop.prepare([{'id': 'j1', 'size': 'M', 'price': 1}], 'Add this in medium. Check out.')
+        quote = self.shop.prepare([{'id': 'j1', 'size': 'M', 'color': 'Black', 'price': 1}], 'Add this in medium. Check out.')
         self.assertEqual(quote['total_cents'], 12900)
         self.assertEqual(quote['remaining_after_cents'], 12100)
         with self.assertRaises(module.CheckoutError):
-            self.shop.prepare([{'id': 'j1', 'size': 'XXL'}], 'Check out.')
+            self.shop.prepare([{'id': 'j1', 'size': 'XXL', 'color': 'Black'}], 'Check out.')
         with self.assertRaises(module.CheckoutError):
-            self.shop.prepare([{'id': 'fake', 'size': 'M'}], 'Check out.')
+            self.shop.prepare([{'id': 'fake', 'size': 'M', 'color': 'Black'}], 'Check out.')
         with self.assertRaises(module.CheckoutError):
-            self.shop.prepare([{'id': 'j1', 'size': 'M'}, {'id': 'j2', 'size': 'M'}], 'Check out.')
+            self.shop.prepare([{'id': 'j1', 'size': 'M', 'color': 'Pink'}], 'Check out.')
+        with self.assertRaises(module.CheckoutError):
+            self.shop.prepare([{'id': 'j1', 'size': 'M', 'color': 'Black'}, {'id': 'j2', 'size': 'M', 'color': 'Brown'}], 'Check out.')
 
     def test_passkey_approval_enforces_budget_and_cannot_replay(self):
-        first = self.shop.prepare([{'id': 'j1', 'size': 'M'}], 'Add first in medium. Check out.')
-        second = self.shop.prepare([{'id': 'j5', 'size': 'M'}], 'Add second in medium. Check out.')
+        first = self.shop.prepare([{'id': 'j1', 'size': 'M', 'color': 'Black'}], 'Add first in medium. Check out.')
+        second = self.shop.prepare([{'id': 'j5', 'size': 'M', 'color': 'Sand'}], 'Add second in medium. Check out.')
         credential_id = b'credential-for-test'
         with self.shop.db() as conn:
             conn.execute('INSERT INTO credentials VALUES (?, ?, 0)', (credential_id, b'public-key'))
@@ -52,7 +54,7 @@ class CheckoutTests(unittest.TestCase):
         self.assertEqual(len(self.shop.orders()), 1)
 
     def test_unverified_passkey_never_creates_order(self):
-        quote = self.shop.prepare([{'id': 'j2', 'size': 'M'}], 'Check out.')
+        quote = self.shop.prepare([{'id': 'j2', 'size': 'M', 'color': 'Brown'}], 'Check out.')
         with self.assertRaises(module.CheckoutError):
             self.shop.authentication_options(quote['intent_id'])
         self.assertEqual(self.shop.orders(), [])

@@ -1,95 +1,164 @@
-#cue-root { position: fixed; inset: 0; pointer-events: none; z-index: 2147483000;
-  font: 13px/1.4 ui-sans-serif, -apple-system, "Segoe UI", sans-serif; }
-.aura-quality[hidden] { display: none; }
-.aura-quality { position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 12px; max-width: min(90vw, 520px);
-  padding: 12px 16px; border-radius: 12px; color: #fff; background: #7b341e;
-  box-shadow: 0 8px 24px rgba(0,0,0,.24); pointer-events: auto; }
-.aura-quality button { border: 0; border-radius: 8px; padding: 8px 12px; background: #fff;
-  color: #7b341e; font: inherit; font-weight: 700; cursor: pointer; }
+/* Cue's layer over any store page. Everything Cue draws lives here; the store's
+   own styles never reach in. Falls back to system fonts on pages without base.css. */
+#aura-root {
+  --cue: #2f6bff; --cue-soft: rgba(47,107,255,.14);
+  --cue-ink: #1d1d1f; --cue-muted: #6e6e73;
+  --cue-font: var(--sans, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif);
+  --cue-ease: cubic-bezier(.2,.8,.2,1);
+  position: fixed; inset: 0; pointer-events: none; z-index: 2147483000;
+  font: 13px/1.45 var(--cue-font); color: var(--cue-ink);
+  -webkit-font-smoothing: antialiased;
+}
+/* avatar.js promotes the layer into the top layer as a popover; undo UA popover chrome. */
+#aura-root[popover] { inset: 0; width: auto; height: auto; max-width: none; max-height: none;
+  margin: 0; padding: 0; border: 0; background: transparent; overflow: visible; }
+body:has(.aura-cal) .aura-reticle, body:has(.aura-cal) .aura-outline,
+body:has(dialog:modal) .aura-outline { display: none; }
 
-/* The reticle is driven by a rAF loop, never by a CSS transition — a
-   transition on top of per-frame easing fights it and reads as lag. It grows
-   when confidence drops, so a poor signal looks honest instead of broken. */
-.cue-reticle { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px;
-  --cue-reticle-scale: 1;
-  border-radius: 50%; border: 2px solid #1a1f71; background: rgba(26,31,113,.14);
-  box-shadow: 0 0 0 3px rgba(255,255,255,.55);
-  scale: var(--cue-reticle-scale);
-  will-change: transform, opacity; }
+/* ── Gaze ─────────────────────────────────────────────────────────────────── */
+.aura-reticle { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px;
+  border-radius: 50%; border: 1.5px solid rgba(47,107,255,.75); background: rgba(47,107,255,.1);
+  box-shadow: 0 0 0 3px rgba(255,255,255,.7), 0 2px 10px rgba(47,107,255,.25);
+  opacity: 0; transition: transform 70ms linear; will-change: transform; }
 
-.cue-outline { position: absolute; border-radius: 14px; opacity: 0;
-  border: 3px solid #1a1f71; box-shadow: 0 0 0 4px rgba(26,31,113,.16), 0 8px 30px rgba(0,0,0,.14);
-  transition: opacity .12s;
+.aura-outline { position: absolute; left: 0; top: 0; border-radius: 16px; opacity: 0;
+  outline: 2.5px solid var(--cue); outline-offset: 4px;
+  box-shadow: 0 0 0 10px var(--cue-soft);
+  transition: transform .28s var(--cue-ease), width .28s var(--cue-ease), height .28s var(--cue-ease),
+    opacity .18s ease, border-radius .28s var(--cue-ease);
   will-change: transform, width, height; }
-.cue-outline.on { opacity: 1; }
-.cue-outline[data-kind="action"] { border-color: #f7b600; box-shadow: 0 0 0 4px rgba(247,182,0,.22); }
-.cue-outline-label { position: absolute; left: 0; top: -30px; white-space: nowrap;
-  background: #1a1f71; color: #fff; padding: 4px 10px; border-radius: 8px; font-weight: 600; }
-.cue-outline[data-kind="action"] .cue-outline-label { background: #8a6300; }
+.aura-outline.on { opacity: 1; }
+.cue-scrolling .aura-outline { transition: opacity .18s ease; }
+.aura-outline[data-kind="action"] { border-radius: 999px; box-shadow: 0 0 0 7px var(--cue-soft); }
+.aura-outline-label { position: absolute; left: -4px; top: -42px; display: inline-flex; align-items: center;
+  gap: 7px; height: 28px; padding: 0 12px 0 10px; border-radius: 999px; white-space: nowrap;
+  background: var(--cue); color: #fff; font-size: 12.5px; font-weight: 500; letter-spacing: -.005em;
+  box-shadow: 0 6px 18px rgba(47,107,255,.32); }
+.aura-outline-label::before { content: ""; width: 7px; height: 7px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,.28); }
 
-.cue-hud { position: absolute; left: 20px; bottom: 20px; width: 330px; padding: 14px 16px;
-  background: rgba(14,16,28,.92); color: #fff; border-radius: 16px; backdrop-filter: blur(12px);
-  box-shadow: 0 12px 40px rgba(0,0,0,.35); }
-.cue-hud-row { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-.cue-chip { margin-left: auto; font-size: 11px; opacity: .7; text-transform: uppercase; letter-spacing: .06em; }
-.cue-dot { width: 9px; height: 9px; border-radius: 50%; background: #555; transition: background .15s, box-shadow .15s; }
-.cue-dot.live { background: #2ecc71; }
-.cue-dot.hot { background: #ff4757; box-shadow: 0 0 0 5px rgba(255,71,87,.25); }
-.cue-hud-heard { margin-top: 9px; min-height: 18px; opacity: .95; }
-.cue-hud-said { margin-top: 5px; min-height: 18px; color: #9fe6ff; }
-.cue-hud-foot { margin-top: 10px; font-size: 11px; opacity: .45; }
-.cue-hud kbd { background: #2b2f42; border-radius: 4px; padding: 1px 5px; }
+/* ── Cue's dock ───────────────────────────────────────────────────────────── */
+.aura-hud { position: absolute; left: 20px; bottom: 20px; width: 356px; pointer-events: auto;
+  display: grid; grid-template-columns: 64px 1fr; column-gap: 12px; align-items: start;
+  padding: 12px 16px 12px 10px; border-radius: 24px;
+  background: rgba(255,255,255,.84); backdrop-filter: blur(22px) saturate(1.8);
+  -webkit-backdrop-filter: blur(22px) saturate(1.8);
+  border: 1px solid rgba(0,0,0,.06);
+  box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 14px 44px rgba(20,24,40,.14); }
+.aura-hud > .cue-avatar { grid-row: 1 / span 4; width: 64px; height: 64px; }
+.aura-hud > :not(.cue-avatar) { grid-column: 2; }
 
-.cue-cal { position: fixed; inset: 0; background: #0e101c; z-index: 2147483600; pointer-events: auto; }
-.cue-cal-hint { position: absolute; left: 50%; top: 26px; transform: translateX(-50%);
-  color: #fff; font: 15px ui-sans-serif, sans-serif; opacity: .85; text-align: center; }
-.cue-cal-dot { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px;
-  border-radius: 50%; background: #f7b600; box-shadow: 0 0 0 0 rgba(247,182,0,.6);
-  transition: left .28s, top .28s; animation: cue-pulse 1.4s infinite; }
-.cue-cal-dot.armed { background: #2ecc71; animation: none; }
-@keyframes cue-pulse { 70% { box-shadow: 0 0 0 18px rgba(247,182,0,0); } }
+.aura-hud-row { display: flex; align-items: center; gap: 8px; min-height: 22px; margin-top: 2px; }
+.aura-hud-row b { font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
+.aura-chip { margin-left: auto; font-size: 11.5px; color: var(--cue-muted); }
+.aura-dot { order: 2; width: 7px; height: 7px; border-radius: 50%; background: #c7c7cc;
+  transition: background-color .2s, box-shadow .2s; }
+.aura-dot.live { background: #34c759; }
+.aura-dot.hot { background: var(--cue); box-shadow: 0 0 0 4px var(--cue-soft); animation: cue-hot 1.2s ease-in-out infinite; }
+@keyframes cue-hot { 50% { box-shadow: 0 0 0 7px rgba(47,107,255,.06); } }
+.aura-hud-row b { order: 1; }
+.aura-chip { order: 3; }
 
-/* ── Quality gate modal ──────────────────────────────────────────────────── */
-.cue-modal { position: fixed; inset: 0; z-index: 2147483610; pointer-events: auto;
-  background: rgba(8,9,16,.72); backdrop-filter: blur(6px);
-  display: flex; align-items: center; justify-content: center;
-  font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", sans-serif; }
-.cue-modal-card { background: #fff; color: #15171f; width: min(480px, calc(100vw - 48px));
-  padding: 26px 28px; border-radius: 20px; box-shadow: 0 24px 70px rgba(0,0,0,.45); }
-.cue-modal-card h3 { margin: 0 0 12px; font-size: 19px; letter-spacing: -.02em; }
-.cue-modal-num { margin: 0 0 12px; font-size: 30px; font-weight: 700;
-  font-variant-numeric: tabular-nums; color: #1a1f71; }
-.cue-modal-num span { font-size: 13px; font-weight: 500; color: #6b7280; letter-spacing: 0; }
-.cue-modal-card p { margin: 0 0 12px; }
-.cue-modal-card ul { margin: 0 0 20px; padding-left: 20px; color: #4b5563; }
-.cue-modal-card li { margin-bottom: 5px; }
-.cue-modal-row { display: flex; gap: 10px; }
-.cue-btn { flex: 1; border: 1px solid #d7d9e0; background: #fff; color: #15171f;
-  border-radius: 12px; padding: 13px; font: inherit; font-weight: 600; cursor: pointer; }
-.cue-btn:hover { background: #f4f5f8; }
-.cue-btn-primary { background: #1a1f71; border-color: #1a1f71; color: #fff; }
-.cue-btn-primary:hover { background: #262c8f; }
-.cue-btn:focus-visible { outline: 3px solid #f7b600; outline-offset: 2px; }
-.cue-modal-foot { margin: 16px 0 0; font-size: 13px; color: #6b7280; }
+.aura-hud-heard, .aura-hud-said { overflow-wrap: anywhere; }
+.aura-hud-heard { margin-top: 4px; color: var(--cue-muted); font-size: 12.5px; }
+.aura-hud-heard:not(:empty)::before { content: "You: "; color: #aeaeb2; }
+.aura-hud-said { margin-top: 3px; font-size: 14px; line-height: 1.4; letter-spacing: -.01em;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.aura-hud-heard:empty, .aura-hud-said:empty { display: none; }
+.aura-hud-foot { margin-top: 8px; font-size: 11.5px; color: var(--cue-muted); }
+.aura-hud kbd { font: 500 10.5px/1 var(--cue-font); padding: 3px 6px; border-radius: 5px;
+  background: #fff; border: 1px solid rgba(0,0,0,.1); box-shadow: 0 1px 0 rgba(0,0,0,.08); }
+
+.cue-avatar { display: block; }
+.cue-avatar svg { display: block; width: 100%; height: 100%; overflow: visible; }
+
+/* ── Low-confidence notice ────────────────────────────────────────────────── */
+.aura-quality[hidden] { display: none; }
+.aura-quality { position: absolute; top: 88px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 14px; width: max-content; max-width: min(92vw, 640px); text-wrap: balance;
+  padding: 12px 12px 12px 18px; border-radius: 18px; pointer-events: auto;
+  background: rgba(255,255,255,.94); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(0,0,0,.06); box-shadow: 0 16px 48px rgba(20,24,40,.18);
+  font-size: 13.5px; animation: cue-drop .38s var(--cue-ease); }
+.aura-quality::before { content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%;
+  background: #ff9f0a; box-shadow: 0 0 0 4px rgba(255,159,10,.18); }
+.aura-quality button { flex: none; border: 0; border-radius: 999px; height: 34px; padding: 0 16px;
+  background: var(--cue); color: #fff; font: 500 13px var(--cue-font); cursor: pointer; }
+@keyframes cue-drop { from { opacity: 0; transform: translate(-50%, -10px); } }
+
+/* ── Calibration ──────────────────────────────────────────────────────────── */
+.aura-cal { position: fixed; inset: 0; z-index: 2147483600; pointer-events: auto;
+  background: radial-gradient(120% 90% at 50% 40%, #ffffff 0%, #f3f4f7 100%); }
+.aura-cal-hint { position: absolute; left: 50%; bottom: 36px; transform: translateX(-50%);
+  padding: 10px 18px; border-radius: 999px; white-space: nowrap;
+  background: #fff; border: 1px solid rgba(0,0,0,.06); box-shadow: 0 8px 28px rgba(20,24,40,.1);
+  color: #1d1d1f; font: 14px var(--cue-font); letter-spacing: -.005em; }
+.aura-cal-dot { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+  border-radius: 50%; background: var(--cue);
+  box-shadow: 0 0 0 6px rgba(47,107,255,.16), 0 0 0 0 rgba(47,107,255,.35);
+  transition: left .55s var(--cue-ease), top .55s var(--cue-ease), transform .2s var(--cue-ease);
+  animation: cue-cal 1.6s ease-out infinite; }
+.aura-cal-dot::after { content: ""; position: absolute; inset: 7px; border-radius: 50%; background: #fff; }
+.aura-cal-dot.armed { transform: scale(.7); animation: none; background: #34c759;
+  box-shadow: 0 0 0 10px rgba(52,199,89,.18); }
+@keyframes cue-cal { 70% { box-shadow: 0 0 0 6px rgba(47,107,255,.16), 0 0 0 26px rgba(47,107,255,0); } }
+
+@media (max-width: 520px) {
+  .aura-hud { left: 12px; right: 12px; bottom: 12px; width: auto; }
+  body:has(dialog:modal) .aura-hud { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aura-outline, .aura-reticle, .aura-cal-dot { transition: none; }
+  .aura-dot.hot, .aura-cal-dot, .aura-quality { animation: none; }
+}
 
 /* ── Numbered selection badges ───────────────────────────────────────────── */
-/* At 242px of gaze error you cannot point at a 249px product tile. Gaze picks
-   the neighbourhood, these pick the item, and the audience can read them from
-   across the room. */
-.cue-badge { position: absolute; min-width: 40px; height: 40px; padding: 0 10px;
-  border-radius: 12px; background: #1a1f71; color: #fff;
-  font: 700 20px/40px ui-sans-serif, -apple-system, sans-serif; text-align: center;
-  box-shadow: 0 6px 20px rgba(0,0,0,.35), 0 0 0 3px rgba(255,255,255,.85);
-  will-change: transform; transition: opacity .12s, background .12s; }
-.cue-badge[data-focused="true"] { background: #f7b600; color: #15171f;
-  box-shadow: 0 8px 26px rgba(247,182,0,.5), 0 0 0 3px rgba(255,255,255,.95); }
+/* Measured gaze error on a real face is 220–350px; a product tile is ~250px.
+   Gaze picks the neighbourhood, these pick the item, and an audience standing
+   behind the laptop can read them. How many appear scales with the measured
+   error — see badges.js setPrecision(). */
 .cue-badges { position: absolute; inset: 0; pointer-events: none; }
-.cue-hud-drift { display: none; margin-top: 9px; padding: 7px 10px; border-radius: 9px;
-  background: rgba(247,182,0,.16); color: #f7b600; font-size: 12px; font-weight: 600; }
-.cue-hud-drift.on { display: block; }
+.cue-badge { position: absolute; min-width: 34px; height: 34px; padding: 0 10px;
+  border-radius: 999px; background: var(--cue, #2f6bff); color: #fff;
+  font: 600 17px/34px var(--cue-font, -apple-system, sans-serif); text-align: center;
+  letter-spacing: -.01em;
+  box-shadow: 0 2px 8px rgba(20,24,40,.24), 0 0 0 3px rgba(255,255,255,.9);
+  will-change: transform; transition: opacity .14s ease, background .14s ease; }
+.cue-badge[data-focused="true"] { background: #1d1d1f;
+  box-shadow: 0 4px 14px rgba(20,24,40,.34), 0 0 0 3px rgba(255,255,255,.95); }
 
-/* Gaze below the precision bar: the outline is a guess, not an assertion. */
-.cue-outline[data-guess="true"] { border-style: dashed; border-width: 2px;
-  opacity: .5; box-shadow: none; }
-.cue-outline[data-guess="true"] .cue-outline-label { opacity: .7; font-weight: 500; }
+/* Gaze below the precision bar: the outline is a guess, not an assertion. At
+   242px it lands on the wrong card two times in three. */
+.aura-outline[data-guess="true"] { outline-style: dashed; outline-width: 2px; opacity: .55; }
+.aura-outline[data-guess="true"] .aura-outline-label { opacity: .75; font-weight: 400; }
+
+/* Drift nudge, inside Cue's dock. */
+.aura-hud-drift { display: none; margin-top: 8px; padding: 7px 10px; border-radius: 10px;
+  background: rgba(247,182,0,.16); color: #8a6300; font-size: 12px; font-weight: 600; }
+.aura-hud-drift.on { display: block; }
+
+/* ── Calibration quality gate ────────────────────────────────────────────── */
+.cue-modal { position: fixed; inset: 0; z-index: 2147483610; pointer-events: auto;
+  background: rgba(14,16,28,.66); backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+  font: 14px/1.55 var(--cue-font, -apple-system, sans-serif); }
+.cue-modal-card { background: #fff; color: #1d1d1f; width: min(460px, calc(100vw - 48px));
+  padding: 26px 28px; border-radius: 22px; box-shadow: 0 24px 70px rgba(20,24,40,.4); }
+.cue-modal-card h3 { margin: 0 0 12px; font-size: 19px; letter-spacing: -.02em; }
+.cue-modal-num { margin: 0 0 12px; font-size: 30px; font-weight: 700;
+  font-variant-numeric: tabular-nums; color: var(--cue, #2f6bff); }
+.cue-modal-num span { font-size: 13px; font-weight: 500; color: #6e6e73; }
+.cue-modal-card p { margin: 0 0 12px; }
+.cue-modal-card ul { margin: 0 0 20px; padding-left: 20px; color: #6e6e73; }
+.cue-modal-card li { margin-bottom: 5px; }
+.cue-modal-row { display: flex; gap: 10px; }
+.cue-btn { flex: 1; border: 1px solid rgba(0,0,0,.12); background: #fff; color: #1d1d1f;
+  border-radius: 12px; padding: 13px; font: inherit; font-weight: 600; cursor: pointer; }
+.cue-btn:hover { background: #f5f5f7; }
+.cue-btn-primary { background: var(--cue, #2f6bff); border-color: transparent; color: #fff; }
+.cue-btn:focus-visible { outline: 3px solid #f7b600; outline-offset: 2px; }
+.cue-modal-foot { margin: 16px 0 0; font-size: 13px; color: #6e6e73; }
+
+/* The reticle widens as confidence falls — honest beats fake-precise. Driven
+   from the rAF loop, so no CSS transition here: one would fight the easing. */
+.aura-reticle { scale: var(--aura-reticle-scale, 1); }
