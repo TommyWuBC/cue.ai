@@ -18,19 +18,29 @@ class Utterance(BaseModel):
     context: dict = {}
 
 
+def _trace(text: str, out: dict):
+    """One line per turn: what came in, who handled it, what happens next.
+    Paired with [stt] heard, this makes every failure legible from the terminal
+    instead of requiring the browser console."""
+    verbs = ",".join(a.get("verb", "?") for a in out.get("do", [])) or "-"
+    say = (out.get("say") or "")[:60]
+    print(f'[turn] "{text}" -> {out.get("source", "?"):8} do={verbs:28} say="{say}"', flush=True)
+    return out
+
+
 @app.post("/utterance")
 def utterance(u: Utterance):
     fast = router.route(u.text)
     if fast:
-        return fast
+        return _trace(u.text, fast)
     if os.getenv("XAI_API_KEY"):
         try:
             import agent
-            return agent.respond(u.text, u.context)
+            return _trace(u.text, agent.respond(u.text, u.context))
         except Exception as e:
             # Never let a dead key or saturated venue wifi kill the demo.
-            print(f"[agent] {type(e).__name__}: {e} -> falling back to local answerer")
-    return fallback.answer(u.text, u.context)
+            print(f"[agent] {type(e).__name__}: {e} -> falling back to local answerer", flush=True)
+    return _trace(u.text, fallback.answer(u.text, u.context))
 
 
 # ── Speech in ───────────────────────────────────────────────────────────────

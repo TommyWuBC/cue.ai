@@ -15,6 +15,11 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 XAI_WS = "wss://api.x.ai/v1/stt"
 
+# Print every final transcript to the terminal. On by default: during a build
+# this is the difference between "the mic is dead" and "it heard you fine and
+# the router ignored it". Set STT_LOG=0 to silence.
+LOG_TRANSCRIPTS = os.getenv("STT_LOG", "1") != "0"
+
 
 def available() -> bool:
     return os.getenv("STT_PROVIDER", "grok") == "grok" and bool(os.getenv("XAI_API_KEY"))
@@ -113,6 +118,16 @@ async def proxy(ws: WebSocket):
             async for raw in upstream:
                 if isinstance(raw, bytes):
                     continue
+                # Echo finals to the terminal. Without this you cannot tell a
+                # dead mic from a mis-heard wake word from a router miss, which
+                # are three very different problems with the same symptom.
+                if LOG_TRANSCRIPTS:
+                    try:
+                        m = json.loads(raw)
+                        if m.get("text") and m.get("is_final") and m.get("speech_final"):
+                            print(f'[stt] heard: "{m["text"]}"', flush=True)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
                 await ws.send_text(raw)
         except Exception as e:
             print(f"[stt] upstream closed: {type(e).__name__}: {e}", flush=True)
