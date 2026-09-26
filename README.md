@@ -149,6 +149,12 @@ is at `http://localhost:4173/merchant.html`. Orders and the monthly budget are
 stored in `server/data/cue.sqlite3` (ignored by git). The server sets prices from
 `store/products.json`; cart prices sent by the browser are never accepted.
 
+Say “Cue, cancel” at any point during checkout, including the readback or the
+passkey prompt. Cancellation revokes the server intent and its approval
+challenges, stops speech, and keeps the bag. If an order was already committed,
+Cue reports that instead of claiming it was cancelled. A failed cancellation
+can be retried from the dialog.
+
 Say “Cue, the second one” to focus a product, then “Cue, medium, in black”
 to set options. “Cue, add the second one in medium, in black” combines those
 steps. A size is required before adding; no size is silently chosen.

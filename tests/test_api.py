@@ -30,6 +30,16 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/passkey/authenticate/options/' + response.json()['intent_id']).status_code, 409)
         self.assertEqual(self.client.get('/merchant.html').status_code, 200)
 
+    def test_cancel_endpoint_revokes_checkout(self):
+        quote = self.client.post('/api/checkout/prepare', json={
+            'items': [{'id': 'j4', 'size': 'M', 'color': 'Oat'}], 'customer_words': 'Check out.'
+        }).json()
+        path = '/api/checkout/cancel/' + quote['intent_id']
+        self.assertEqual(self.client.post(path).json()['status'], 'cancelled')
+        self.assertEqual(self.client.post(path).status_code, 200)
+        self.assertEqual(self.client.post('/api/passkey/authenticate/options/' + quote['intent_id']).status_code, 409)
+
+
 
 if __name__ == '__main__':
     unittest.main()

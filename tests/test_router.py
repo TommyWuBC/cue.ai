@@ -18,6 +18,8 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(router.route('yes')['do'][0]['verb'], 'approve_checkout')
         self.assertEqual(router.route('set up passkey')['do'][0]['verb'], 'setup_passkey')
         self.assertEqual(router.route('no')['do'][0]['verb'], 'cancel_checkout')
+        self.assertEqual(router.route('cancel')['do'][0]['verb'], 'cancel_checkout')
+        self.assertIsNone(router.route('cancel checkout')['say'])
 
     def test_add_second_item_with_options_is_one_safe_sequence(self):
         self.assertEqual(router.route('Add the second one in medium, in black')['do'], [

@@ -39,10 +39,10 @@ def route(text: str):
 
     if re.search(r"\b(?:don't|do not|never)\s+(?:add|check ?out|pay|place|approve|confirm|click)\b", t):
         return result("Okay, I won't do that.")
-    if t in {"stop", "quiet", "never mind", "cancel"}:
+    if t in {"stop", "quiet", "never mind"}:
         return result("Okay.")
-    if t in {"no", "cancel checkout", "cancel order"}:
-        return result("Okay, checkout cancelled.", [action("cancel_checkout")])
+    if t in {"no", "cancel", "cancel checkout", "cancel order"}:
+        return result(actions=[action("cancel_checkout")])
     if t in {"yes", "yes approve", "approve", "confirm", "approve the order", "confirm the order",
              "approve checkout", "confirm checkout"}:
         return result(actions=[action("approve_checkout")])
