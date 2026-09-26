@@ -141,6 +141,17 @@ window.cueStore = {
 };
 paint();
 </script>
+<script>
+  // Point webgazer at our own copy of the TF.js models. Must run BEFORE the
+  // bundle, which constructs its tracker (and starts fetching) at load time.
+  // Without this it pulls ~6MB from tfhub.dev on every cold start, so a
+  // saturated venue wifi means no gaze tracking at all.
+  globalThis.CUE_MODELS = {
+    blazeface: "/vendor/models/blazeface",
+    facemesh:  "/vendor/models/facemesh",
+    iris:      "/vendor/models/iris",
+  };
+</script>
 <script src="/vendor/webgazer.js"></script>
 <script type="module" src="/client/aura.js"></script>
 </body>

@@ -3,3 +3,4 @@ __pycache__/
 .env
 server/cache/*.mp3
 server/cache/_ledger.json
+vendor/webgazer.orig.js

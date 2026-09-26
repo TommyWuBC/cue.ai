@@ -87,11 +87,23 @@ def models():
 
 
 # Dev hygiene: browsers cache ES modules aggressively, and an hour spent
-# debugging a stale module is an hour you do not have. Never cache app code.
+# debugging a stale module is an hour you do not have.
 @app.middleware("http")
-async def no_store(request, call_next):
+async def caching(request, call_next):
     resp = await call_next(request)
-    if not request.url.path.startswith("/vendor"):
+    path = request.url.path
+    if path.startswith("/vendor/models/"):
+        # Model weights are content-addressed by their directory and never
+        # change. Cache them hard — they are 3.4 MB and we want the second
+        # load to be instant.
+        resp.headers["cache-control"] = "public, max-age=604800, immutable"
+    elif path.startswith("/vendor/"):
+        # Previously exempt from cache headers entirely, which meant browsers
+        # applied heuristic freshness and happily served a stale webgazer.js
+        # after it had been patched. no-cache still allows a 304, so the 1.6 MB
+        # is not re-sent — it just has to be revalidated.
+        resp.headers["cache-control"] = "no-cache"
+    else:
         resp.headers["cache-control"] = "no-store, must-revalidate"
     return resp
 
