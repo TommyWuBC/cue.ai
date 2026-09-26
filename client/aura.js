@@ -4,6 +4,11 @@ import * as voice from "./voice.js";
 import { scan, nth, invalidate, controls, findControl } from "./resolver.js";
 import * as badges from "./badges.js";
 import { CONFIG, url } from "./config.js";
+import { productMemory } from "./product-memory.js";
+
+let memoryStorage;
+try { memoryStorage = sessionStorage; } catch {}
+const comparisons = productMemory({ storage: memoryStorage });
 
 
 // ── Overlay chrome ──────────────────────────────────────────────────────────
@@ -207,8 +212,10 @@ function edgeScrollTick() {
 // ── The loop: utterance -> server -> speech + actions ───────────────────────
 function context() {
   const f = gaze.getFocus();
+  const focused = f?.kind === "product" ? f.product : null;
   return {
-    focused: f?.kind === "product" ? f.product : null,
+    focused,
+    previous: comparisons.remember(focused),
     focusedAction: f?.kind === "action" ? { verb: f.verb, label: f.label } : null,
     visible: scan().filter((t) => t.kind === "product").map((t) => t.product),
     // What a person could click on this page right now. Without this the agent
@@ -371,6 +378,7 @@ function perform(verb, args) {
       // truth, and it is free.
       gaze.learnFromSelection(t);
       gaze.setFocus(t);
+      if (t.kind === "product") comparisons.remember(t.product);
       break;
     }
     case "recalibrate":
