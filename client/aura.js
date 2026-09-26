@@ -19,6 +19,10 @@ function mountUI() {
       <div class="aura-hud-heard"></div>
       <div class="aura-hud-said"></div>
       <div class="aura-hud-foot">hold <kbd>space</kbd> to talk · say “Cue, …”</div>
+    </div>
+    <div class="aura-quality" role="status" aria-live="polite" hidden>
+      <span>Gaze seems uncertain. Say “Cue, recalibrate” or use the button.</span>
+      <button type="button">Recalibrate</button>
     </div>`;
   document.body.appendChild(root);
   ui.reticle = root.querySelector(".aura-reticle");
@@ -28,7 +32,11 @@ function mountUI() {
   ui.said    = root.querySelector(".aura-hud-said");
   ui.mode    = root.querySelector(".aura-mode");
   ui.dot     = root.querySelector(".aura-dot");
+  ui.quality = root.querySelector(".aura-quality");
+  ui.quality.querySelector("button").addEventListener("click", () => perform("recalibrate", {}));
 }
+
+bus.on("GAZE_QUALITY", ({ low }) => { ui.quality.hidden = !low; });
 
 bus.on("GAZE", ({ x, y, confidence }) => {
   ui.reticle.style.transform = `translate(${x}px, ${y}px)`;
@@ -71,6 +79,7 @@ function context() {
 let inflight = false;
 bus.on("UTTERANCE", async ({ text, final }) => {
   ui.heard.textContent = (final ? "" : "… ") + text;
+  if (gaze.getState().calibrating) return;
   if (!final || inflight) return;
   inflight = true;
   try {
@@ -126,6 +135,12 @@ function perform(verb, args) {
     case "checkout":
       document.querySelector('[data-aura-action="checkout"]')?.click();
       break;
+    case "recalibrate":
+      gaze.calibrate().then(() => gaze.hideCamera()).catch(e => {
+        console.error("[cue] recalibration failed", e);
+        bus.emit("SAY", { text: "I couldn't recalibrate. Please check the camera." });
+      });
+      break;
     case "navigate": location.href = args.url; break;
     default: console.warn("[aura] unknown verb", verb, args);
   }
@@ -135,11 +150,11 @@ function perform(verb, args) {
 async function boot() {
   mountUI();
   await gaze.start({ mode: CONFIG.gazeMode });
+  voice.startListening();
   if (CONFIG.gazeMode === "webgazer" && CONFIG.autoCal) {
     await gaze.calibrate();
     gaze.hideCamera();
   }
-  voice.startListening();
   bus.emit("SAY", { text: "Cue is ready. Look at something and ask me about it." });
 }
 

@@ -8,15 +8,20 @@ const ALPHA_SACC  = 0.75;  // light smoothing mid-saccade (snap to new target fa
 const SACCADE_PX  = 90;    // jump beyond this = saccade, not jitter
 const DWELL_MS    = 380;   // how long a candidate must hold before FOCUS commits
 const SWITCH_MARGIN = 0.82; // new target must be this much closer to steal focus
+const LOW_CONFIDENCE_MS = 2200;
+const STALE_SAMPLE_MS = 1200;
 
 const state = {
   running: false, calibrated: false, mode: "webgazer",
   buf: [], ema: null, focus: null, cand: null, candSince: 0, conf: 0, lockUntil: 0,
+  lastSampleAt: 0, lowSince: 0, qualityLow: false, calibrating: false,
 };
 
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
 
 function ingest(rawX, rawY) {
+  if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) return;
+  state.lastSampleAt = performance.now();
   // A median filter is the right tool for spike rejection but the wrong one for
   // saccades: it pins the estimate to the OLD fixation until most of the window
   // has refilled. On a real jump, drop the history and re-acquire immediately.
@@ -51,8 +56,32 @@ let dwellTimer = null;
 function startDwellLoop() {
   if (dwellTimer) return;
   dwellTimer = setInterval(() => {
-    if (state.ema) commitDwell(state.ema.x, state.ema.y);
+    checkQuality();
+    if (state.ema && !state.qualityLow && !state.calibrating) commitDwell(state.ema.x, state.ema.y);
   }, 60);
+}
+
+function checkQuality() {
+  if (state.mode !== "webgazer" || !state.calibrated || state.calibrating) return;
+  const now = performance.now();
+  const p = state.ema;
+  const outside = p && (p.x < -40 || p.y < -40 || p.x > innerWidth + 40 || p.y > innerHeight + 40);
+  const poor = !state.lastSampleAt || now - state.lastSampleAt > STALE_SAMPLE_MS ||
+    state.conf < 0.45 || outside;
+  if (poor) {
+    state.lowSince ||= now;
+    if (!state.qualityLow && now - state.lowSince >= LOW_CONFIDENCE_MS) {
+      state.qualityLow = true;
+      setFocus(null, 0);
+      bus.emit("GAZE_QUALITY", { low: true });
+    }
+  } else {
+    state.lowSince = 0;
+    if (state.qualityLow) {
+      state.qualityLow = false;
+      bus.emit("GAZE_QUALITY", { low: false });
+    }
+  }
 }
 
 function commitDwell(x, y) {
@@ -80,49 +109,75 @@ function commitDwell(x, y) {
 // ── Calibration ─────────────────────────────────────────────────────────────
 const POINTS = [[.1,.15],[.5,.15],[.9,.15],[.1,.5],[.5,.5],[.9,.5],[.1,.85],[.5,.85],[.9,.85]];
 
+let calibration = null;
 export function calibrate() {
-  return new Promise((done) => {
-    const ov = document.createElement("div");
-    ov.className = "aura-cal";
-    ov.innerHTML = `<div class="aura-cal-hint"></div><div class="aura-cal-dot"></div>`;
-    document.body.appendChild(ov);
-    const dot  = ov.querySelector(".aura-cal-dot");
-    const hint = ov.querySelector(".aura-cal-hint");
-    let i = 0;
+  if (state.mode !== "webgazer") return Promise.resolve(false);
+  if (calibration) return calibration;
+  calibration = (async () => {
+    state.calibrating = true;
+    state.calibrated = false;
+    state.qualityLow = false;
+    state.lowSince = 0;
+    state.buf = []; state.ema = null; state.lastSampleAt = 0;
+    setFocus(null, 0);
+    bus.emit("GAZE_QUALITY", { low: false });
+    await window.webgazer?.clearData?.();
+    return new Promise((done) => {
+      const ov = document.createElement("div");
+      ov.className = "aura-cal";
+      ov.innerHTML = `<div class="aura-cal-hint"></div><div class="aura-cal-dot"></div>`;
+      document.body.appendChild(ov);
+      const dot  = ov.querySelector(".aura-cal-dot");
+      const hint = ov.querySelector(".aura-cal-hint");
+      let i = 0;
+      let recording = false;
 
-    const show = () => {
-      if (i >= POINTS.length) {
-        ov.remove(); state.calibrated = true;
-        bus.emit("STATE", { calibrated: true });
-        bus.emit("SAY", { text: "Calibration done. I can see where you're looking." });
-        return done(true);
-      }
-      const [fx, fy] = POINTS[i];
-      dot.style.left = fx * innerWidth + "px";
-      dot.style.top  = fy * innerHeight + "px";
-      dot.classList.remove("armed");
-      hint.textContent = `Look at the dot and press SPACE  ·  ${i + 1} / ${POINTS.length}`;
-    };
+      const show = () => {
+        if (i >= POINTS.length) {
+          ov.remove(); state.calibrated = true;
+          state.calibrating = false;
+          state.lastSampleAt = performance.now();
+          removeEventListener("keydown", onKey);
+          stop();
+          bus.emit("STATE", { calibrated: true });
+          bus.emit("SAY", { text: "Calibration done. I can see where you're looking." });
+          return done(true);
+        }
+        const [fx, fy] = POINTS[i];
+        dot.style.left = fx * innerWidth + "px";
+        dot.style.top  = fy * innerHeight + "px";
+        dot.classList.remove("armed");
+        hint.textContent = `Look at the dot. Say “Cue, next” or press SPACE · ${i + 1} / ${POINTS.length}`;
+      };
 
-    const onKey = (e) => {
-      if (e.code !== "Space") return;
-      e.preventDefault();
-      const [fx, fy] = POINTS[i];
-      const px = fx * innerWidth, py = fy * innerHeight;
-      dot.classList.add("armed");
-      // Feed several samples per point — one is far too few for the ridge fit.
-      let n = 0;
-      const tick = setInterval(() => {
-        window.webgazer?.recordScreenPosition(px, py, "click");
-        if (++n >= 6) { clearInterval(tick); i++; show(); }
-      }, 55);
-    };
+      const capture = () => {
+        if (recording) return;
+        recording = true;
+        const [fx, fy] = POINTS[i];
+        const px = fx * innerWidth, py = fy * innerHeight;
+        dot.classList.add("armed");
+        // Feed several samples per point — one is far too few for the ridge fit.
+        let n = 0;
+        const tick = setInterval(() => {
+          window.webgazer?.recordScreenPosition(px, py, "click");
+          if (++n >= 6) { clearInterval(tick); i++; recording = false; show(); }
+        }, 55);
+      };
+      const onKey = (e) => {
+        if (e.code !== "Space" || e.repeat) return;
+        e.preventDefault();
+        capture();
+      };
 
-    addEventListener("keydown", onKey);
-    bus.emit("SAY", { text: "Look at each dot and press space." });
-    show();
-    const stop = bus.on("STATE", (s) => { if (s.calibrated) { removeEventListener("keydown", onKey); stop(); } });
-  });
+      addEventListener("keydown", onKey);
+      const stop = bus.on("UTTERANCE", ({ text, final }) => {
+        if (final && /^(next|ready|capture|yes)$/i.test(text.trim())) capture();
+      });
+      bus.emit("SAY", { text: "Look at each dot and say Cue, next, or press space." });
+      show();
+    });
+  })().finally(() => { calibration = null; state.calibrating = false; });
+  return calibration;
 }
 
 // ── Boot ────────────────────────────────────────────────────────────────────

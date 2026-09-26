@@ -13,7 +13,8 @@ import tts
 
 LINES = [
     "Cue is ready. Look at something and ask me about it.",
-    "Look at each dot and press space.",
+    "Look at each dot and say Cue, next, or press space.",
+    "Let's recalibrate your gaze.",
     "Calibration done. I can see where you're looking.",
     "Added.",
     "Okay.",

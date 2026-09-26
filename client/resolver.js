@@ -17,9 +17,15 @@ export function scan() {
   for (const el of document.querySelectorAll("[data-aura-action]")) {
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.bottom < 0 || r.top > innerHeight) continue;
+    const parent = el.closest("[data-aura-product]");
+    let productId = "page";
+    if (parent) {
+      try { productId = JSON.parse(parent.dataset.auraProduct).id; }
+      catch { continue; }
+    }
     out.push({
       kind: "action",
-      id: "act:" + el.dataset.auraAction + ":" + (el.dataset.auraValue ?? ""),
+      id: "act:" + productId + ":" + el.dataset.auraAction + ":" + (el.dataset.auraValue ?? ""),
       label: el.dataset.auraLabel ?? el.textContent.trim(),
       el, rect: r, verb: el.dataset.auraAction, value: el.dataset.auraValue,
     });
@@ -35,6 +41,15 @@ function dist(x, y, r) {
 }
 
 export function resolve(x, y, targets) {
+  // A button nested in a product card otherwise ties the card at distance 0.
+  // Give the actual button a small forgiving hit area, but never prefer a
+  // nearby button when the gaze is clearly elsewhere in the card.
+  const onAction = targets.filter(t => t.kind === "action" && dist(x, y, t.rect) <= 16);
+  if (onAction.length) {
+    const target = onAction.reduce((best, t) =>
+      dist(x, y, t.rect) < dist(x, y, best.rect) ? t : best);
+    return { target, dist: dist(x, y, target.rect) };
+  }
   let best = null, bestD = Infinity;
   for (const t of targets) {
     const d = dist(x, y, t.rect);

@@ -16,7 +16,9 @@ camera and mic).
     ?gaze=mouse    drive with the mouse instead of the eyes (dev + demo fallback)
     ?cal=0         skip calibration
 
-Calibration: look at each dot, press SPACE. Nine points, ~30 seconds.
+Calibration: look at each dot and say “Cue, next”, or press SPACE. Nine points,
+~30 seconds. If tracking becomes unstable or stops, Cue clears the current focus
+and shows a recalibration prompt. Say “Cue, recalibrate” to start again.
 
 ## Testing without a mic
 

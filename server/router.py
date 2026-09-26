@@ -6,6 +6,8 @@ ORDINALS = {"first": 1, "one": 1, "1st": 1, "second": 2, "2nd": 2, "two": 2,
             "third": 3, "3rd": 3, "three": 3, "fourth": 4, "4th": 4, "four": 4}
 
 RULES = [
+    (r"\b(recalibrate|calibrate (again|my eyes)|fix (my )?gaze)\b",
+     lambda m: {"say": "Let's recalibrate your gaze.", "do": [{"verb": "recalibrate", "args": {}}]}),
     (r"\b(scroll|go|move)\s+(down|up)\b",
      lambda m: {"say": None, "do": [{"verb": "scroll", "args": {"dir": m.group(2)}}]}),
     (r"\b(scroll|go)\s+(back|to the )?top\b",

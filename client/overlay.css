@@ -1,5 +1,12 @@
 #aura-root { position: fixed; inset: 0; pointer-events: none; z-index: 2147483000;
   font: 13px/1.4 ui-sans-serif, -apple-system, "Segoe UI", sans-serif; }
+.aura-quality[hidden] { display: none; }
+.aura-quality { position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px; max-width: min(90vw, 520px);
+  padding: 12px 16px; border-radius: 12px; color: #fff; background: #7b341e;
+  box-shadow: 0 8px 24px rgba(0,0,0,.24); pointer-events: auto; }
+.aura-quality button { border: 0; border-radius: 8px; padding: 8px 12px; background: #fff;
+  color: #7b341e; font: inherit; font-weight: 700; cursor: pointer; }
 
 .aura-reticle { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px;
   border-radius: 50%; border: 2px solid #1a1f71; background: rgba(26,31,113,.14);
