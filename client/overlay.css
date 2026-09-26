@@ -42,3 +42,47 @@
   transition: left .28s, top .28s; animation: cue-pulse 1.4s infinite; }
 .cue-cal-dot.armed { background: #2ecc71; animation: none; }
 @keyframes cue-pulse { 70% { box-shadow: 0 0 0 18px rgba(247,182,0,0); } }
+
+/* ── Quality gate modal ──────────────────────────────────────────────────── */
+.cue-modal { position: fixed; inset: 0; z-index: 2147483610; pointer-events: auto;
+  background: rgba(8,9,16,.72); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", sans-serif; }
+.cue-modal-card { background: #fff; color: #15171f; width: min(480px, calc(100vw - 48px));
+  padding: 26px 28px; border-radius: 20px; box-shadow: 0 24px 70px rgba(0,0,0,.45); }
+.cue-modal-card h3 { margin: 0 0 12px; font-size: 19px; letter-spacing: -.02em; }
+.cue-modal-num { margin: 0 0 12px; font-size: 30px; font-weight: 700;
+  font-variant-numeric: tabular-nums; color: #1a1f71; }
+.cue-modal-num span { font-size: 13px; font-weight: 500; color: #6b7280; letter-spacing: 0; }
+.cue-modal-card p { margin: 0 0 12px; }
+.cue-modal-card ul { margin: 0 0 20px; padding-left: 20px; color: #4b5563; }
+.cue-modal-card li { margin-bottom: 5px; }
+.cue-modal-row { display: flex; gap: 10px; }
+.cue-btn { flex: 1; border: 1px solid #d7d9e0; background: #fff; color: #15171f;
+  border-radius: 12px; padding: 13px; font: inherit; font-weight: 600; cursor: pointer; }
+.cue-btn:hover { background: #f4f5f8; }
+.cue-btn-primary { background: #1a1f71; border-color: #1a1f71; color: #fff; }
+.cue-btn-primary:hover { background: #262c8f; }
+.cue-btn:focus-visible { outline: 3px solid #f7b600; outline-offset: 2px; }
+.cue-modal-foot { margin: 16px 0 0; font-size: 13px; color: #6b7280; }
+
+/* ── Numbered selection badges ───────────────────────────────────────────── */
+/* At 242px of gaze error you cannot point at a 249px product tile. Gaze picks
+   the neighbourhood, these pick the item, and the audience can read them from
+   across the room. */
+.cue-badge { position: absolute; min-width: 40px; height: 40px; padding: 0 10px;
+  border-radius: 12px; background: #1a1f71; color: #fff;
+  font: 700 20px/40px ui-sans-serif, -apple-system, sans-serif; text-align: center;
+  box-shadow: 0 6px 20px rgba(0,0,0,.35), 0 0 0 3px rgba(255,255,255,.85);
+  will-change: transform; transition: opacity .12s, background .12s; }
+.cue-badge[data-focused="true"] { background: #f7b600; color: #15171f;
+  box-shadow: 0 8px 26px rgba(247,182,0,.5), 0 0 0 3px rgba(255,255,255,.95); }
+.cue-badges { position: absolute; inset: 0; pointer-events: none; }
+.cue-hud-drift { display: none; margin-top: 9px; padding: 7px 10px; border-radius: 9px;
+  background: rgba(247,182,0,.16); color: #f7b600; font-size: 12px; font-weight: 600; }
+.cue-hud-drift.on { display: block; }
+
+/* Gaze below the precision bar: the outline is a guess, not an assertion. */
+.cue-outline[data-guess="true"] { border-style: dashed; border-width: 2px;
+  opacity: .5; box-shadow: none; }
+.cue-outline[data-guess="true"] .cue-outline-label { opacity: .7; font-weight: 500; }

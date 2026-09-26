@@ -2,12 +2,14 @@ import { bus } from "./bus.js";
 import * as gaze from "./gaze.js";
 import * as voice from "./voice.js";
 import { scan, nth, invalidate } from "./resolver.js";
+import * as badges from "./badges.js";
 
 const qs = new URLSearchParams(location.search);
 const CONFIG = {
   gazeMode: qs.get("gaze") || "webgazer",      // webgazer | mouse | sim
   autoCal: qs.get("cal") !== "0",
   sigma: +(qs.get("sigma") || 70),             // sim mode: synthetic noise, px
+  keepData: qs.get("keepdata") === "1",        // reuse the stored gaze model
   // Filter overrides, for sweeping the tuning against sim mode. Omit in normal use.
   tune: qs.has("mc") ? {
     minCutoff: +qs.get("mc"), beta: +(qs.get("beta") ?? 0.002), dCutoff: +(qs.get("dc") ?? 0.3),
@@ -26,6 +28,7 @@ function mountUI() {
       <div class="cue-hud-row"><span class="cue-dot"></span><b>Cue</b><span class="cue-chip cue-mode"></span></div>
       <div class="cue-hud-heard"></div>
       <div class="cue-hud-said"></div>
+      <div class="cue-hud-drift">tracking has drifted · say &ldquo;recalibrate&rdquo;</div>
       <div class="cue-hud-foot">hold <kbd>space</kbd> to talk · say &ldquo;Cue, &hellip;&rdquo;</div>
     </div>`;
   document.body.appendChild(root);
@@ -36,6 +39,9 @@ function mountUI() {
   ui.said    = root.querySelector(".cue-hud-said");
   ui.mode    = root.querySelector(".cue-mode");
   ui.dot     = root.querySelector(".cue-dot");
+  ui.drift   = root.querySelector(".cue-hud-drift");
+  ui.foot    = root.querySelector(".cue-hud-foot");
+  badges.mount(root);
 }
 
 // ── Render loop ─────────────────────────────────────────────────────────────
@@ -55,6 +61,9 @@ bus.on("GAZE", ({ x, y, confidence }) => {
 });
 
 const FOLLOW = 0.32;     // per-frame easing toward the target
+const BADGE_MS = 180;    // how often the numbered set is recomputed
+const now = () => performance.now();
+let lastBadge = 0;
 
 function frame() {
   render.x += (render.tx - render.x) * FOLLOW;
@@ -76,14 +85,31 @@ function frame() {
     ui.outline.style.width  = r.width + "px";
     ui.outline.style.height = r.height + "px";
   }
+
+  // Badges follow the gaze neighbourhood. Recomputing which products are
+  // numbered is throttled; repositioning the ones already up is not, or they
+  // detach from their cards the moment the page scrolls.
+  if (now() - lastBadge > BADGE_MS) {
+    lastBadge = now();
+    badges.update(render.x, render.y, gaze.getFocus()?.id ?? null);
+  } else {
+    badges.reposition();
+  }
   requestAnimationFrame(frame);
 }
+
+// When gaze is too coarse to be trusted, a bold outline on one card is a lie:
+// measured at 242px error it highlights the WRONG card two times in three.
+// Below the precision bar we soften it to a guess and let the numbered badges
+// carry the interaction — the intended card is among them 6 times out of 6.
+let precise = true;
 
 bus.on("FOCUS", ({ target }) => {
   if (!target) { render.el = null; ui.outline.classList.remove("on"); return; }
   render.el = target.el;
   ui.outline.classList.add("on");
   ui.outline.dataset.kind = target.kind;
+  ui.outline.dataset.guess = String(!precise);
   ui.label.textContent = target.kind === "product"
     ? `${target.product.title} · $${target.product.price}`
     : target.label;
@@ -103,6 +129,13 @@ bus.on("STATE", (s) => {
   if (s.listening) ui.dot.classList.add("live");
   if (s.listening === false) ui.dot.classList.remove("live");
   if (s.accuracy) console.log("[cue] gaze accuracy", s.accuracy);
+  if (s.precise !== undefined) {
+    precise = s.precise;
+    ui.outline.dataset.guess = String(!precise);
+    ui.foot.innerHTML = precise
+      ? 'hold <kbd>space</kbd> to talk · say &ldquo;Cue, &hellip;&rdquo;'
+      : 'say the <b>number</b> on an item · hold <kbd>space</kbd> to talk';
+  }
 });
 
 bus.on("SAY", ({ text }) => { ui.said.textContent = text; voice.speak(text); });
@@ -169,6 +202,12 @@ function resolveConfirm(ok) {
 
 // ── Actions the page can perform ────────────────────────────────────────────
 
+// Badges win when they are on screen, because that is what the user can see.
+// Otherwise fall back to counting every product in reading order.
+function pickNumbered(n) {
+  return badges.byNumber(n) ?? nth(n);
+}
+
 // The card the user is looking at. Every product-specific action is scoped to it.
 function scope() {
   const f = gaze.getFocus();
@@ -181,12 +220,23 @@ function perform(verb, args) {
     case "scroll":
       scrollBy({ top: (args.dir === "up" ? -1 : 1) * innerHeight * 0.75, behavior: "smooth" });
       break;
-    case "focus_nth": {
-      const t = nth(args.n);
+    // "two" and "the second one" MUST mean the same item. Badges are numbered
+    // locally (the few near your gaze) while nth() counts every product on the
+    // page, so resolving them differently would make the two phrasings disagree
+    // — and the user has no way to know which one Cue is using.
+    case "focus_nth":
+    case "focus_number": {
+      const t = pickNumbered(args.n);
       if (t) gaze.setFocus(t);
-      else bus.emit("SAY", { text: `I only see ${scan().filter((x) => x.kind === "product").length} items.` });
+      else {
+        const total = scan().filter((x) => x.kind === "product").length;
+        bus.emit("SAY", { text: `I only see ${total} item${total === 1 ? "" : "s"}.` });
+      }
       break;
     }
+    case "recalibrate":
+      recalibrate();
+      break;
     case "click_focused": gaze.getFocus()?.el.click(); break;
     case "select_variant": {
       const el = scope()?.querySelector(
@@ -216,6 +266,21 @@ function perform(verb, args) {
   }
 }
 
+// Voice-reachable recalibration. Gaze drifts when you shift in your seat, and
+// at a demo table the person in the chair changes every few minutes.
+let recalibrating = false;
+async function recalibrate() {
+  if (recalibrating) return;
+  if (gaze.getState().mode !== "webgazer") {
+    bus.emit("SAY", { text: "There's no camera to calibrate in this mode." });
+    return;
+  }
+  recalibrating = true;
+  badges.setEnabled(false);
+  try { await gaze.calibrate(); gaze.hideCamera(); }
+  finally { badges.setEnabled(true); recalibrating = false; }
+}
+
 // ── Boot ────────────────────────────────────────────────────────────────────
 async function boot() {
   mountUI();
@@ -228,7 +293,8 @@ async function boot() {
 
   // start() reports the mode it ACTUALLY got, which may not be the one asked
   // for — no camera, or a browser blocking WebGL, degrades it to the mouse.
-  const actual = await gaze.start({ mode: CONFIG.gazeMode, sigma: CONFIG.sigma, tune: CONFIG.tune });
+  const actual = await gaze.start({ mode: CONFIG.gazeMode, sigma: CONFIG.sigma,
+                                    tune: CONFIG.tune, keepData: CONFIG.keepData });
   if (actual === "webgazer" && CONFIG.autoCal) {
     await gaze.calibrate();
     gaze.hideCamera();
@@ -248,11 +314,31 @@ bus.on("STATE", (s) => {
   ui.said.textContent = `⚠ ${s.gazeError} — using the mouse`;
 });
 
+// ── Drift watch ─────────────────────────────────────────────────────────────
+// Calibration decays: people shift in their seat, lean in, or a new person sits
+// down without recalibrating. Rather than a modal that interrupts, nudge in the
+// HUD once confidence has been poor for a sustained stretch.
+const DRIFT_WINDOW_MS = 10000;
+const DRIFT_CONF = 0.25;
+let lowSince = null, nudgedAt = 0;
+
+bus.on("GAZE", ({ confidence }) => {
+  if (recalibrating || gaze.getState().mode !== "webgazer") { lowSince = null; return; }
+  const t = now();
+  if (confidence >= DRIFT_CONF) { lowSince = null; ui.drift?.classList.remove("on"); return; }
+  if (lowSince === null) { lowSince = t; return; }
+  if (t - lowSince < DRIFT_WINDOW_MS || t - nudgedAt < 45000) return;
+  nudgedAt = t;
+  lowSince = null;
+  ui.drift?.classList.add("on");
+  bus.emit("SAY", { text: "My tracking has drifted. Say recalibrate whenever you want to fix it." });
+});
+
 // say() is how you drive Cue with no mic: from the console, from a test, or
 // from the on-stage fallback if the demo floor is too loud to be heard.
 const say = (text) => bus.emit("UTTERANCE", { text, final: true });
 
-window.cue = { bus, gaze, voice, context, perform, boot, say, CONFIG,
+window.cue = { bus, gaze, voice, badges, context, perform, boot, say, recalibrate, CONFIG,
                get pending() { return pendingConfirm; } };
 window.aura = window.cue;          // nothing that already says aura.* breaks
 addEventListener("DOMContentLoaded", boot);

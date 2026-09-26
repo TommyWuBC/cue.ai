@@ -32,6 +32,12 @@ def _nth(m, key="n"):
     return ORDINALS[m.group(key).lower()]
 
 
+def _num(m, key="n"):
+    """Accepts either a digit or an ordinal word."""
+    v = m.group(key).lower()
+    return int(v) if v.isdigit() else ORDINALS[v]
+
+
 def _size(m, key="sz"):
     return SIZES[m.group(key).lower()]
 
@@ -67,7 +73,19 @@ RULES = [
     (r"\b(scroll|go|move)\s+(down|up)\b",
      lambda m: {"say": None, "do": [{"verb": "scroll", "args": {"dir": m.group(2)}}]}),
 
+    # ── Recalibration ───────────────────────────────────────────────────────
+    (r"\b(re-?calibrate|calibrate again|fix (?:the )?(?:tracking|calibration)|"
+     r"you(?:'re| are) off|re-?do (?:the )?calibration)\b",
+     lambda m: {"say": None, "do": [{"verb": "recalibrate", "args": {}}]}),
+
     # ── Selection ───────────────────────────────────────────────────────────
+    # A bare number picks one of the on-screen badges. This is the primary way
+    # to select an item when gaze is too coarse to point (measured 242px error
+    # against 249px Amazon tiles), so it has to be as terse as possible.
+    (rf"^\s*(?:number\s+)?(?P<n>{ORD}|\d)\s*[.!]?\s*$",
+     lambda m: {"say": None, "do": [{"verb": "focus_number", "args": {"n": _num(m)}}]}),
+    (rf"\b(?:pick|take|select|choose|number)\s+(?P<n>{ORD}|\d)\b",
+     lambda m: {"say": None, "do": [{"verb": "focus_number", "args": {"n": _num(m)}}]}),
     (rf"\b(?:the\s+)?(?P<n>{ORD})\s+{NOUN}\b",
      lambda m: {"say": None, "do": [{"verb": "focus_nth", "args": {"n": _nth(m)}}]}),
     (rf"\b(?:size\s+)?(?P<sz>{SIZE})\s+please\b|\bin\s+(?P<sz2>{SIZE})\b|\bsize\s+(?P<sz3>{SIZE})\b",

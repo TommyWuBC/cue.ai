@@ -1,0 +1,118 @@
+// Numbered selection badges.
+//
+// Measured gaze error on a real face is 242px. Amazon's product tiles are
+// 249px wide. Gaze therefore cannot pick an item — it can pick a neighbourhood.
+// So gaze narrows to a few candidates, we stamp big numbers on them, and the
+// voice picks one: "two".
+//
+// This is what makes the whole thing work for a stranger who walks up to the
+// table, and it is the only part of the interaction that is legible to an
+// audience standing three feet behind them.
+
+import { bus } from "./bus.js";
+import { scan } from "./resolver.js";
+
+// How many candidates to number. More than this is visual noise and slows the
+// read; fewer and the right item is too often missing.
+const MAX_BADGES = 4;
+// Candidates must be within this of the gaze point to be worth numbering.
+// Generous on purpose: the whole premise is that gaze is coarse.
+const RADIUS_PX = 520;
+
+let root = null;
+let shown = [];          // [{ target, n, el }]
+let enabled = true;
+
+export function mount(parent) {
+  root = document.createElement("div");
+  root.className = "cue-badges";
+  (parent ?? document.body).appendChild(root);
+}
+
+export function setEnabled(on) {
+  enabled = on;
+  if (!on) clear();
+}
+
+function clear() {
+  if (root) root.textContent = "";
+  shown = [];
+}
+
+// Distance from a point to a rect (0 inside) — same metric the resolver uses,
+// so what gets numbered matches what would get focused.
+function dist(x, y, r) {
+  const dx = Math.max(r.left - x, 0, x - r.right);
+  const dy = Math.max(r.top - y, 0, y - r.bottom);
+  return Math.hypot(dx, dy);
+}
+
+/** Recompute which products are numbered, from the current gaze point. */
+export function update(x, y, focusedId) {
+  if (!enabled || !root) return;
+
+  const products = scan().filter((t) => t.kind === "product");
+  if (!products.length) { clear(); return; }
+
+  // Reading order, so the numbers a user sees are stable and match "the third
+  // one" — two ways of saying the same thing must never disagree.
+  const ordered = [...products].sort(
+    (a, b) => (a.rect.top - b.rect.top) || (a.rect.left - b.rect.left));
+
+  const near = ordered
+    .map((t) => ({ t, d: dist(x, y, t.rect) }))
+    .filter((o) => o.d <= RADIUS_PX)
+    .sort((a, b) => a.d - b.d)
+    .slice(0, MAX_BADGES)
+    .map((o) => o.t);
+
+  if (!near.length) { clear(); return; }
+
+  // Number them in reading order, not by distance — a number that jumps around
+  // as your eyes drift is worse than no number at all.
+  const picked = ordered.filter((t) => near.includes(t));
+
+  const sig = picked.map((t) => t.id).join("|") + "#" + (focusedId ?? "");
+  if (sig === root.dataset.sig) { reposition(); return; }
+  root.dataset.sig = sig;
+
+  root.textContent = "";
+  shown = picked.map((target, k) => {
+    const el = document.createElement("div");
+    el.className = "cue-badge";
+    el.textContent = String(k + 1);
+    el.dataset.focused = String(target.id === focusedId);
+    root.appendChild(el);
+    return { target, n: k + 1, el };
+  });
+  reposition();
+}
+
+/** Keep badges glued to their cards while the page scrolls or reflows. */
+export function reposition() {
+  for (const b of shown) {
+    const r = b.target.el.getBoundingClientRect();
+    if (r.width === 0 || r.bottom < 0 || r.top > innerHeight) {
+      b.el.style.opacity = "0";
+      continue;
+    }
+    b.el.style.opacity = "1";
+    b.el.style.transform = `translate3d(${Math.round(r.left + 10)}px, ${Math.round(r.top + 10)}px, 0)`;
+  }
+}
+
+export function setFocused(id) {
+  for (const b of shown) b.el.dataset.focused = String(b.target.id === id);
+}
+
+/** Resolve a spoken number to the target it is currently stamped on. */
+export function byNumber(n) {
+  return shown.find((b) => b.n === n)?.target ?? null;
+}
+
+export const getShown = () => shown.map((b) => ({ n: b.n, id: b.target.id, label: b.target.label }));
+
+// Anything that changes layout invalidates positions.
+addEventListener("scroll", reposition, { passive: true });
+addEventListener("resize", reposition);
+bus.on("FOCUS", ({ target }) => setFocused(target?.id ?? null));
