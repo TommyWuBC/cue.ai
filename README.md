@@ -166,7 +166,26 @@ back”, or “Cue, click this” while looking at a button. Scrolling or resizi
 clears focus when its target leaves the viewport, so “add it” cannot reuse an
 off-screen item.
 
+## Signed agent requests
+
+Every checkout approval now passes through Cue's server signer and a separate
+merchant verification endpoint. The Ed25519 HTTP signature binds the request
+method, merchant, path, query, content type, and body digest. The body includes
+the stored order intent and the shopper's passkey assertion. The merchant
+verifies both before recording an order; signing never replaces the passkey.
+
+Requests expire after two minutes. Single-use nonces are stored in SQLite and
+rejected on replay, including after server restarts. The merchant view shows
+signature evidence and rejected-request counts. Existing orders without
+signature evidence are labelled accordingly. The public key is available at
+`/.well-known/cue-agent-keys.json`; the private key stays in the local database.
+
+This implements a local agent-recognition profile based on
+[Visa's TAP specification](https://developer.visa.com/capabilities/trusted-agent-protocol/trusted-agent-protocol-specifications)
+and RFC 9421. The trust anchor is Cue's local key. Visa directory enrollment,
+consumer recognition tokens, and payment containers are not configured.
+
 This is a **single shopper, localhost demo**. It has no account enrollment or
 merchant login and must not be deployed to the public internet as-is. It records
 passkey-approved demo orders but does not charge a card. Stripe/Visa sandbox
-payment and Visa Trusted Agent Protocol signing are still to be built.
+payment remains to be built. See [the remaining work](docs/ROADMAP.md).

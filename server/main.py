@@ -2,7 +2,7 @@ import os, pathlib
 from dotenv import load_dotenv
 load_dotenv(pathlib.Path(__file__).parent.parent / ".env")
 
-from fastapi import FastAPI, Response, WebSocket, UploadFile, File, HTTPException
+from fastapi import FastAPI, Response, Request, WebSocket, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +10,8 @@ from pydantic import BaseModel
 
 import fallback, router, stt, tts
 from checkout import Checkout, CheckoutError
+from trust import TrustError, MERCHANT_PATH, MAX_BODY
+import httpx
 
 ROOT = pathlib.Path(__file__).parent.parent
 app = FastAPI(title="Cue")
@@ -64,10 +66,14 @@ class PasskeyResponse(BaseModel):
     credential: dict
 
 
-def checkout_call(fn, *args):
+class MerchantApproval(PasskeyResponse):
+    intent: dict
+
+
+def checkout_call(fn, *args, **kwargs):
     try:
-        return fn(*args)
-    except CheckoutError as exc:
+        return fn(*args, **kwargs)
+    except (CheckoutError, TrustError) as exc:
         raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
 
 
@@ -97,8 +103,42 @@ def passkey_authenticate_options(intent_id: str):
 
 
 @app.post("/api/checkout/approve")
-def checkout_approve(body: PasskeyResponse):
-    return checkout_call(checkout.approve, body.ceremony_id, body.credential)
+async def checkout_approve(body: PasskeyResponse):
+    # Agent and merchant share a process in this demo. An ASGI HTTP hop keeps
+    # the same signed bytes/headers and verification route used by an external
+    # agent, without a loopback socket or trusting an incoming Host as a URL.
+    intent = checkout_call(checkout.intent_for_ceremony, body.ceremony_id)
+    signed = checkout_call(checkout.agent_trust.sign, {**body.model_dump(), "intent": intent})
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app)) as client:
+        response = await client.send(signed)
+    return JSONResponse(response.json(), status_code=response.status_code)
+
+
+@app.post(MERCHANT_PATH)
+async def merchant_approve(request: Request):
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > MAX_BODY:
+            raise HTTPException(413, "The approval request is too large.")
+    proof = checkout_call(checkout.agent_trust.verify, request.method, str(request.url),
+                          request.headers, bytes(raw))
+    try:
+        body = MerchantApproval.model_validate_json(raw)
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid signed approval payload.") from exc
+    return checkout_call(checkout.approve, body.ceremony_id, body.credential,
+                         expected_intent=body.intent, agent_proof=proof)
+
+
+@app.get("/.well-known/cue-agent-keys.json")
+def agent_public_keys():
+    return checkout.agent_trust.public_keys()
+
+
+@app.get("/api/merchant/trust")
+def merchant_trust():
+    return checkout.agent_trust.status()
 
 
 @app.post("/api/checkout/cancel/{intent_id}")

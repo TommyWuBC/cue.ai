@@ -77,6 +77,14 @@
     border-radius: 999px; background: #eef0fa; color: var(--trust); font-weight: 500; }
   .fact svg { width: 14px; height: 14px; flex: none; }
   .fact.demo { background: var(--mist); color: var(--graphite); }
+  .trust-status { padding: 16px 20px; margin: -20px 0 30px; border: 1px solid var(--hair);
+    border-radius: 12px; background: var(--paper); }
+  .trust-status p { margin: 4px 0 0; color: var(--graphite); font-size: 13px; }
+  .proof { grid-column: 1 / -1; min-width: 0; font-size: 13px; }
+  .proof summary { cursor: pointer; color: var(--trust); }
+  .proof dl { display: grid; grid-template-columns: minmax(100px, 140px) minmax(0, 1fr); gap: 8px 16px; }
+  .proof dt { color: var(--graphite); }
+  .proof dd { margin: 0; overflow-wrap: anywhere; }
 
   .order.arrived { animation: arrive .7s var(--spring) both, glow 2.8s var(--ease) .2s both; }
   @keyframes arrive { from { opacity: 0; transform: translateY(-14px) scale(.985); } }
@@ -144,6 +152,12 @@
     <div class="figure"><dt>Shopper budget left</dt><dd id="f-budget">–</dd>
       <div class="meter" aria-hidden="true"><span id="f-meter" style="width:0"></span></div></div>
   </dl>
+
+  <section class="trust-status" aria-label="Agent verification">
+    <strong>Agent verification</strong>
+    <p id="trust-counts">Connecting to the verifier…</p>
+    <p>Local Cue signing key · Visa directory enrollment is not configured.</p>
+  </section>
 
   <div class="feed-head"><h2>Recent orders</h2><span id="feed-count"></span></div>
   <p class="error" id="error" role="alert" hidden></p>
@@ -228,9 +242,29 @@ function renderOrder(order) {
   const facts = el("ul", "facts");
   if (order.approved_with_passkey) facts.append(fact(KEY, "Approved with passkey"));
   facts.append(fact(CHECK, "Within spending limits"));
+  const proof = order.agent_verification;
+  facts.append(proof?.verified
+    ? fact(CHECK, "Agent signature verified")
+    : fact("", "No agent signature recorded", "fact demo"));
   if (order.payment_mode === "demo_order_no_charge") facts.append(fact("", "Demo order, no charge", "fact demo"));
 
   card.append(top, lines, intent, facts);
+  if (proof?.verified) {
+    const details = el("details", "proof");
+    details.append(el("summary", null, "View request verification"));
+    const fields = el("dl");
+    for (const [label, value] of [
+      ["Verified at", new Date(proof.verified_at).toLocaleString()],
+      ["Trust source", "Local Cue public key"],
+      ["Algorithm", proof.algorithm], ["Purpose", proof.tag],
+      ["Key ID", proof.key_id], ["Single-use nonce", proof.nonce],
+      ["Valid until", new Date(proof.expires * 1000).toLocaleString()],
+      ["Signed fields", proof.covered_components.join(", ")],
+      ["Body digest", proof.body_digest], ["Signature", proof.signature],
+    ]) fields.append(el("dt", null, label), el("dd", null, value));
+    details.append(fields);
+    card.append(details);
+  }
   return card;
 }
 
@@ -296,10 +330,15 @@ function renderFigures(orders, status) {
 
 async function refresh() {
   try {
-    const [res, st] = await Promise.all([fetch("/api/merchant/orders"), fetch("/api/checkout/status").catch(() => null)]);
+    const [res, st, trust] = await Promise.all([fetch("/api/merchant/orders"),
+      fetch("/api/checkout/status").catch(() => null), fetch("/api/merchant/trust").catch(() => null)]);
     if (!res.ok) throw new Error();
     const { orders } = await res.json();
     const status = st?.ok ? await st.json() : null;
+    const verified = trust?.ok ? await trust.json() : null;
+    $("trust-counts").textContent = verified
+      ? `${verified.verified_requests} signed request${verified.verified_requests === 1 ? "" : "s"} verified · ${verified.replays_rejected} replays rejected · ${verified.rejected_requests} total requests rejected`
+      : "Verification status is unavailable.";
     $("error").hidden = true;
     $("live").dataset.state = "up";
     renderFigures(orders, status);

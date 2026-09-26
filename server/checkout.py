@@ -23,6 +23,7 @@ from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria, PublicKeyCredentialDescriptor,
     ResidentKeyRequirement, UserVerificationRequirement,
 )
+from trust import AgentTrust
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -68,6 +69,11 @@ class Checkout:
                     created_at TEXT NOT NULL
                 );
             """)
+            conn.execute("BEGIN IMMEDIATE")
+            if "agent_proof_json" not in {r["name"] for r in conn.execute("PRAGMA table_info(orders)")}:
+                conn.execute("ALTER TABLE orders ADD COLUMN agent_proof_json TEXT")
+            conn.commit()
+        self.agent_trust = AgentTrust(self.db_path, self.origin)
 
     @contextmanager
     def db(self):
@@ -211,7 +217,22 @@ class Checkout:
             conn.commit()
         return {"intent_id": intent_id, "status": "cancelled"}
 
-    def approve(self, ceremony_id, credential):
+    @staticmethod
+    def _intent_payload(intent):
+        return {"intent_id": intent["id"], "items": json.loads(intent["items_json"]),
+                "total_cents": intent["total_cents"], "customer_words": intent["customer_words"],
+                "expires_at": intent["expires_at"]}
+
+    def intent_for_ceremony(self, ceremony_id):
+        with self.db() as conn:
+            intent = conn.execute("""SELECT i.* FROM intents i JOIN ceremonies c ON c.intent_id=i.id
+                WHERE c.id=? AND c.kind='authenticate' AND c.expires_at>?""",
+                (ceremony_id, time.time())).fetchone()
+            if not intent or intent["status"] != "prepared" or intent["expires_at"] < time.time():
+                raise CheckoutError("Checkout was cancelled, used, or expired.", 409)
+            return self._intent_payload(intent)
+
+    def approve(self, ceremony_id, credential, *, expected_intent=None, agent_proof=None):
         with self.db() as conn:
             ceremony = conn.execute("SELECT * FROM ceremonies WHERE id=? AND kind='authenticate'",
                                     (ceremony_id,)).fetchone()
@@ -238,14 +259,19 @@ class Checkout:
             if (not current or current["expires_at"] < time.time() or not intent or
                     intent["status"] != "prepared" or intent["expires_at"] < time.time()):
                 raise CheckoutError("This checkout was already used or expired.", 409)
+            if expected_intent is not None and expected_intent != self._intent_payload(intent):
+                raise CheckoutError("The signed intent does not match the order you reviewed.", 409)
             remaining = self.monthly_limit - self._spent(conn)
             if intent["total_cents"] > self.order_limit or intent["total_cents"] > remaining:
                 raise CheckoutError("Spending limit reached since the readback. Review your cart again.", 409)
             order_id = str(uuid.uuid4())
             now = datetime.now(timezone.utc).isoformat()
-            conn.execute("INSERT INTO orders VALUES (?, ?, ?, ?, ?, ?, ?)",
+            conn.execute("""INSERT INTO orders
+                (id, intent_id, items_json, total_cents, customer_words, credential_id, created_at, agent_proof_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                          (order_id, intent["id"], intent["items_json"], intent["total_cents"],
-                          intent["customer_words"], passkey["id"], now))
+                          intent["customer_words"], passkey["id"], now,
+                          json.dumps(agent_proof) if agent_proof else None))
             conn.execute("UPDATE intents SET status='approved' WHERE id=?", (intent["id"],))
             conn.execute("UPDATE credentials SET sign_count=? WHERE id=?", (verified.new_sign_count, passkey["id"]))
             conn.execute("DELETE FROM ceremonies WHERE id=?", (ceremony_id,))
@@ -268,4 +294,5 @@ class Checkout:
         return [{"id": r["id"], "items": json.loads(r["items_json"]),
                  "total_cents": r["total_cents"], "customer_words": r["customer_words"],
                  "approved_with_passkey": True, "payment_mode": "demo_order_no_charge",
+                 "agent_verification": json.loads(r["agent_proof_json"]) if r["agent_proof_json"] else None,
                  "created_at": r["created_at"]} for r in rows]
