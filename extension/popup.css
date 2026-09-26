@@ -3,8 +3,7 @@ body { width: 330px; margin: 0; background: #f7f9ff; color: #172033;
   font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 main { padding: 20px; }
 header { display: flex; align-items: center; gap: 12px; }
-.mark { display: grid; place-items: center; width: 40px; height: 40px;
-  border-radius: 13px; background: #2f6bff; color: white; font-size: 24px; font-weight: 700; }
+.mark { width: 40px; height: 40px; border-radius: 13px; overflow: hidden; object-fit: cover; }
 h1 { margin: 0; font-size: 20px; line-height: 1.1; }
 header p { margin: 2px 0 0; color: #5b6576; font-size: 12px; }
 #status { min-height: 42px; margin: 22px 0 12px; }

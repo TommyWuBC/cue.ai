@@ -32,38 +32,64 @@ def server_origin(value: str) -> str:
     return f'{url.scheme}://{url.netloc}'
 
 
-def icon(size: int) -> bytes:
-    """Draw the supplied white Cue eye mark on charcoal at Chrome icon sizes."""
-    def inside(x: float, y: float) -> tuple[int, int, int, int]:
-        def arc(cx: float, cy: float, radius: float, stroke: float) -> bool:
-            px, py = x - cx, y - cy
-            angle = math.atan2(py, px)
-            return abs(math.hypot(px, py) - radius) < stroke and abs(angle) > .55
+def icon(size: int, *, full_bleed: bool = False) -> bytes:
+    """Draw the Cue eye as a crisp squircle. iOS masks apple-touch icons, so those stay full-bleed."""
+    scale = 8
+    canvas = size * scale
+    radius = canvas * .22
+    # A stroke under two output pixels disappears when Chrome scales the toolbar icon.
+    stroke = max(size * .085, 2.0) * scale
+    charcoal = (32, 32, 34, 255)
+    white = (248, 248, 246, 255)
+    half = canvas / 2
 
-        white = (
-            arc(size * .50, size * .50, size * .355, size * .035) or
-            arc(size * .405, size * .50, size * .225, size * .038) or
-            math.hypot(x - size * .605, y - size * .50) < size * .055
+    def covered(x: float, y: float) -> bool:
+        if not full_bleed:
+            dx = abs(x - half) - (half - radius)
+            dy = abs(y - half) - (half - radius)
+            if math.hypot(max(dx, 0), max(dy, 0)) > radius:
+                return False
+        def arc(cx: float, cy: float, ring: float) -> bool:
+            px, py = x - cx, y - cy
+            return abs(math.hypot(px, py) - ring) < stroke / 2 and abs(math.atan2(py, px)) > .62
+        return (
+            arc(canvas * .50, canvas * .50, canvas * .30) or
+            arc(canvas * .42, canvas * .50, canvas * .16) or
+            math.hypot(x - canvas * .60, y - canvas * .50) < stroke * .72
         )
-        if white:
-            return (248, 248, 246, 255)
-        # The reference uses a subtly textured charcoal rather than pure black.
-        grain = int(3 * math.sin(x * 1.73 + y * 2.31) * math.sin(x * .57 - y * 1.11))
-        base = 29 + grain
-        return (base, base + 1, base + 1, 255)
+
+    plate = [[False] * canvas for _ in range(canvas)]
+    mark = [[False] * canvas for _ in range(canvas)]
+    for y in range(canvas):
+        for x in range(canvas):
+            inside = full_bleed or math.hypot(
+                max(abs(x + .5 - half) - (half - radius), 0),
+                max(abs(y + .5 - half) - (half - radius), 0)) <= radius
+            plate[y][x] = inside
+            mark[y][x] = inside and covered(x + .5, y + .5)
 
     raw = bytearray()
     for y in range(size):
         raw.append(0)
         for x in range(size):
-            samples = [inside(x + (i + .5) / 4, y + (j + .5) / 4)
-                       for j in range(4) for i in range(4)]
-            total_alpha = sum(p[3] for p in samples)
-            if not total_alpha:
+            p = m = 0
+            for j in range(scale):
+                row_p, row_m = plate[y * scale + j], mark[y * scale + j]
+                for i in range(scale):
+                    p += row_p[x * scale + i]
+                    m += row_m[x * scale + i]
+            if not p:
                 raw.extend((0, 0, 0, 0))
-            else:
-                raw.extend(tuple(sum(p[k] * p[3] for p in samples) // total_alpha
-                                 for k in range(3)) + (total_alpha // 16,))
+                continue
+            samples = scale * scale
+            alpha = round(255 * p / samples)
+            mix = m / p
+            raw.extend((
+                round(white[0] * mix + charcoal[0] * (1 - mix)),
+                round(white[1] * mix + charcoal[1] * (1 - mix)),
+                round(white[2] * mix + charcoal[2] * (1 - mix)),
+                alpha,
+            ))
 
     def chunk(kind: bytes, data: bytes) -> bytes:
         return struct.pack('!I', len(data)) + kind + data + struct.pack('!I', zlib.crc32(kind + data))

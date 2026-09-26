@@ -1151,7 +1151,6 @@ export async function boot() {
       return fetched.get(page);
     }, point, { workers: 2, limit: 3 }).then((found) => { if (!globalThis.__cueEnded) site = found; }).catch(() => {});
   };
-  refreshSite();
   document.addEventListener("routechange", refreshSite);
   bus.on("STATE", (s) => { if (s.calibrated) refreshSite(); });
 

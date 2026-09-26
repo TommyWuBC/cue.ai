@@ -13,7 +13,7 @@
 /* ── Journal ──────────────────────────────────────────────────────────────── */
 .j-meta { margin: 14px 0 0; font-size: 13px; color: var(--graphite); }
 .j-lead { display: grid; grid-template-columns: 1.4fr 1fr; gap: 48px; align-items: center; margin-top: 36px; }
-.j-lead-media, .j-card-media { overflow: hidden; border-radius: 4px; background: var(--mist); }
+.j-lead-media, .j-card-media { overflow: hidden; border-radius: 16px; background: var(--mist); }
 .j-lead-media { aspect-ratio: 16 / 10; }
 .j-lead img, .j-card img { width: 100%; height: 100%; object-fit: cover; transition: transform 1.2s var(--ease); }
 .j-lead:hover img, .j-card:hover img { transform: scale(1.025); }
@@ -34,7 +34,7 @@
 .j-head h1 { margin: 20px 0 0; font: 400 clamp(44px, 6vw, 76px)/1 var(--serif); letter-spacing: -.035em; }
 .j-dek { margin: 18px auto 0; max-width: 34em; font: 400 21px/1.4 var(--serif); color: #45454a; }
 .j-hero { max-width: var(--page); margin: 40px auto 0; padding: 0 var(--gutter); }
-.j-hero img { width: 100%; aspect-ratio: 16 / 8; object-fit: cover; border-radius: 4px; }
+.j-hero img { width: 100%; aspect-ratio: 16 / 8; object-fit: cover; border-radius: 16px; }
 .j-body { max-width: 660px; margin: 48px auto 0; padding: 0 var(--gutter); font: 400 19px/1.7 var(--serif); color: #2a2a2d; }
 .j-body p { margin: 0 0 1.1em; }
 .j-body > p:first-child::first-letter { float: left; font-size: 3.4em; line-height: .9; padding: 6px 10px 0 0; }
@@ -107,7 +107,7 @@
 .store-list { margin-top: 40px; display: grid; gap: 56px; }
 .store { display: grid; grid-template-columns: 1.3fr 1fr; gap: 48px; align-items: center; }
 .store:nth-child(even) .store-media { order: 2; }
-.store-media { aspect-ratio: 16 / 10; border-radius: 4px; overflow: hidden; background: var(--mist); }
+.store-media { aspect-ratio: 16 / 10; border-radius: 16px; overflow: hidden; background: var(--mist); }
 .store-media img { width: 100%; height: 100%; object-fit: cover; }
 .store-info h2 { margin: 0; font: 400 38px/1.05 var(--serif); letter-spacing: -.02em; }
 .store-info address { margin: 14px 0 0; font-style: normal; color: #3a3a3d; }
@@ -120,7 +120,7 @@
 /* ── About ────────────────────────────────────────────────────────────────── */
 .about-title { max-width: 18ch; margin: 16px 0 0; font: 400 clamp(40px, 5.4vw, 72px)/1.02 var(--serif); letter-spacing: -.035em; }
 .about-hero { margin: 40px 0 0; }
-.about-hero img { width: 100%; aspect-ratio: 16 / 7; object-fit: cover; border-radius: 4px; }
+.about-hero img { width: 100%; aspect-ratio: 16 / 7; object-fit: cover; border-radius: 16px; }
 .about-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; margin-top: 56px; }
 .about h2 { margin: 0 0 12px; font: 400 30px/1.15 var(--serif); letter-spacing: -.02em; }
 .about-cols p { color: #3a3a3d; max-width: 56ch; }
@@ -154,7 +154,7 @@
 .acct-order header b { font: 400 24px var(--serif); }
 .acct-lines { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 12px; }
 .acct-lines li { display: grid; grid-template-columns: 48px 1fr auto; gap: 14px; align-items: center; font-size: 14px; }
-.acct-lines img { width: 48px; height: 60px; border-radius: 4px; object-fit: cover; background: var(--mist); }
+.acct-lines img { width: 48px; height: 60px; border-radius: 10px; object-fit: cover; background: var(--mist); }
 .acct-lines p { margin: 2px 0 0; color: var(--graphite); font-size: 13px; }
 .acct-lines a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .acct-words { margin-top: 16px; padding: 4px 0 4px 16px; border-left: 2px solid var(--trust); }

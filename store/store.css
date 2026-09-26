@@ -43,7 +43,7 @@
 
 /* ── Product card ─────────────────────────────────────────────────────────── */
 .card { display: flex; flex-direction: column; min-width: 0; }
-.media { position: relative; aspect-ratio: 4 / 5; border-radius: 4px; overflow: hidden; background: var(--mist); }
+.media { position: relative; aspect-ratio: 4 / 5; border-radius: 16px; overflow: hidden; background: var(--mist); }
 .media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
   transition: opacity .45s var(--ease), transform .8s var(--ease); }
 .media .alt { opacity: 0; }
@@ -120,7 +120,7 @@
   box-shadow: 0 18px 50px rgba(20,24,40,.16); opacity: 0; transform: translateY(-8px) scale(.98);
   pointer-events: none; transition: opacity .25s, transform .4s var(--spring); }
 .toast.on { opacity: 1; transform: none; pointer-events: auto; }
-.toast img { width: 64px; height: 80px; border-radius: 6px; object-fit: cover; background: var(--mist); }
+.toast img { width: 64px; height: 80px; border-radius: 10px; object-fit: cover; background: var(--mist); }
 .toast-seal { width: 64px; height: 64px; border-radius: 50%; background: #e8f4ec
   url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 16 16' fill='none' stroke='%231f7a46' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 8.5l3 3 7-7'/%3E%3C/svg%3E") no-repeat center; }
 .toast p { margin: 0; font-size: 13.5px; }
@@ -142,7 +142,7 @@
 .drawer-empty { padding: 48px 0; text-align: center; color: var(--graphite); }
 .drawer-empty p { margin: 0 0 18px; }
 .line { display: grid; grid-template-columns: 72px 1fr auto; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--hair); }
-.line img { width: 72px; height: 90px; border-radius: 4px; object-fit: cover; background: var(--mist); }
+.line img { width: 72px; height: 90px; border-radius: 10px; object-fit: cover; background: var(--mist); }
 .line-title { margin: 0; font-weight: 500; }
 .line-meta { margin: 2px 0 0; font-size: 13px; color: var(--graphite); }
 .line-remove { margin-top: 10px; padding: 0; border: 0; background: none; font-size: 13px; color: var(--graphite);
@@ -175,7 +175,7 @@
 .review-lines { list-style: none; margin: 20px 0 0; padding: 0; border-top: 1px solid var(--hair); }
 .review-lines li { display: grid; grid-template-columns: 56px 1fr auto; gap: 14px; align-items: center;
   padding: 14px 0; border-bottom: 1px solid var(--hair); }
-.review-lines img { width: 56px; height: 70px; border-radius: 4px; object-fit: cover; background: var(--mist); }
+.review-lines img { width: 56px; height: 70px; border-radius: 10px; object-fit: cover; background: var(--mist); }
 .review-total { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 0; }
 .review-total b { font: 400 34px var(--serif); letter-spacing: -.02em; }
 .order-review .limits { margin-bottom: 18px; }

@@ -49,14 +49,12 @@ body:has(.cue-splash) #aura-root { visibility: hidden; }
   position: absolute !important; width: 18px; height: 18px; margin: -9px 0 0 -9px;
   border-radius: 50%; border: 1.5px solid rgba(47,107,255,.75); background: rgba(47,107,255,.1);
   box-shadow: 0 0 0 3px rgba(255,255,255,.7), 0 2px 10px rgba(47,107,255,.25);
-  opacity: 0; transition: transform 70ms linear; will-change: transform; }
+  opacity: 0; }
 
 .aura-outline { position: absolute; left: 0; top: 0; border-radius: 16px; opacity: 0;
   outline: 2.5px solid var(--cue); outline-offset: 4px;
   box-shadow: 0 0 0 10px var(--cue-soft);
-  transition: transform .28s var(--cue-ease), width .28s var(--cue-ease), height .28s var(--cue-ease),
-    opacity .18s ease, border-radius .28s var(--cue-ease);
-  will-change: transform, width, height; }
+  transition: opacity .18s ease; }
 .aura-outline.on { opacity: 1; }
 .cue-scrolling .aura-outline { transition: opacity .18s ease; }
 .aura-outline[data-kind="action"] { border-radius: 999px; box-shadow: 0 0 0 7px var(--cue-soft); }
