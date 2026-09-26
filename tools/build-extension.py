@@ -14,10 +14,11 @@ DEST = ROOT / 'dist' / 'cue-extension'
 FILES = [
     'extension/background.js', 'extension/content.js', 'extension/extract.js',
     'extension/popup.html', 'extension/popup.css', 'extension/popup.js',
-    'extension/privacy.html',
+    'extension/privacy.html', 'extension/assets/cue-splash.jpg',
     'client/aura.js', 'client/avatar.js', 'client/badges.js', 'client/bus.js',
     'client/config.js', 'client/gaze.js', 'client/mic.js', 'client/overlay.css',
-    'client/resolver.js', 'client/voice.js', 'client/product-memory.js', 'vendor/webgazer.js',
+    'client/resolver.js', 'client/voice.js', 'client/product-memory.js',
+    'client/splash.js', 'vendor/webgazer.js',
 ]
 
 
@@ -32,20 +33,24 @@ def server_origin(value: str) -> str:
 
 
 def icon(size: int) -> bytes:
-    """Draw the Cue mark as a small antialiased PNG without build dependencies."""
+    """Draw the supplied white Cue eye mark on charcoal at Chrome icon sizes."""
     def inside(x: float, y: float) -> tuple[int, int, int, int]:
-        cx = cy = size / 2
-        px, py = x - cx, y - cy
-        corner = size * .20
-        dx = max(abs(px) - (cx - corner), 0)
-        dy = max(abs(py) - (cy - corner), 0)
-        if dx * dx + dy * dy > corner * corner:
-            return (0, 0, 0, 0)
-        radius = math.hypot(px + size * .025, py)
-        angle = math.atan2(py, px + size * .025)
-        stroke = size * .095
-        white = abs(radius - size * .235) < stroke and abs(angle) > .53
-        return (255, 255, 255, 255) if white else (47, 107, 255, 255)
+        def arc(cx: float, cy: float, radius: float, stroke: float) -> bool:
+            px, py = x - cx, y - cy
+            angle = math.atan2(py, px)
+            return abs(math.hypot(px, py) - radius) < stroke and abs(angle) > .55
+
+        white = (
+            arc(size * .50, size * .50, size * .355, size * .035) or
+            arc(size * .405, size * .50, size * .225, size * .038) or
+            math.hypot(x - size * .605, y - size * .50) < size * .055
+        )
+        if white:
+            return (248, 248, 246, 255)
+        # The reference uses a subtly textured charcoal rather than pure black.
+        grain = int(3 * math.sin(x * 1.73 + y * 2.31) * math.sin(x * .57 - y * 1.11))
+        base = 29 + grain
+        return (base, base + 1, base + 1, 255)
 
     raw = bytearray()
     for y in range(size):

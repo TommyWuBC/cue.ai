@@ -23,17 +23,24 @@ async function setup(t) {
     remove() { const i = overlays.indexOf(this); if (i >= 0) overlays.splice(i, 1); }
   }
   const data = [];
-  let captureMode = 'ok', predictions = true;
-  const regression = { getData: () => data };
+  let captureMode = 'ok', predictions = true, beginMode = 'ok';
+  const regression = {
+    getData: () => data,
+    setData: samples => data.push(...samples),
+  };
   const wg = {
-    begin: async () => wg,
+    begin: async () => {
+      if (beginMode === 'fail') throw new Error('camera unavailable');
+      return wg;
+    },
     clearData: async () => { data.length = 0; },
     getRegression: () => [regression],
     recordScreenPosition(x, y) {
       if (captureMode === 'throw') throw new Error('camera frame unavailable');
       if (captureMode === 'missing') return; // WebGazer silently drops missing eye features.
-      data.push({ screenPos: [x, y] });
-      if (data.length > 20) data.shift(); // Exercise its bounded training buffer too.
+      const eye = () => ({ width: 10, height: 6, imagex: 0, imagey: 0,
+        patch: { width: 10, height: 6, data: new Uint8ClampedArray(240).fill(120) } });
+      data.push({ eyes: { left: eye(), right: eye() }, screenPos: [x, y], type: 'click' });
     },
     getTracker: () => ({ getPositions: () => Array.from({ length: 468 }, (_,i) => [i, 100, 0]) }),
     getCurrentPrediction: async () => {
@@ -88,9 +95,32 @@ async function setup(t) {
   return { gaze, overlays, advance, press, finish,
     hint: () => overlays.at(-1).querySelector('.aura-cal-hint').textContent,
     capture: mode => { captureMode = mode; },
+    begin: mode => { beginMode = mode; },
+    move: (x, y) => {
+      const event = new Event('mousemove');
+      Object.assign(event, { clientX: x, clientY: y });
+      events.dispatchEvent(event);
+    },
     predictions: enabled => { predictions = enabled; },
   };
 }
+
+test('camera retry leaves mouse fallback and opens calibration', async t => {
+  const h = await setup(t);
+  h.begin('fail');
+  assert.equal(await h.gaze.start(), 'mouse');
+  assert.equal(h.gaze.getState().gazeError, 'webgazer could not start the camera');
+  h.begin('ok');
+  assert.equal(await h.gaze.start(), 'webgazer');
+  assert.equal(h.gaze.getState().gazeError, null);
+  h.move(200, 300);
+  assert.equal(h.gaze.getState().point, null, 'old mouse listener must not steer gaze');
+  const done = h.gaze.calibrate({ allowRetry: false });
+  await h.advance(0);
+  assert.equal(h.overlays.length, 1);
+  await h.finish();
+  assert.equal((await done).after_px, 0);
+});
 
 test('duplicate calibration shares one screen; Space advances the visible dot and is released after completion', async t => {
   const h = await setup(t);
@@ -157,4 +187,36 @@ test('failed validation never reuses old accuracy or announces successful calibr
   assert.equal(h.gaze.getAccuracy(), null);
   assert.ok(messages.some(text => text.includes("couldn't measure")));
   assert.ok(!messages.some(text => text.includes('Calibration done')));
+});
+
+test('stopping gaze cancels an active calibration without another input', async t => {
+  const h = await setup(t);
+  const done = h.gaze.calibrate({ allowRetry: false });
+  await h.advance(0);
+  assert.equal(h.overlays.length, 1);
+  h.gaze.stop();
+  assert.equal(await done, false);
+  assert.equal(h.overlays.length, 0);
+  assert.equal(h.gaze.getState().running, false);
+  assert.equal(h.gaze.getState().calibrating, false);
+});
+
+test('a completed gaze model survives a document change without new calibration', async t => {
+  const h = await setup(t);
+  const done = h.gaze.calibrate({ allowRetry: false });
+  await h.advance(0);
+  await h.finish();
+  assert.equal((await done).after_px, 0);
+  const snapshot = JSON.parse(JSON.stringify(h.gaze.exportCalibration()));
+  assert.equal(snapshot.samples.length, 13 * 14);
+  assert.equal(snapshot.samples[0].eyes.left.patch.data.length, 240);
+
+  assert.equal(await h.gaze.start({ resume: snapshot }), 'webgazer');
+  assert.equal(h.gaze.getState().calibrated, true);
+  assert.equal(h.gaze.getAccuracy().after_px, 0);
+  assert.equal(h.overlays.length, 0);
+
+  const wrongViewport = { ...snapshot, viewport: { width: 500, height: 800 } };
+  assert.equal(await h.gaze.start({ resume: wrongViewport }), 'webgazer');
+  assert.equal(h.gaze.getState().calibrated, false);
 });

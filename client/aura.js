@@ -5,6 +5,7 @@ import { scan, nth, invalidate, controls, findControl } from "./resolver.js";
 import * as badges from "./badges.js";
 import { CONFIG, url } from "./config.js";
 import { productMemory } from "./product-memory.js";
+import { playSplash } from "./splash.js";
 
 let memoryStorage;
 try { memoryStorage = CONFIG.injected ? window.CUE_MEMORY_STORAGE : sessionStorage; } catch {}
@@ -71,8 +72,10 @@ const FOLLOW = 0.32;     // per-frame easing toward the target
 const BADGE_MS = 180;    // how often the numbered set is recomputed
 const now = () => performance.now();
 let lastBadge = 0;
+let exited = false;
 
 function frame() {
+  if (exited) return;
   render.x += (render.tx - render.x) * FOLLOW;
   render.y += (render.ty - render.y) * FOLLOW;
   render.drawnConf += (render.conf - render.drawnConf) * 0.12;
@@ -228,6 +231,10 @@ function context() {
 
 let inflight = false;
 bus.on("UTTERANCE", async ({ text, final }) => {
+  if (final && /^(?:exit|quit|stop|go away|shut down|turn (?:yourself )?off|disable)(?: cue)?[.!]?$/i.test(text.trim())) {
+    await exitCue();
+    return;
+  }
   // Calibration owns the microphone for "Cue, next". Nothing said there is a
   // shopping command, and echoing it into the HUD just looks like a bug.
   if (gaze.getState().calibrating) return;
@@ -446,7 +453,7 @@ function perform(verb, args, opts = {}) {
       // Naming an item tells us exactly where the eyes were. Hand that back to
       // the tracker as a true training pair — the one moment we have ground
       // truth, and it is free.
-      gaze.learnFromSelection(t);
+      if (gaze.learnFromSelection(t)) persistCalibration();
       gaze.setFocus(t);
       if (t.kind === "product") comparisons.remember(t.product);
       break;
@@ -582,10 +589,17 @@ function perform(verb, args, opts = {}) {
       else bus.emit("SAY", { text: "There's no passkey set-up on this page." });
       break;
     case "recalibrate":
-      gaze.calibrate().then(() => gaze.hideCamera()).catch(e => {
+      const cameraUnavailable = gaze.getState().mode !== "webgazer" || !gaze.getState().running;
+      if (gaze.getState().mode !== "webgazer") {
+        bus.emit("SAY", { text: "Eye tracking is not running. I'll try the camera again." });
+      }
+      recalibrate().catch(e => {
         console.error("[cue] recalibration failed", e);
         bus.emit("SAY", { text: "I couldn't recalibrate. Please check the camera." });
       });
+      // The server's stock "recalibrating" line must not claim success when
+      // the camera is still in mouse fallback mode.
+      if (cameraUnavailable) return false;
       break;
     // "click the bag", "open women's coats", "go to checkout" — resolve a
     // spoken phrase against the page's own accessibility names and click it.
@@ -642,50 +656,115 @@ function perform(verb, args, opts = {}) {
 // Voice-reachable recalibration. Gaze drifts when you shift in your seat, and
 // at a demo table the person in the chair changes every few minutes.
 let recalibrating = false;
+async function persistCalibration() {
+  if (!CONFIG.injected || !globalThis.chrome?.runtime?.sendMessage) return;
+  const value = gaze.exportCalibration();
+  if (!value) return;
+  try { await chrome.runtime.sendMessage({ type: "cue:calibration:write", value }); }
+  catch (error) { console.warn("[cue] Could not retain calibration for navigation", error); }
+}
+
+async function clearCalibration() {
+  if (!CONFIG.injected || !globalThis.chrome?.runtime?.sendMessage) return;
+  try { await chrome.runtime.sendMessage({ type: "cue:calibration:clear" }); }
+  catch (error) { console.warn("[cue] Could not clear old calibration", error); }
+}
+
 async function recalibrate() {
   if (recalibrating) return;
-  if (gaze.getState().mode !== "webgazer") {
-    bus.emit("SAY", { text: "There's no camera to calibrate in this mode." });
-    return;
-  }
   recalibrating = true;
   badges.setEnabled(false);
-  try { await gaze.calibrate(); gaze.hideCamera(); }
+  try {
+    await clearCalibration();
+    if (gaze.getState().mode !== "webgazer") {
+      const actual = await gaze.start({ mode: "webgazer", sigma: CONFIG.sigma,
+        tune: CONFIG.tune, keepData: CONFIG.keepData });
+      if (actual !== "webgazer") {
+        const reason = gaze.getState().gazeError || "the camera is unavailable";
+        bus.emit("SAY", { text: `Eye tracking still can't start: ${reason}. Check camera permission for this page, then try again.` });
+        return false;
+      }
+    }
+    if (!gaze.getState().running) {
+      bus.emit("SAY", { text: "The camera is still starting. Please try again in a moment." });
+      return false;
+    }
+    const result = await gaze.calibrate();
+    if (result === false) {
+      bus.emit("SAY", { text: "Eye tracking is not ready yet. Please try again." });
+      return false;
+    }
+    gaze.hideCamera();
+    await persistCalibration();
+    return true;
+  }
   finally { badges.setEnabled(true); recalibrating = false; }
 }
 
 // ── Boot ────────────────────────────────────────────────────────────────────
-async function boot() {
+export async function exitCue() {
+  if (exited) return;
+  exited = true;
+  pendingConfirm = null;
+  voice.stopListening();
+  gaze.stop();
+  badges.clear();
+  document.querySelectorAll("#aura-root,.cue-splash,.aura-cal,.cue-modal").forEach((el) => el.remove());
+  try { globalThis.__cueExternalCleanup?.(); } catch {}
+  globalThis.__cueExternalActive = false;
+  globalThis.__cueExited = true;
+  if (CONFIG.injected && globalThis.chrome?.runtime?.sendMessage) {
+    chrome.runtime.sendMessage({ type: "cue:exit" }).catch(() => {});
+  }
+  try { await voice.speak("Cue is off."); } catch {}
+}
+
+export async function boot() {
+  exited = false;
   mountUI();
   requestAnimationFrame(frame);
+  const splash = CONFIG.injected && CONFIG.autoCal && !CONFIG.resuming
+    ? playSplash(CONFIG.splashImage) : null;
 
   // Ask for the mic BEFORE the camera prompt and before calibration. Chrome
   // will not reliably prompt for it later once a video stream is live, which
   // is why speech looked "broken" rather than "not permitted".
   if (CONFIG.gazeMode === "webgazer") await voice.requestMic();
+  if (exited) return;
 
   // start() reports the mode it ACTUALLY got, which may not be the one asked
   // for — no camera, or a browser blocking WebGL, degrades it to the mouse.
   const actual = await gaze.start({ mode: CONFIG.gazeMode, sigma: CONFIG.sigma,
-                                    tune: CONFIG.tune, keepData: CONFIG.keepData });
+                                    tune: CONFIG.tune, keepData: CONFIG.keepData,
+                                    resume: CONFIG.calibration });
+  if (exited) return;
   // Listening starts BEFORE calibration on purpose: "Cue, next" advances the
   // dots, and someone who cannot press space has no other way through the
   // very first screen they meet.
   await voice.startListening();
+  if (exited) return;
+
+  // Camera/model setup can run while the mark is on screen. Calibration
+  // begins only after its dissolve has finished.
+  if (splash) await splash;
+  if (exited) return;
 
   let announced = false;
-  if (actual === "webgazer" && CONFIG.autoCal) {
+  if (actual === "webgazer" && gaze.getState().calibrated) {
+    announced = true;
+  } else if (actual === "webgazer" && CONFIG.autoCal) {
     await gaze.calibrate();
     gaze.hideCamera();
+    await persistCalibration();
     // calibrate() already said how it went and what to do next. Adding "Cue is
     // ready" on top of it is two spoken lines for one event, and they landed
     // close enough together to talk over each other.
     announced = true;
   }
 
-  if (CONFIG.gazeMode === "webgazer" && actual !== "webgazer") {
+  if (CONFIG.gazeMode === "webgazer" && actual !== "webgazer" && !CONFIG.resuming) {
     bus.emit("SAY", { text: "I couldn't use the camera, so I'm following the mouse instead. Everything else works." });
-  } else if (!announced) {
+  } else if (!announced && !CONFIG.resuming) {
     bus.emit("SAY", { text: "Cue is ready. Look at something and ask me about it." });
   }
 }
@@ -742,7 +821,7 @@ bus.on("GAZE", ({ confidence }) => {
 // from the on-stage fallback if the demo floor is too loud to be heard.
 const say = (text) => bus.emit("UTTERANCE", { text, final: true });
 
-window.cue = { bus, gaze, voice, badges, context, perform, boot, say, recalibrate, CONFIG,
+window.cue = { bus, gaze, voice, badges, context, perform, boot, say, recalibrate, exit: exitCue, CONFIG,
                measure: (...a) => gaze.measure(...a),
                experiment: (...a) => gaze.experiment(...a),
                head: () => gaze.getHead(),
