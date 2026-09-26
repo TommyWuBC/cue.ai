@@ -242,8 +242,25 @@ bus.on("UTTERANCE", async ({ text, final }) => {
     const out = await res.json();
     window.cue.lastActionUtterance = text;
     let completed = true;
+    const fromModel = out.source === "grok";
     for (const a of out.do ?? []) {
+      // Second lock. The server's allowlist already refuses these from the
+      // model; this is the one that survives a jailbreak, because it is the
+      // page and not the prompt.
+      if (fromModel && COMMIT_VERBS.has(a.verb)) {
+        console.warn("[cue] refused a commit verb proposed by the model:", a.verb);
+        bus.emit("SAY", { text: "I need to hear you say that yourself." });
+        completed = false;
+        break;
+      }
       if (perform(a.verb, a.args ?? {}) === false) { completed = false; break; }
+    }
+    // The agent proposed something and asked first. Hold it: the shopper's
+    // "yes" is what performs it. This is how Cue is allowed to buy — it never
+    // commits on its own, it states exactly what it will do and waits.
+    const staged = Array.isArray(out.ask) ? out.ask : (out.ask?.verb ? [out.ask] : null);
+    if (staged?.length) {
+      pendingConfirm = { kind: "action", actions: staged, said: out.say ?? "" };
     }
     window.cue.lastActionUtterance = null;
     if (completed && out.say) bus.emit("SAY", { text: out.say });
@@ -276,6 +293,15 @@ function resolveConfirm(ok) {
   if (!pendingConfirm) return false;
   const p = pendingConfirm;
   pendingConfirm = null;
+  if (p.kind === "action") {
+    if (!ok) { bus.emit("SAY", { text: "Okay, left it." }); return true; }
+    // Run everything that was read back, in order, stopping if a step is
+    // refused — the confirmation covered the whole sequence, not just the end.
+    for (const a of p.actions) {
+      if (perform(a.verb, a.args ?? {}) === false) break;
+    }
+    return true;
+  }
   if (p.kind !== "checkout") return false;
   if (ok) { window.cueStore?.approve(); bus.emit("SAY", { text: "Order approved." }); }
   else    { bus.emit("SAY", { text: "Cancelled. Nothing was charged." }); }
@@ -297,7 +323,14 @@ function scope() {
   return f.kind === "product" ? f.el : f.el.closest("[data-cue-product],[data-aura-product]");
 }
 
-const MONEY_VERBS = new Set(["add_to_cart", "checkout"]);
+// Words that COMMIT: they complete a payment or enrol a credential. These may
+// only come from the deterministic router — that is, from the shopper actually
+// saying yes — never from the language model.
+//
+// Cue is allowed to shop. Only the human is allowed to commit. That is the
+// whole trust argument, so it is enforced in two independent places: the
+// server's allowlist (server/agent.py) and the dispatch loop below.
+const COMMIT_VERBS = new Set(["confirm", "approve_checkout", "setup_passkey"]);
 
 const checkoutOpen = () =>
   !!(document.getElementById("checkout-dialog")?.open && window.cueCheckout);
@@ -455,16 +488,10 @@ function perform(verb, args) {
           : `I can't find ${args.name} on this page.` });
         return false;
       }
-      // Navigation only. Anything that spends money has to come through the
-      // explicit spoken command, so an agent that ignores its prompt still
-      // cannot reach the cart by naming a button.
-      const verb2 = c.el.dataset?.cueAction ?? c.el.dataset?.auraAction;
-      if (MONEY_VERBS.has(verb2)) {
-        bus.emit("SAY", { text: verb2 === "checkout"
-          ? "Say check out when you're ready and I'll read the order back."
-          : "Say add it and I'll add what you're looking at." });
-        return false;
-      }
+      // Money controls are allowed here. They are not a back door: the page
+      // announces exactly what went into the bag and holds the budget, and the
+      // checkout control only stages an order for readback. The charge still
+      // needs a spoken yes and a passkey, which is the guarantee that matters.
       // Say what is about to happen before it happens — on a page the user
       // cannot see well, a silent navigation is disorienting.
       bus.emit("SAY", { text: `Opening ${c.name}.` });

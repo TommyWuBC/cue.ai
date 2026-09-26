@@ -353,7 +353,35 @@ approve/cancel/setup_passkey/confirm/cancel/recalibrate get through.
 Recalibrate is on that list deliberately: losing tracking mid-dialog would
 otherwise trap you in it.
 
-## Nothing spends money on one utterance
+## Cue may shop. Only the human may commit.
+
+This is the centre of the project, so be careful changing it.
+
+The agent **is** allowed to buy — `add_to_cart` and `checkout` are both things
+it can propose. What it can never do is commit. `checkout` only stages an order
+and reads it back; it charges nothing. The charge needs the shopper's own
+spoken yes and their passkey.
+
+`confirm`, `approve_checkout` and `setup_passkey` are enforced human-only in
+**two independent places**, because one of them being wrong should not be
+enough: `sanitize()` in `server/agent.py` drops them from any model response,
+and the dispatch loop in `client/aura.js` refuses them when `source === "grok"`.
+The second one is the one that survives a jailbreak, because it is the page and
+not the prompt.
+
+The agent can also **stage** a sequence with `ask`, which is how it buys
+politely: it says exactly what it is about to do, and the shopper's yes performs
+it. `ask` is a list and must contain everything the sentence promised — say "in
+medium" and stage the size too, or the yes lands on a page with no size chosen
+and silently does nothing.
+
+`sanitize()` has a net for a model that narrates without acting: a sentence
+claiming an add with nothing proposed is converted into an `ask`. Telling
+someone who cannot see the screen "adding it to your bag" while doing nothing
+leaves them believing they bought something they did not — the worst failure
+this system has.
+
+## Nothing charges on one utterance
 
 `checkout` **stages** an order and reads it back — item, total, remaining
 budget. A separate `confirm` completes it. Budget is enforced at add time, in

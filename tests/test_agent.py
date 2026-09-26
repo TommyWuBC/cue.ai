@@ -7,10 +7,34 @@ import agent
 
 
 class AgentBoundaryTests(unittest.TestCase):
-    def test_purchase_click_and_navigation_are_filtered(self):
-        result = agent.sanitize({'say': 'Here is the answer', 'do': [
+    def test_the_agent_may_shop_but_may_never_commit(self):
+        """Cue is allowed to shop. Only the human is allowed to commit.
+
+        Adding is announced and reversible; checkout only stages an order and
+        reads it back, charging nothing. What the model must never reach is the
+        moment of commitment — the spoken yes and the passkey — because that
+        confirmation is the entire trust argument.
+        """
+        result = agent.sanitize({'say': 'Adding that', 'do': [
             {'verb': 'add_to_cart', 'args': {}},
             {'verb': 'checkout', 'args': {}},
+        ]})
+        self.assertEqual(result['do'], [{'verb': 'add_to_cart', 'args': {}},
+                                        {'verb': 'checkout', 'args': {}}])
+
+    def test_commitment_never_comes_from_the_model(self):
+        result = agent.sanitize({'say': 'Approved', 'do': [
+            {'verb': 'confirm', 'args': {}},
+            {'verb': 'approve_checkout', 'args': {}},
+            {'verb': 'setup_passkey', 'args': {}},
+        ]})
+        self.assertEqual(result['do'], [])
+
+    def test_ambiguous_click_and_raw_navigation_are_filtered(self):
+        # click_focused is whatever gaze happens to be on, which at our measured
+        # error is a coin flip; navigate is a raw URL. The agent gets the named
+        # controls instead.
+        result = agent.sanitize({'say': 'Here is the answer', 'do': [
             {'verb': 'click_focused', 'args': {}},
             {'verb': 'navigate', 'args': {'url': 'https://example.com'}},
         ]})
