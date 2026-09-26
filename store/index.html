@@ -160,6 +160,18 @@
   <div class="sheet-body" id="sg-body"></div>
 </dialog>
 
+<div class="private-mode-bar" id="private-mode-bar" hidden role="status">
+  <span><b>Private payment mode</b> — microphone off</span>
+  <button class="btn btn-secondary" id="resume-voice" type="button" data-gaze-dwell data-dwell-id="resume-voice">Resume voice assistant<span class="dwell-fill" aria-hidden="true"></span></button>
+</div>
+
+<dialog id="private-payment-dialog" aria-labelledby="private-payment-title">
+  <div class="private-payment-shell">
+    <div class="private-payment-head"><span class="privacy-dot" aria-hidden="true"></span><div><p>Private payment mode</p><h2 id="private-payment-title">Microphone off</h2></div></div>
+    <div class="private-payment-body"></div>
+  </div>
+</dialog>
+
 <dialog id="checkout-dialog" aria-labelledby="checkout-title">
   <div class="review">
     <div class="review-head">
@@ -178,9 +190,9 @@
       <p class="checkout-message" role="status" aria-live="polite"></p>
     </div>
     <div class="checkout-controls">
-      <button class="btn btn-quiet checkout-cancel" type="button">Cancel</button>
-      <button class="btn btn-secondary checkout-setup" type="button" disabled>Set up passkey</button>
-      <button class="btn btn-trust checkout-approve" type="button" disabled>Approve with passkey</button>
+      <button class="btn btn-quiet checkout-cancel" type="button" data-gaze-dwell data-dwell-id="checkout-cancel">Cancel</button>
+      <button class="btn btn-secondary checkout-setup" type="button" data-gaze-dwell data-dwell-id="checkout-setup" disabled>Set up passkey</button>
+      <button class="btn btn-trust checkout-approve" type="button" data-gaze-dwell data-dwell-id="checkout-approve" disabled>Approve with passkey</button>
     </div>
   </div>
 </dialog>

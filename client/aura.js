@@ -228,6 +228,7 @@ function context() {
 
 let inflight = false;
 bus.on("UTTERANCE", async ({ text, final }) => {
+  if (voice.isPrivateMode?.()) return;
   // Calibration owns the microphone for "Cue, next". Nothing said there is a
   // shopping command, and echoing it into the HUD just looks like a bug.
   if (gaze.getState().calibrating) return;
@@ -247,6 +248,9 @@ bus.on("UTTERANCE", async ({ text, final }) => {
       body: JSON.stringify({ text, context: context() }),
     });
     const out = await res.json();
+    // The shopper may have entered private mode while the AI request was in flight.
+    // Late responses must not speak or mutate shopping state.
+    if (voice.isPrivateMode?.()) return;
     window.cue.lastActionUtterance = text;
     let completed = true;
     const fromModel = out.source === "grok";
@@ -396,6 +400,7 @@ function describeAdd(card) {
 }
 
 function perform(verb, args, opts = {}) {
+  if (voice.isPrivateMode?.() && !["approve_checkout", "cancel_checkout", "setup_passkey", "confirm", "cancel"].includes(verb)) return false;
   // While the passkey dialog is up, nothing else may act — but recalibrate
   // and confirm/cancel must still get through, or losing tracking mid-dialog
   // traps you in it with no way out.
@@ -740,7 +745,7 @@ bus.on("GAZE", ({ confidence }) => {
 
 // say() is how you drive Cue with no mic: from the console, from a test, or
 // from the on-stage fallback if the demo floor is too loud to be heard.
-const say = (text) => bus.emit("UTTERANCE", { text, final: true });
+const say = (text) => { if (!voice.isPrivateMode?.()) bus.emit("UTTERANCE", { text, final: true }); };
 
 window.cue = { bus, gaze, voice, badges, context, perform, boot, say, recalibrate, CONFIG,
                measure: (...a) => gaze.measure(...a),

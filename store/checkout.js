@@ -49,6 +49,8 @@ export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
   let pending = null;
   let ready = false;
   let busy = false;
+  const privateMode = () => !!window.cue?.voice?.isPrivateMode?.();
+  const say = text => { if (!privateMode()) window.cue?.bus.emit('SAY', { text }); };
 
   const setMessage = text => { message.textContent = text; };
   const refresh = async () => { const status = await api('/api/checkout/status'); onStatus(status); return status; };
@@ -63,11 +65,11 @@ export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
       .then(() => {
         if (pending?.intent_id === intent.intent_id) pending = null;
         if (dialog.open) dialog.close();
-        window.cue?.bus.emit('SAY', { text: 'Checkout cancelled. No order was recorded.' });
+        say('Checkout cancelled. No order was recorded.');
         return true;
       }).catch(err => {
         setMessage(err.message);
-        window.cue?.bus.emit('SAY', { text: `I couldn't confirm cancellation. ${err.message}` });
+        say(`I couldn't confirm cancellation. ${err.message}`);
         return false;
       }).finally(() => { revocation = null; });
     return revocation;
@@ -88,7 +90,7 @@ export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
     // the server returns its ID. Do not announce success before that happens.
     if (busy) return;
     if (dialog.open) dialog.close();
-    window.cue?.bus.emit('SAY', { text: "There's no order waiting to cancel." });
+    say("There's no order waiting to cancel.");
   };
   dialog.querySelector('.checkout-cancel').addEventListener('click', cancel);
   dialog.addEventListener('cancel', event => { event.preventDefault(); cancel(); });
@@ -99,7 +101,7 @@ export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
       if (!await cancel()) return;
     }
     const cart = getCart();
-    if (!cart.length) { window.cue?.bus.emit('SAY', { text: 'Your cart is empty.' }); return; }
+    if (!cart.length) { say('Your cart is empty.'); return; }
     busy = true; ready = false; cancelled = false;
     approveButton.disabled = true; setupButton.disabled = true;
     if (!dialog.open) dialog.showModal();
@@ -118,22 +120,23 @@ export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
       const readback = `${details.textContent}. Total ${money(pending.total_cents)}. ` +
         `You would have ${money(pending.remaining_after_cents)} left this month. ` +
         'Say yes and approve with your passkey to record this demo order. No payment will be charged.';
-      setMessage('Reading back your order…');
-      await window.cue.voice.speak(readback);
+      setMessage(privateMode() ? 'Order checked. Voice remains off in private payment mode.' : 'Reading back your order…');
+      if (!privateMode()) await window.cue.voice.speak(readback);
       if (cancelled) return;          // they said no while it was reading
       ready = true;
       approveButton.disabled = false;
       setupButton.disabled = status.passkey_registered;
-      setMessage(status.passkey_registered ? 'Say “Cue, yes” or choose Approve with passkey.' :
-        'Set up a passkey, then say “Cue, yes” or choose Approve.');
+      setMessage(status.passkey_registered
+        ? (privateMode() ? 'Choose Approve with passkey. The operating-system prompt may require touch or another device action.' : 'Say “Cue, yes” or choose Approve with passkey.')
+        : (privateMode() ? 'Set up a passkey, then choose Approve. The operating-system prompt may require touch or another device action.' : 'Set up a passkey, then say “Cue, yes” or choose Approve.'));
     } catch (err) {
       if (cancelled) {
         setMessage(`Checkout stopped. ${err.message}`);
-        window.cue?.bus.emit('SAY', { text: `Checkout stopped. ${err.message}` });
+        say(`Checkout stopped. ${err.message}`);
         return;
       }
       setMessage(err.message);
-      window.cue?.bus.emit('SAY', { text: err.message });
+      say(err.message);
     } finally { busy = false; }
   }
 
@@ -152,7 +155,7 @@ export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
       await refresh();
       if (cancelled) return;
       setMessage('Passkey ready. Say “Cue, yes” or choose Approve.');
-      window.cue?.bus.emit('SAY', { text: 'Passkey ready. Say yes to approve.' });
+      say('Passkey ready. Say yes to approve.');
     } catch (err) {
       if (cancelled) return;
       setupButton.disabled = false;
@@ -162,13 +165,13 @@ export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
 
   async function approve() {
     if (!pending && !busy) {
-      window.cue?.bus.emit('SAY', { text: "There's no order waiting." });
+      say("There's no order waiting.");
       return;
     }
     if (busy || !ready) {
       // They answered before the readback finished. Acknowledge rather than
       // swallowing it, or the only feedback is silence.
-      window.cue?.bus.emit('SAY', { text: 'One moment — let me finish reading the order.' });
+      say('One moment — let me finish reading the order.');
       return;
     }
     if (!navigator.credentials?.get) { setMessage('Passkeys are unavailable in this browser.'); return; }
@@ -189,7 +192,7 @@ export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
       clearCart();
       await refresh();
       dialog.close();
-      window.cue?.bus.emit('SAY', { text: `Demo order recorded. ${money(order.remaining_cents)} remains this month. No payment was charged.` });
+      say(`Demo order recorded. ${money(order.remaining_cents)} remains this month. No payment was charged.`);
     } catch (err) {
       if (cancelled) return;
       approveButton.disabled = false;

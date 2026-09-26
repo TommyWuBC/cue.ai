@@ -30,8 +30,9 @@ const BARGE_MIN_CHARS = 9;
 const state = {
   rec: null, listening: false, speaking: false, provider: "none",
   mutedUntil: 0, pttUntil: 0, wakeUntil: 0,
-  calibrating: false, ttsMode: "browser", micError: null,
+  calibrating: false, ttsMode: "browser", micError: null, privateMode: false,
 };
+let listenGeneration = 0;
 let audio = null;
 let starting = false;
 
@@ -42,6 +43,7 @@ const pttArmed = () => now() < state.pttUntil;
 // Grok and the browser recogniser both land here. Intent gating lives in
 // exactly one place so the two paths can never drift apart.
 function handleTranscript(text, final, alternatives = null) {
+  if (state.privateMode) return;
   text = (text || "").trim();
   if (!text) return;
 
@@ -137,6 +139,8 @@ export async function requestMic() {
 
 // ── Start listening ─────────────────────────────────────────────────────────
 export async function startListening() {
+  if (state.privateMode) return false;
+  const generation = ++listenGeneration;
   bindPushToTalk();
 
   // Server-side recognition first: Grok, or ElevenLabs if the server had to
@@ -145,18 +149,22 @@ export async function startListening() {
   // it means "the server stream", which is what finalize() depends on.
   let health = null;
   try { health = await (await fetch(url("/health"))).json(); } catch {}
+  if (state.privateMode || generation !== listenGeneration) return false;
   if (health?.stt?.ready) {
     if (await mic.start()) {
+      if (state.privateMode || generation !== listenGeneration) { mic.stop(); return false; }
       state.listening = true; state.provider = "grok";
       bus.emit("STATE", { listening: true, sttProvider: mic.provider() });
       return true;
     }
     console.warn("[cue] server stt failed to start — falling back to the browser");
   }
+  if (state.privateMode || generation !== listenGeneration) return false;
   return startBrowserStt();
 }
 
 function startBrowserStt() {
+  if (state.privateMode) return false;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) {
     // Brave ships the constructor but no speech service, and some builds ship
@@ -197,9 +205,9 @@ function startBrowserStt() {
   // mic can never become a hot loop.
   let backoff = 250;
   rec.onend = () => {
-    if (!state.listening) return;
+    if (!state.listening || state.privateMode) return;
     setTimeout(() => {
-      if (!state.listening || starting) return;
+      if (!state.listening || state.privateMode || starting) return;
       starting = true;
       try { rec.start(); backoff = 250; }
       catch (err) { if (!/already/i.test(err.message)) backoff = Math.min(backoff * 2, 5000); }
@@ -220,7 +228,7 @@ function bindPushToTalk() {
   if (ptBound) return;
   ptBound = true;
   addEventListener("keydown", (e) => {
-    if (e.code !== "Space" || e.repeat || state.calibrating) return;
+    if (e.code !== "Space" || e.repeat || state.calibrating || state.privateMode) return;
     if (/^(INPUT|TEXTAREA)$/.test(e.target?.tagName)) return;
     e.preventDefault();
     state.pttUntil = Infinity;
@@ -228,7 +236,7 @@ function bindPushToTalk() {
     bus.emit("STATE", { ptt: true });
   });
   addEventListener("keyup", (e) => {
-    if (e.code !== "Space" || state.calibrating) return;
+    if (e.code !== "Space" || state.calibrating || state.privateMode) return;
     // Arm a tail rather than closing immediately — the final transcript has not
     // arrived yet at the moment the key comes up.
     state.pttUntil = now() + PTT_TAIL_MS;
@@ -236,6 +244,36 @@ function bindPushToTalk() {
     bus.emit("STATE", { ptt: false });
   });
 }
+
+
+// ── Private payment mode ───────────────────────────────────────────────────
+// This is a hard transport stop, not a UI mute. It invalidates any startup in
+// flight, closes server STT, aborts browser recognition, cancels TTS, and keeps
+// voice off until exitPrivateMode() is called by an explicit user action.
+export async function enterPrivateMode() {
+  if (state.privateMode) return true;
+  state.privateMode = true;
+  listenGeneration++;
+  state.listening = false;
+  state.provider = "none";
+  state.pttUntil = 0;
+  state.wakeUntil = 0;
+  speakTicket++;
+  heldLine = null;
+  stopSpeaking();
+  try { state.rec?.abort?.(); } catch {}
+  state.rec = null;
+  mic.stop();
+  bus.emit("STATE", { listening: false, sttProvider: "none", ptt: false, privateMode: true });
+  return true;
+}
+
+export function exitPrivateMode() {
+  state.privateMode = false;
+  bus.emit("STATE", { privateMode: false });
+}
+
+export const isPrivateMode = () => state.privateMode;
 
 // ── Autoplay unlock ─────────────────────────────────────────────────────────
 // Browsers refuse to play audio before the user has interacted with the page,
@@ -272,7 +310,7 @@ export function stopSpeaking() {
 let speakTicket = 0;
 
 export async function speak(text) {
-  if (!text) return;
+  if (!text || state.privateMode) return;
   const mine = ++speakTicket;
   const current = () => mine === speakTicket;
   stopSpeaking();
@@ -283,7 +321,7 @@ export async function speak(text) {
   speakingText = text;
   try {
     const res = await fetch(url("/tts?text=" + encodeURIComponent(text)));
-    if (!current()) return;                       // superseded while fetching
+    if (!current() || state.privateMode) return;                       // superseded while fetching
     const ct = res.headers.get("content-type") || "";
     if (ct.startsWith("audio/")) {
       const url = URL.createObjectURL(await res.blob());

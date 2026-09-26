@@ -36,6 +36,7 @@ const st = { ctx: null, ws: null, node: null, stream: null, src: null,
              running: false, ready: false, muted: false };
 let carry = [];
 let carryLen = 0;
+let generation = 0;
 
 function flush(force = false) {
   while (carryLen >= CHUNK_SAMPLES || (force && carryLen > 0)) {
@@ -57,6 +58,7 @@ function flush(force = false) {
 
 export async function start() {
   if (st.running) return true;
+  const mine = ++generation;
 
   // Get the mic BEFORE opening the socket. Grok bills streaming by the hour,
   // and the old order opened an upstream session to xAI and then discovered
@@ -72,6 +74,8 @@ export async function start() {
     return false;
   }
 
+  if (mine !== generation) { st.stream?.getTracks().forEach((t) => t.stop()); st.stream = null; return false; }
+
   // Absolute, from config: on an injected page location.host is the STORE.
   const ws = new WebSocket(wsUrl("/stt"));
   ws.binaryType = "arraybuffer";
@@ -82,6 +86,7 @@ export async function start() {
     ws.onopen  = () => { clearTimeout(t); resolve(true); };
     ws.onerror = () => { clearTimeout(t); resolve(false); };
   });
+  if (mine !== generation) { try { ws.close(); } catch {} st.stream?.getTracks().forEach((t) => t.stop()); st.stream = null; return false; }
   if (!opened) {
     console.warn("[cue] stt socket failed to open");
     st.stream.getTracks().forEach((t) => t.stop());
@@ -138,6 +143,7 @@ export async function start() {
   // voice.js falls back to the browser recogniser. A server too old to send a
   // verdict is assumed live after the wait, as before.
   const live = await Promise.race([decided, new Promise((r) => setTimeout(() => r(true), 10000))]);
+  if (mine !== generation) { st.stream?.getTracks().forEach((t) => t.stop()); st.stream = null; try { ws.close(); } catch {} return false; }
   if (!live) {
     st.stream.getTracks().forEach((t) => t.stop());
     st.stream = null;
@@ -167,6 +173,7 @@ export async function start() {
   sink.gain.value = 0;
   st.node.connect(sink).connect(st.ctx.destination);
 
+  if (mine !== generation) { stop(); return false; }
   st.running = true;
   bus.emit("STATE", { listening: true, sttProvider: st.provider || "grok" });
   return true;
@@ -186,11 +193,14 @@ export function finalize() {
 export function setMuted(m) { st.muted = !!m; }
 
 export function stop() {
+  generation++;
   st.running = false;
+  st.ready = false;
   try { st.node?.disconnect(); st.src?.disconnect(); } catch {}
   try { st.stream?.getTracks().forEach((t) => t.stop()); } catch {}
   try { st.ctx?.close(); } catch {}
   try { st.ws?.close(); } catch {}
+  st.node = null; st.src = null; st.stream = null; st.ctx = null; st.ws = null;
   carry = []; carryLen = 0;
 }
 
