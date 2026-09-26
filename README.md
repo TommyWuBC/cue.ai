@@ -35,6 +35,8 @@ Same code path as speech — the wake word and STT are the only thing bypassed.
     client/resolver.js  gaze point -> nearest tagged element
     client/voice.js     Web Speech STT, wake word, barge-in, tiered TTS playback
     client/aura.js      orchestration: utterance -> server -> speech + page actions
+    client/avatar.js    Cue's animated face; reacts to bus events, never emits any
+    store/index.html    the Northfield storefront (design notes: store/DESIGN.md)
     store/checkout.js   spoken order review + browser passkey ceremony
     server/checkout.py  server priced cart, limits, passkey verification, SQLite orders
     server/router.py    regex fast path; the demo's core commands never hit an LLM
