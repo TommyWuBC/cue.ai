@@ -1,0 +1,9 @@
+-r requirements.txt
+
+# MediaPipe 1.0.1 aborts in its Metal graph during FaceLandmarker startup on
+# current macOS. The 0.10 line is the tested EyeTrax runtime.
+mediapipe>=0.10,<1
+
+# EyeTrax is not released as a stable PyPI package. Pin the reviewed upstream
+# commit so calibration behavior cannot change between demo machines.
+eyetrax @ git+https://github.com/ck-zhang/eyetrax.git@84e13a16af168ac7c383f7d50ec901cd6c0ad61d

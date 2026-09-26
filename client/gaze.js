@@ -1,5 +1,6 @@
 import { bus } from "./bus.js";
 import { scan, resolve } from "./resolver.js";
+import { eyeTrax } from "./eyetrax.js";
 
 // ── Tuning ──────────────────────────────────────────────────────────────────
 // One Euro filter. A fixed EMA forces a choice between "stable" and "keeps up";
@@ -19,6 +20,9 @@ const D_CUTOFF   = 0.30;  // Hz — cutoff for the speed estimate itself
 // Mouse mode is ground truth, so it needs far less help. It keeps a little
 // smoothing on purpose: on stage the fallback should move like the real thing.
 const MOUSE_TUNING = { minCutoff: 3.5, beta: 0.05, dCutoff: 1.0 };
+// EyeTrax already removes head motion in its landmark feature space. A lighter
+// filter keeps saccades responsive while still quieting webcam landmark noise.
+const EYETRAX_TUNING = { minCutoff: 1.2, beta: 0.012, dCutoff: 1.0 };
 
 // One tuning cannot serve every face and every room. The constants above were
 // swept at sigma=70; at the 242px we actually measured they leave sd 112 and
@@ -50,7 +54,8 @@ const SACCADE_AGREE_PX = 150;
 // this long, the world has moved whether the samples agree or not.
 const SACCADE_STUCK = 6;
 
-const DWELL_MS      = 380;  // how long a candidate holds before FOCUS commits
+const DWELL_MS      = 380;  // WebGazer's noisier signal needs a longer hold
+const EYETRAX_DWELL_MS = 250;
 const SWITCH_MARGIN = 0.82; // new target must be this much closer to steal focus
 const EDGE          = 6;    // keep the reticle on screen at the extremes
 
@@ -69,10 +74,18 @@ const state = {
   cal: { ax: 1, bx: 0, ay: 1, by: 0 },
   accuracy: null,
   lastSampleAt: 0, lowSince: 0, qualityLow: false, calibrating: false,
+  facePresent: true,
 };
+
+const cameraMode = () => state.mode === "webgazer" || state.mode === "eyetrax";
 
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
 const mean   = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+const percentile = (a, q) => {
+  if (!a.length) return null;
+  const s = [...a].sort((x, y) => x - y);
+  return s[Math.min(s.length - 1, Math.floor(q * s.length))];
+};
 const sleep  = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ── Stray trackpad input ────────────────────────────────────────────────────
@@ -100,7 +113,7 @@ function guardStrayClicks() {
   if (clickGuardBound) return;
   clickGuardBound = true;
   addEventListener("click", (e) => {
-    if (state.mode !== "webgazer" || !state.calibrated) return;
+    if (!cameraMode() || !state.calibrated) return;
     if (!e.isTrusted) return;                 // this was us, via el.click()
     const el = e.target?.closest?.("[data-cue-action],[data-aura-action]");
     if (!el) return;
@@ -220,8 +233,8 @@ function fitHeadGain() {
   const spreadY = Math.max(...S.map((s) => s.dy)) - Math.min(...S.map((s) => s.dy));
   if (spreadX < 0.12 && spreadY < 0.12) return null;
 
-  const fx = fit1d(S.map((s) => s.dx), S.map((s) => s.ex));
-  const fy = fit1d(S.map((s) => s.dy), S.map((s) => s.ey));
+  const fx = fitLine(S.map((s) => s.dx), S.map((s) => s.ex));
+  const fy = fitLine(S.map((s) => s.dy), S.map((s) => s.ey));
   const gx = Math.max(-HEAD_MAX_GAIN, Math.min(HEAD_MAX_GAIN, fx.a));
   const gy = Math.max(-HEAD_MAX_GAIN, Math.min(HEAD_MAX_GAIN, fy.a));
   return { gx, gy, n: S.length };
@@ -280,6 +293,7 @@ function confidence() {
     c *= Math.max(0.15, 1 - over);
   }
   if (state.mode === "webgazer" && !head.now) c = 0;   // face lost entirely
+  if (state.mode === "eyetrax" && !state.facePresent) c = 0;
   return c;
 }
 
@@ -351,6 +365,7 @@ export function stop() {
   setFocus(null, 0);
   if (dwellTimer) { clearInterval(dwellTimer); dwellTimer = null; }
   try { window.webgazer?.end(); } catch {}
+  eyeTrax.close(true);
   document.querySelectorAll(".aura-cal,.cue-modal").forEach((el) => {
     try { el.hidePopover?.(); } catch {}
     el.remove();
@@ -363,7 +378,7 @@ export function stop() {
 // so check freshness and plausibility directly. When it is clearly bad we drop
 // focus rather than keep pointing confidently at the wrong thing.
 function checkQuality() {
-  if (state.mode !== "webgazer" || !state.calibrated || state.calibrating) return;
+  if (!cameraMode() || !state.calibrated || state.calibrating) return;
   const now = performance.now();
   const p = state.point;
   const outside = p && (p.x < -40 || p.y < -40 || p.x > innerWidth + 40 || p.y > innerHeight + 40);
@@ -406,7 +421,8 @@ function commitDwell(x, y) {
   const now = performance.now();
 
   if (target?.id !== state.cand?.id) { state.cand = target; state.candSince = now; return; }
-  if (now - state.candSince < DWELL_MS) return;
+  const dwell = state.mode === "eyetrax" ? EYETRAX_DWELL_MS : DWELL_MS;
+  if (now - state.candSince < dwell) return;
   if (target?.id === state.focus?.id) return;
 
   // Hysteresis: don't let focus flicker between two adjacent cards. Compare
@@ -440,20 +456,25 @@ const TRAIN = [
   [.28, .28], [.72, .28], [.28, .72], [.72, .72],
 ];
 
-// Then a short pass where we watch what webgazer ACTUALLY predicts while the
-// user looks at known points, and fit a correction. This is what buys back the
-// corners, and it gives us an accuracy number worth showing a judge.
-const VALIDATE = [[.06, .08], [.94, .08], [.5, .5], [.06, .92], [.94, .92]];
+// Fit screen-range correction on one set and report accuracy on a separate set.
+// Scoring the points used to fit the correction made the old result optimistic.
+const CORRECT = [[.12, .14], [.88, .14], [.5, .46], [.12, .86], [.88, .86]];
+const EVALUATE = [[.50, .18], [.18, .50], [.82, .50], [.34, .76], [.70, .82]];
 
 export function fit1d(pred, truth) {
+  const fit = fitLine(pred, truth);
+  const a = Math.max(0.5, Math.min(3.5, fit.a)); // screen-coordinate gain only
+  return { a, b: mean(truth) - a * mean(pred) };
+}
+
+function fitLine(pred, truth) {
   const mp = mean(pred), mt = mean(truth);
   let num = 0, den = 0;
   for (let i = 0; i < pred.length; i++) {
     num += (pred[i] - mp) * (truth[i] - mt);
     den += (pred[i] - mp) ** 2;
   }
-  let a = den > 1e-6 ? num / den : 1;
-  a = Math.max(0.5, Math.min(3.5, a));        // refuse an absurd gain
+  const a = den > 1e-6 ? num / den : 0;
   return { a, b: mt - a * mp };
 }
 
@@ -503,6 +524,10 @@ function validEye(eye) {
 }
 
 export function canResume(snapshot) {
+  if (snapshot?.version === 2 && snapshot.engine === "eyetrax") {
+    return snapshot.viewport?.width === innerWidth && snapshot.viewport?.height === innerHeight &&
+      Number.isFinite(snapshot.accuracy?.after_px);
+  }
   return snapshot?.version === 1 && snapshot.viewport?.width === innerWidth &&
     snapshot.viewport?.height === innerHeight &&
     Array.isArray(snapshot.samples) && snapshot.samples.length >= 20 &&
@@ -515,7 +540,13 @@ export function canResume(snapshot) {
 }
 
 export function exportCalibration() {
-  if (state.mode !== "webgazer" || !state.calibrated || !state.accuracy) return null;
+  if (!state.calibrated || !state.accuracy) return null;
+  if (state.mode === "eyetrax") {
+    return { version: 2, engine: "eyetrax",
+      viewport: { width: innerWidth, height: innerHeight },
+      accuracy: { ...state.accuracy } };
+  }
+  if (state.mode !== "webgazer") return null;
   try {
     const samples = window.webgazer.getRegression()[0].getData().map(sample => ({
       eyes: { left: packEye(sample.eyes?.left), right: packEye(sample.eyes?.right) },
@@ -593,29 +624,38 @@ function runCalibration(attempt) {
       dot.disabled = true;
       hint.textContent = "Now just look at each dot — no key, checking accuracy";
       try {
-        const obs = await sweep(dot);
+        if (state.mode === "eyetrax") await eyeTrax.train();
+        const fitObs = await sweep(dot, hint, CORRECT, "Fitting screen range");
 
-        if (obs.length >= 25) {
-          const fx = fit1d(obs.map((o) => o[0]), obs.map((o) => o[2]));
-          const fy = fit1d(obs.map((o) => o[1]), obs.map((o) => o[3]));
-          const before = rms(obs, 1, 0, 1, 0);
-          const after  = rms(obs, fx.a, fx.b, fy.a, fy.b);
+        if (fitObs.length >= 25) {
+          const fx = fit1d(fitObs.map((o) => o[0]), fitObs.map((o) => o[2]));
+          const fy = fit1d(fitObs.map((o) => o[1]), fitObs.map((o) => o[3]));
+          const fitBefore = rms(fitObs, 1, 0, 1, 0);
+          const fitAfter  = rms(fitObs, fx.a, fx.b, fy.a, fy.b);
           // Only keep the correction if it actually helps.
-          if (after < before) {
+          if (fitAfter < fitBefore) {
             state.cal = { ax: fx.a, bx: fx.b, ay: fy.a, by: fy.b };
           }
-          state.accuracy = {
-            before_px: Math.round(before),
-            after_px: Math.round(Math.min(before, after)),
-            gain_x: +fx.a.toFixed(2), gain_y: +fy.a.toFixed(2),
-            samples: obs.length,
-          };
-          console.log("[cue] calibration", state.accuracy, state.cal);
+          const evalObs = await sweep(dot, hint, EVALUATE, "Measuring held-out accuracy");
+          if (evalObs.length >= 25) {
+            const before = rms(evalObs, 1, 0, 1, 0);
+            const { ax, bx, ay, by } = state.cal;
+            const after = rms(evalObs, ax, bx, ay, by);
+            const ages = evalObs.stats?.frameAges ?? [];
+            state.accuracy = {
+              before_px: Math.round(before), after_px: Math.round(after),
+              gain_x: +state.cal.ax.toFixed(2), gain_y: +state.cal.ay.toFixed(2),
+              fit_samples: fitObs.length, samples: evalObs.length, held_out: true,
+              median_frame_age_ms: ages.length ? Math.round(percentile(ages, .5)) : null,
+              p90_frame_age_ms: ages.length ? Math.round(percentile(ages, .9)) : null,
+            };
+            console.log("[cue] held-out calibration", state.accuracy, state.cal);
+          }
         }
 
         state.calibrated = !!state.accuracy;
         // Whatever pose they calibrated in is the pose the mapping is valid for.
-        head.base = readHead();
+        head.base = state.mode === "webgazer" ? readHead() : null;
         head.samples = []; head.gain = null;
 
         // Retune the filter to the signal we actually got.
@@ -677,17 +717,34 @@ function runCalibration(attempt) {
       hint.textContent = `Hold your gaze — capturing point ${i + 1} / ${TRAIN.length}`;
       // Feed several samples per point — one is far too few for the ridge fit.
       let n = 0;
-      const tick = setInterval(() => {
+      const captureStarted = performance.now();
+      let tickBusy = false;
+      const tick = setInterval(async () => {
         if (myId !== captureId) { clearInterval(tick); return; }
+        if (tickBusy) return;
+        tickBusy = true;
         try {
-          const wg = window.webgazer;
-          // recordScreenPosition silently ignores samples before eye features
-          // are ready. Count actual training pairs, not timer ticks.
-          const regression = wg.getRegression()[0];
-          const before = regression.getData().slice();
-          wg.recordScreenPosition(px, py, "click");
-          if (!regression.getData().some((pair, index) => pair !== before[index])) {
-            throw new Error("No eye features available for calibration");
+          if (state.mode === "eyetrax") {
+            const result = await eyeTrax.capture(px, py);
+            if (myId !== captureId) return;
+            if (!result.ok) {
+              // Blink, a temporarily lost face, and a duplicate camera frame
+              // are normal. Keep collecting unique frames for a few seconds.
+              if (performance.now() - captureStarted > 4000) {
+                throw new Error(`EyeTrax capture stayed unavailable (${result.reason})`);
+              }
+              return;
+            }
+          } else {
+            const wg = window.webgazer;
+            // recordScreenPosition silently ignores samples before eye features
+            // are ready. Count actual training pairs, not timer ticks.
+            const regression = wg.getRegression()[0];
+            const before = regression.getData().slice();
+            wg.recordScreenPosition(px, py, "click");
+            if (!regression.getData().some((pair, index) => pair !== before[index])) {
+              throw new Error("No eye features available for calibration");
+            }
           }
           // 14 is load-bearing for tests/calibration.test.mjs: its mocked timer
           // does not honour clearInterval mid-batch, so advance(800) fires
@@ -702,6 +759,8 @@ function runCalibration(attempt) {
           dot.classList.remove("armed");
           hint.textContent = "Couldn't capture your eyes. Face the camera, then press SPACE or say “Cue, next” to retry.";
           console.warn("[cue] calibration capture failed", error);
+        } finally {
+          tickBusy = false;
         }
       }, 55);
     };
@@ -816,11 +875,13 @@ function qualityModal(acc, attempt) {
 // Walk the validation points and collect (predicted, actual) pairs. Used both
 // at the end of calibration and, on its own, to answer "is it any better now?"
 // with a number instead of a feeling.
-async function sweep(dot, hint) {
+async function sweep(dot, hint, points = EVALUATE, phase = "Measuring") {
   const obs = [];
   let nulls = 0, errors = 0, noFace = 0;
-  for (let k = 0; k < VALIDATE.length; k++) {
-    const [fx, fy] = VALIDATE[k];
+  const frameAges = [];
+  let lastSequence = -1;
+  for (let k = 0; k < points.length; k++) {
+    const [fx, fy] = points[k];
     const px = fx * innerWidth, py = fy * innerHeight;
     dot.style.left = px + "px"; dot.style.top = py + "px";
     dot.classList.remove("armed");
@@ -831,20 +892,26 @@ async function sweep(dot, hint) {
     let good = 0;
     for (let n = 0; n < 30 && good < 14; n++) {
       try {
-        const p = await window.webgazer.getCurrentPrediction();
-        if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+        const p = state.mode === "eyetrax"
+          ? eyeTrax.getCurrentPrediction()
+          : await window.webgazer.getCurrentPrediction();
+        const fresh = state.mode !== "eyetrax" || p?.sequence !== lastSequence;
+        if (p && fresh && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+          if (state.mode === "eyetrax") lastSequence = p.sequence;
           obs.push([p.x, p.y, px, py]); good++;
-        } else {
+          if (Number.isFinite(p.ageMs)) frameAges.push(p.ageMs);
+        } else if (!p) {
           nulls++;
-          if (!readHead()) noFace++;
+          if (state.mode === "webgazer" && !readHead()) noFace++;
+          if (state.mode === "eyetrax" && !state.facePresent) noFace++;
         }
       } catch { errors++; }
       await sleep(45);
     }
     if (hint) hint.textContent =
-      `Just look at each dot — ${k + 1} / ${VALIDATE.length}`;
+      `${phase} — ${k + 1} / ${points.length}`;
   }
-  obs.stats = { nulls, errors, noFace };
+  obs.stats = { nulls, errors, noFace, frameAges };
   return obs;
 }
 
@@ -858,7 +925,7 @@ async function sweep(dot, hint) {
  *   await cue.gaze.measure()
  */
 export async function measure() {
-  if (state.mode !== "webgazer" || !window.webgazer) {
+  if (!cameraMode() || (state.mode === "webgazer" && !window.webgazer)) {
     console.warn("[cue] measure() needs the camera");
     return null;
   }
@@ -883,11 +950,14 @@ export async function measure() {
     // Score against the correction currently in force — that is what the user
     // actually experiences, not what a fresh fit could achieve.
     const { ax, bx, ay, by } = state.cal;
+    const ages = obs.stats?.frameAges ?? [];
     const out = {
       error_px: Math.round(rms(obs, ax, bx, ay, by)),
       raw_px: Math.round(rms(obs, 1, 0, 1, 0)),
       samples: obs.length,
       learned_from: learned,
+      median_frame_age_ms: ages.length ? Math.round(percentile(ages, .5)) : null,
+      p90_frame_age_ms: ages.length ? Math.round(percentile(ages, .9)) : null,
     };
     console.log("[cue] measured", out);
     return out;
@@ -908,7 +978,7 @@ export async function measure() {
  * retrained by the measurements themselves, so the before/after is honest.
  */
 export async function experiment({ selections = 8 } = {}) {
-  if (state.mode !== "webgazer") {
+  if (!cameraMode()) {
     console.warn("[cue] experiment() needs the camera (drop ?gaze=sim)");
     return null;
   }
@@ -964,7 +1034,7 @@ export async function experiment({ selections = 8 } = {}) {
 let calibration = null;
 export function calibrate(options = {}) {
   if (calibration) return calibration;
-  if (state.mode !== "webgazer" || !state.running) return Promise.resolve(false);
+  if (!cameraMode() || !state.running) return Promise.resolve(false);
   // Register the shared promise before mounting the overlay or emitting events.
   // Two overlays compete for Space: the hidden one consumes the visible one's key.
   calibration = Promise.resolve().then(() => calibrateOnce(options)).finally(() => {
@@ -976,9 +1046,17 @@ export function calibrate(options = {}) {
 }
 
 async function calibrateOnce({ allowRetry = true, maxAttempts = 2 } = {}) {
-  window.webgazer.showVideoPreview(true);
+  if (state.mode === "webgazer") window.webgazer.showVideoPreview(true);
   for (let attempt = 1; ; attempt++) {
-    const acc = await runCalibration(attempt);
+    let acc = null;
+    try {
+      if (state.mode === "eyetrax") await eyeTrax.reset();
+      acc = await runCalibration(attempt);
+    } catch (error) {
+      console.error("[cue] calibration failed", error);
+      state.gazeError = error?.message || "calibration failed";
+      cancelCalibration?.();
+    }
 
     const bad = acc && acc.after_px > GOOD_PX;
     if (allowRetry && bad && attempt < maxAttempts) {
@@ -1002,6 +1080,7 @@ async function calibrateOnce({ allowRetry = true, maxAttempts = 2 } = {}) {
     bus.emit("STATE", { precise: state.precise });
     state.qualityLow = !acc;
     bus.emit("GAZE_QUALITY", { low: !acc, reason: "signal" });
+    if (state.mode === "eyetrax" && acc) eyeTrax.setAccuracy(acc);
     return acc;
   }
 }
@@ -1015,7 +1094,7 @@ const gauss = () => {
 };
 
 export async function start({ mode = "webgazer", sigma = 70, tune = null,
-  keepData = false, resume = null } = {}) {
+  keepData = false, resume = null, gazeToken = null } = {}) {
   state.mode = mode;
   state.running = false;
   state.calibrated = false;
@@ -1024,6 +1103,7 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null,
   setFocus(null, 0);
   const tuning = tune ?? (mode === "mouse"
     ? MOUSE_TUNING
+    : mode === "eyetrax" ? EYETRAX_TUNING
     : { minCutoff: MIN_CUTOFF, beta: BETA, dCutoff: D_CUTOFF });
   state.tuning = tuning;
   state.tuneLocked = !!tune;        // an explicit ?mc= override wins over auto-tuning
@@ -1055,6 +1135,36 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null,
     state.calibrated = true; state.running = true;
     bus.emit("STATE", { calibrated: true, mode: "sim" });
     return "sim";
+  }
+
+  if (mode === "eyetrax") {
+    try {
+      const ready = await eyeTrax.connect({
+        token: gazeToken ?? undefined,
+        onGaze: ({ x, y, ageMs }) => {
+          if (state.mode !== "eyetrax" || ageMs > 350) return;
+          state.facePresent = true;
+          state.sourceAgeMs = ageMs;
+          ingest(x, y);
+        },
+        onQuality: ({ face }) => { state.facePresent = Boolean(face); },
+      });
+      state.facePresent = true;
+      state.running = true;
+      state.calibrated = Boolean(ready.calibrated);
+      const saved = canResume(resume) && resume.engine === "eyetrax" ? resume.accuracy : null;
+      state.accuracy = ready.accuracy ?? saved;
+      state.precise = state.calibrated && Number.isFinite(state.accuracy?.after_px)
+        ? state.accuracy.after_px <= POOR_PX : state.calibrated;
+      startDwellLoop();
+      guardStrayClicks();
+      bus.emit("STATE", { mode: "eyetrax", calibrated: state.calibrated,
+        accuracy: state.accuracy, precise: state.precise });
+      return "eyetrax";
+    } catch (error) {
+      eyeTrax.close(false);
+      return degrade(error?.message || "EyeTrax could not start", sigma);
+    }
   }
   const wg = window.webgazer;
   if (!wg) return degrade("webgazer did not load", sigma);

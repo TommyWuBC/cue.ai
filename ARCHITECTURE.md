@@ -4,12 +4,14 @@ Everyone codes against this. Stub the parts you don't own.
 
 ## Coordinate frame
 
-ONE frame: the store page's viewport. Camera, mic, webgazer, calibration and the
-outline overlay all run inside the page. Served from a single origin
-(http://localhost:4173) so camera+mic permission is granted once and persists.
+ONE frame: the store page's CSS viewport. The calibration overlay labels EyeTrax
+features with viewport coordinates; the local companion predicts in that frame;
+the content script resolves those coordinates against the page DOM. Browser zoom
+or viewport-size changes invalidate the mapping and require calibration again.
 
-Real H&M is handled later by mirroring a PDP onto our origin. Do not try to run
-webgazer from an extension page — the regression output would be in the wrong frame.
+The webcam belongs to `server/gaze_companion.py`, a local process. Frames and eye
+landmarks never cross its process boundary. The extension receives gaze points,
+frame age, and face/blink status through an authenticated localhost websocket.
 
 ## Events (window.cue.bus)
 
@@ -43,6 +45,8 @@ what survived the wake word / push-to-talk / self-echo gate. Subscribe to
 
     GET  /tts?text=..    ->  audio/mpeg  |  { mode: "browser", text: "<spoken form>" }
     WS   /stt            ->  binary 16kHz PCM16 up; Grok transcript events down
+    POST /api/gaze/session -> one-use extension credential
+    WS   /gaze           -> EyeTrax calibration controls and viewport coordinates
     POST /stt/file       ->  batch transcription fallback
     GET  /health         ->  what is actually live right now
 

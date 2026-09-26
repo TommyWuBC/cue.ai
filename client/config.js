@@ -36,7 +36,8 @@ export const CONFIG = {
   // on a third-party page that points at the third party.
   server: (injectedCfg.server || q("server") || DEFAULT_SERVER).replace(/\/+$/, ""),
 
-  gazeMode: injectedCfg.gazeMode || q("gaze") || "webgazer",   // webgazer | mouse | sim
+  gazeMode: injectedCfg.gazeMode || q("gaze") || "eyetrax",   // eyetrax | webgazer | mouse | sim
+  gazeToken: injectedCfg.gazeToken || q("gaze_token") || null,
   autoCal: (injectedCfg.autoCal ?? (q("cal") !== "0")),
   sigma: +(injectedCfg.sigma || q("sigma") || 70),
   keepData: injectedCfg.keepData ?? (q("keepdata") === "1"),

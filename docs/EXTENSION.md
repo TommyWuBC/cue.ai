@@ -2,22 +2,25 @@
 
 This branch packages Cue's existing gaze and voice client as a Manifest V3
 extension. The shopper uses the toolbar icon once to approve a store. Cue then
-starts automatically whenever that store opens. The video stays in the browser.
+starts automatically whenever that store opens. Video stays in the local EyeTrax
+companion and is never sent to the shopping page or a remote service.
 Product details, the page URL, and speech requests go to the configured Cue
 backend.
 
 ## Run locally
 
-1. Start the Cue backend: `.venv/bin/uvicorn main:app --app-dir server --port 4173`.
-2. Run `python3 tools/build-extension.py` from the repo root.
-3. Open `chrome://extensions` in Chrome, enable **Developer mode**, select
+1. Install the gaze runtime with `uv pip install --python .venv/bin/python -r server/requirements-gaze.txt`.
+2. Start the Cue backend: `.venv/bin/uvicorn main:app --app-dir server --port 4173`.
+3. Run `python3 tools/build-extension.py` from the repo root.
+4. Open `chrome://extensions` in Chrome, enable **Developer mode**, select
    **Load unpacked**, and choose `dist/cue-extension`.
-4. Open a normal HTTPS shopping page and select the Cue toolbar icon once. Allow
+5. Open a normal HTTPS shopping page and select the Cue toolbar icon once. Allow
    Cue to run on that store when Chrome asks. Cue starts immediately and will
    start automatically on later visits to the same store. Its icon badge changes
    to **ON** when startup succeeds or **!** if it fails; hover to read the error.
-5. Cue shows its logo for about two seconds, fading in and out. Grant camera
-   and microphone permission to that page, then follow the calibration dots
+6. Cue shows its logo for about two seconds, fading in and out. Grant microphone
+   permission in Chrome and camera permission to Terminal/Cursor when macOS asks,
+   then follow the calibration dots
    with Space, a click, or “Cue, next.” Calibration closes over the same
    shopping page; it does not open a new tab or change the page URL. Cue keeps
    the calibration for this tab as you open other pages on the same store.
@@ -40,8 +43,8 @@ merchant products into a Northfield order.
 
 The build writes an unpacked directory for local testing and
 `dist/cue-extension-0.1.0.zip` for upload. Both are ignored by Git. The ZIP has
-the manifest at its root and bundles WebGazer, its models, the Cue client,
-icons, and the privacy details page. No remote JavaScript is loaded.
+the manifest at its root and bundles the Cue client, icons, and privacy details
+page. EyeTrax and MediaPipe run in the separately installed local companion.
 
 ## Backend address
 
@@ -50,7 +53,9 @@ origin, run `python3 tools/build-extension.py --server-url https://cue.example`.
 The build sets the extension's single backend host permission and runtime
 configuration together. Non-local HTTP addresses are refused.
 
-A remotely hosted Cue backend is not ready for public use. The current server
+A remotely hosted Cue backend cannot operate the shopper's webcam. A public
+release needs a signed desktop/native-messaging companion installed on the
+shopper's computer. The current server
 is a single shopper demo with no account authentication or merchant login, and
 its passkey relying party is configured for `localhost`. Host the backend only
 after adding those controls and configuring its WebAuthn origin. Until then,
@@ -58,14 +63,13 @@ use the localhost build and keep checkout on the demo store.
 
 ## What to validate on each target store
 
-- The shopping tab is a secure context and grants camera and microphone access.
+- The local companion has operating-system camera access and Chrome has microphone access.
 - Calibration advances with Space and gaze focus follows the intended product.
 - Cue reads only product details actually visible or present in Product JSON-LD.
-- The store page's content security policy does not block the bundled model
-  requests or local backend connection.
+- The store page allows the extension to connect to its permitted local backend.
 - Speech questions and browser controls work, including after an in-page
-  navigation. Full-page navigation restarts camera and microphone capture in
-  the new document but restores the gaze model without the splash or dots.
+  navigation. Full-page navigation reconnects to the in-memory EyeTrax model
+  without the splash or dots.
   A changed viewport or unavailable model requires calibration again.
 
 For local checks, run `node --test tests/extension-background.test.mjs
@@ -77,7 +81,7 @@ For a browser check, run `npm ci`, install Chrome for Testing or Chromium, then
 set `CUE_CHROME_PATH` to that browser executable and run
 `node --test tests/extension-browser.test.mjs`. The test launches the unpacked
 extension on a local shopping fixture and checks the overlay, avatar, product
-tagging, and WebGazer's bundled model downloads. It grants the fixture origin
+tagging, and the EyeTrax websocket lifecycle. It grants the fixture origin
 to its temporary unpacked manifest because an automated tab does not receive
 Chrome's toolbar-click `activeTab` grant.
 

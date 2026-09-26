@@ -1,4 +1,5 @@
 import os, pathlib
+from urllib.parse import urlsplit
 from dotenv import load_dotenv
 load_dotenv(pathlib.Path(__file__).parent.parent / ".env")
 
@@ -9,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import fallback, router, stt, tts
+from gaze_companion import companion
 from checkout import Checkout, CheckoutError
 from trust import TrustError, MERCHANT_PATH, MAX_BODY
 import httpx
@@ -16,6 +18,11 @@ import httpx
 ROOT = pathlib.Path(__file__).parent.parent
 app = FastAPI(title="Cue")
 checkout = Checkout()
+
+
+@app.on_event("shutdown")
+def stop_local_gaze():
+    companion.runtime.stop(clear=True)
 
 
 # Injected into a third-party page, every call to us is cross-origin. This is
@@ -172,6 +179,38 @@ async def stt_socket(ws: WebSocket):
     await stt.proxy(ws)
 
 
+# ── Local gaze companion ───────────────────────────────────────────────────
+def _local_web_origin(origin: str | None) -> bool:
+    if not origin:
+        return False
+    try:
+        url = urlsplit(origin)
+        return url.scheme in ("http", "https") and url.hostname in (
+            "localhost", "127.0.0.1", "::1")
+    except ValueError:
+        return False
+
+
+@app.post("/api/gaze/session")
+def gaze_session(request: Request):
+    """Issue a one-use credential to the extension or Cue's own local page.
+
+    Arbitrary store JavaScript must not be able to subscribe to localhost gaze
+    coordinates. Browsers always attach Origin to cross-origin fetches, so only
+    an extension origin or Cue's own loopback page can create a session.
+    """
+    origin = request.headers.get("origin")
+    if not ((origin or "").startswith("chrome-extension://") or _local_web_origin(origin)):
+        raise HTTPException(403, "Gaze sessions are available only to the Cue extension.")
+    return {"token": companion.issue_token(), "engine": "eyetrax"}
+
+
+@app.websocket("/gaze")
+async def gaze_socket(ws: WebSocket):
+    origin = ws.headers.get("origin")
+    await companion.websocket(ws, allow_without_token=_local_web_origin(origin))
+
+
 @app.post("/stt/file")
 async def stt_file(file: UploadFile = File(...)):
     """Batch fallback for when the stream will not hold."""
@@ -194,6 +233,7 @@ def speak(text: str):
 @app.get("/health")
 def health():
     return {"ok": True, "tts": tts.budget_status(), "stt": stt.status(),
+            "gaze": companion.health(),
             "grok_key": bool(os.getenv("XAI_API_KEY")),
             "grok_model": os.getenv("GROK_MODEL", "grok-4")}
 

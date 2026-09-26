@@ -63,6 +63,18 @@ async function serverReady() {
   finally { clearTimeout(timeout); }
 }
 
+async function createGazeSession() {
+  const response = await fetch(new URL('/api/gaze/session', SERVER), {
+    method: 'POST', cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('The EyeTrax companion rejected the extension.');
+  const body = await response.json();
+  if (typeof body.token !== 'string' || body.token.length < 20) {
+    throw new Error('The EyeTrax companion returned an invalid session.');
+  }
+  return body.token;
+}
+
 async function activeOn(tabId) {
   const [frame] = await chrome.scripting.executeScript({
     target: { tabId }, func: () => Boolean(globalThis.__cueExternalActive),
@@ -82,21 +94,18 @@ async function start(tab) {
     }
     const session = await sessionFor(tab);
 
-    const models = Object.fromEntries(['blazeface', 'facemesh', 'iris'].map(name =>
-      [name, chrome.runtime.getURL(`vendor/models/${name}/model.json`)]));
+    const gazeToken = await createGazeSession();
     const splashImage = chrome.runtime.getURL('extension/assets/cue-splash.jpg');
     await chrome.scripting.executeScript({
       target,
-      func: (server, urls, image, previous) => {
-        globalThis.CUE_MODELS = urls;
-        globalThis.CUE_CONFIG = { server, gazeMode: 'webgazer', autoCal: true,
-          keepData: false, models: urls, splashImage: image,
+      func: (server, token, image, previous) => {
+        globalThis.CUE_CONFIG = { server, gazeMode: 'eyetrax', gazeToken: token, autoCal: true,
+          keepData: false, splashImage: image,
           resuming: Boolean(previous?.started), calibration: previous?.calibration ?? null };
       },
-      args: [SERVER.origin, models, splashImage, session],
+      args: [SERVER.origin, gazeToken, splashImage, session],
     });
     await chrome.scripting.insertCSS({ target, files: ['client/overlay.css'] });
-    await chrome.scripting.executeScript({ target, files: ['vendor/webgazer.js'] });
     await chrome.scripting.executeScript({ target, files: ['extension/extract.js', 'extension/content.js'] });
     await updateSession(tab.id, async () => {
       const key = sessionKey(tab.id);
@@ -198,6 +207,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     }).catch(() => respond({ ok: false }));
     return true;
   }
+  if (message?.type === 'cue:gaze:session') {
+    createGazeSession().then(token => respond({ token }), error => respond({ error: error.message }));
+    return true;
+  }
   if (message?.type === 'cue:calibration:write' || message?.type === 'cue:calibration:clear') {
     updateSession(tabId, async () => {
       // Read directly within the queue; sessionFor waits for the queue itself.
@@ -206,8 +219,12 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       let calibration = null;
       if (message.type === 'cue:calibration:write') {
         calibration = message.value;
-        if (calibration?.version !== 1 || !Array.isArray(calibration.samples) ||
-            JSON.stringify(calibration).length > 4_000_000) return { ok: false };
+        const webgazer = calibration?.version === 1 && Array.isArray(calibration.samples);
+        const eyetrax = calibration?.version === 2 && calibration.engine === 'eyetrax' &&
+          Number.isFinite(calibration.accuracy?.after_px);
+        if ((!webgazer && !eyetrax) || JSON.stringify(calibration).length > 4_000_000) {
+          return { ok: false };
+        }
       }
       await chrome.storage.session.set({ [sessionKey(tabId)]: { ...current, calibration } });
       return { ok: true };

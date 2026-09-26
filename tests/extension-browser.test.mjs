@@ -1,8 +1,9 @@
 // Run with CUE_CHROME_PATH pointing to Chrome for Testing or Chromium.
 // This exercises the built extension in a real browser; DOM-only tests cannot
-// catch Chrome refusing a content script's module imports or model resources.
+// catch Chrome refusing content-script module imports or the gaze websocket.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
@@ -21,11 +22,59 @@ async function listen(handler) {
   return server;
 }
 
-test('unpacked extension mounts Cue, avatar, products, and local model assets',
+test('unpacked extension mounts Cue and reconnects to its EyeTrax companion',
   { skip: !chromePath && 'Set CUE_CHROME_PATH to a Chromium executable' }, async t => {
+    let gazeConnections = 0;
+    let gazeSessionOrigin = null;
+    const sockets = new Set();
     const backend = await listen((req, res) => {
       res.setHeader('Content-Type', 'application/json');
-      res.end(req.url === '/health' ? '{"ok":true}' : '{}');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      if (req.url === '/api/gaze/session') gazeSessionOrigin = req.headers.origin;
+      res.end(req.url === '/health' ? '{"ok":true}'
+        : req.url === '/api/gaze/session' ? JSON.stringify({ token: 't'.repeat(43) }) : '{}');
+    });
+    backend.on('upgrade', (req, socket) => {
+      sockets.add(socket);
+      socket.on('close', () => sockets.delete(socket));
+      const accept = createHash('sha1').update(
+        req.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+      socket.write('HTTP/1.1 101 Switching Protocols\r\n' +
+        'Upgrade: websocket\r\nConnection: Upgrade\r\n' +
+        `Sec-WebSocket-Accept: ${accept}\r\n\r\n`);
+      const connection = ++gazeConnections;
+      const send = value => {
+        const body = Buffer.from(JSON.stringify(value));
+        socket.write(Buffer.concat([Buffer.from([0x81, body.length]), body]));
+      };
+      let incoming = Buffer.alloc(0);
+      socket.on('data', chunk => {
+        incoming = Buffer.concat([incoming, chunk]);
+        while (incoming.length >= 6) {
+          let length = incoming[1] & 0x7f;
+          let offset = 2;
+          if (length === 126) {
+            if (incoming.length < 8) return;
+            length = incoming.readUInt16BE(2); offset = 4;
+          }
+          const masked = (incoming[1] & 0x80) !== 0;
+          const frameLength = offset + (masked ? 4 : 0) + length;
+          if (incoming.length < frameLength) return;
+          const mask = masked ? incoming.subarray(offset, offset + 4) : null;
+          if (masked) offset += 4;
+          const body = Buffer.from(incoming.subarray(offset, offset + length));
+          if (mask) for (let i = 0; i < body.length; i++) body[i] ^= mask[i % 4];
+          incoming = incoming.subarray(frameLength);
+          try {
+            const message = JSON.parse(body.toString());
+            if (message.type === 'reset') send({ type: 'reset', id: message.id, ok: true });
+          } catch {}
+        }
+      });
+      setTimeout(() => {
+        send({ type: 'ready', calibrated: connection > 1,
+          accuracy: connection > 1 ? { after_px: 90, held_out: true } : null });
+      }, 50);
     });
     const shop = await listen((_req, res) => {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -40,6 +89,7 @@ test('unpacked extension mounts Cue, avatar, products, and local model assets',
     let browser;
     t.after(async () => {
       await browser?.close();
+      for (const socket of sockets) socket.destroy();
       await Promise.all([backend, shop].map(server => new Promise(done => server.close(done))));
     });
 
@@ -65,15 +115,6 @@ test('unpacked extension mounts Cue, avatar, products, and local model assets',
     { timeout: 15000 });
     const extensionOrigin = `chrome-extension://${new URL(worker.url()).host}`;
     const shopPage = await browser.newPage();
-    const modelResponses = [];
-    const remoteModelRequests = [];
-    shopPage.on('response', response => {
-      if (response.url().includes('/vendor/models/'))
-        modelResponses.push({ url: response.url(), status: response.status() });
-    });
-    shopPage.on('request', request => {
-      if (request.url().includes('tfhub.dev')) remoteModelRequests.push(request.url());
-    });
     const shopUrl = `http://localhost:${shop.address().port}/search`;
     await shopPage.goto(shopUrl);
 
@@ -89,6 +130,7 @@ test('unpacked extension mounts Cue, avatar, products, and local model assets',
       return { ...result, tabId: tab.openerTabId };
     }, shopUrl);
     assert.equal(started?.ok, true, JSON.stringify(started));
+    assert.equal(gazeSessionOrigin, extensionOrigin);
     // The real toolbar popup closes after activation. Bring the shopping tab
     // forward here so Chrome paints its two-second fade at normal frame rate.
     await shopPage.bringToFront();
@@ -130,32 +172,6 @@ test('unpacked extension mounts Cue, avatar, products, and local model assets',
     assert.equal(product.title, 'Cotton Jacket');
     assert.equal(product.price, 49);
 
-    const model = await shopPage.evaluate(async origin => {
-      const response = await fetch(`${origin}/vendor/models/blazeface/model.json`);
-      return { status: response.status, data: await response.json() };
-    }, extensionOrigin);
-    assert.equal(model.status, 200);
-    assert.ok(model.data.weightsManifest?.length);
-    const requiredModels = ['blazeface', 'facemesh'].flatMap(name => [
-      `/vendor/models/${name}/model.json`,
-      `/vendor/models/${name}/group1-shard1of1.bin`,
-    ]);
-    const allLoaded = () => requiredModels.every(path =>
-      modelResponses.some(response => response.url.endsWith(path) && response.status === 200));
-    if (!allLoaded()) await new Promise((done, reject) => {
-      const timeout = setTimeout(() => {
-        shopPage.off('response', check);
-        reject(new Error(`Local model loads timed out: ${JSON.stringify(modelResponses)}`));
-      }, 12000);
-      const check = () => {
-        if (!allLoaded()) return;
-        clearTimeout(timeout);
-        shopPage.off('response', check);
-        done();
-      };
-      shopPage.on('response', check);
-    });
-    assert.deepEqual(remoteModelRequests, []);
     // Puppeteer's utility world cannot reliably see elements inserted by this
     // extension's isolated world. page.evaluate runs in the page's main world.
     let calibrationVisible = false;
@@ -173,23 +189,24 @@ test('unpacked extension mounts Cue, avatar, products, and local model assets',
       });
       if (!calibrationVisible) await new Promise(done => setTimeout(done, 100));
     }
-    assert.equal(calibrationVisible, true, 'the white calibration dot must be visible on black');
+    const calibrationState = await shopPage.evaluate(() => ({
+      gaze: globalThis.cue?.gaze.getState(),
+      said: document.querySelector('.aura-hud-said')?.textContent,
+      calibration: !!document.querySelector('.aura-cal'),
+    }));
+    const [isolated] = await popup.evaluate(async tabId => chrome.scripting.executeScript({
+      target: { tabId }, func: () => ({ config: globalThis.CUE_CONFIG,
+        gaze: globalThis.cue?.gaze.getState(), active: globalThis.__cueExternalActive }) }),
+    started.tabId);
+    assert.equal(calibrationVisible, true,
+      `the white calibration dot must be visible on black: ${JSON.stringify({ calibrationState, isolated: isolated.result, gazeConnections })}`);
 
     // A full Amazon-style product navigation replaces the page's JS world.
-    // Seed an actual serialized ridge model in extension storage, then verify
-    // the next document restores it without replaying the startup sequence.
+    // Seed the compact EyeTrax metadata in extension storage. The companion
+    // retains the fitted model in memory and reports it on the next connection.
     const viewport = await shopPage.evaluate(() => ({ width: innerWidth, height: innerHeight }));
-    const eye = () => ({ width: 20, height: 12, imagex: 0, imagey: 0,
-      patch: { width: 20, height: 12, data: Array(960).fill(128) } });
-    const calibration = { version: 1, viewport,
-      samples: Array.from({ length: 20 }, (_, index) => ({
-        eyes: { left: eye(), right: eye() }, type: 'click',
-        screenPos: [viewport.width * (index % 5 + 1) / 6,
-          viewport.height * (Math.floor(index / 5) + 1) / 5],
-      })),
-      cal: { ax: 1, bx: 0, ay: 1, by: 0 },
-      accuracy: { after_px: 100, before_px: 100, samples: 70 },
-    };
+    const calibration = { version: 2, engine: 'eyetrax', viewport,
+      accuracy: { after_px: 90, before_px: 120, samples: 70, held_out: true } };
     const [write] = await popup.evaluate(async ({ tabId, calibration }) =>
       chrome.scripting.executeScript({ target: { tabId },
         func: value => chrome.runtime.sendMessage({
@@ -221,10 +238,9 @@ test('unpacked extension mounts Cue, avatar, products, and local model assets',
     const [saved] = await popup.evaluate(async tabId => chrome.scripting.executeScript({
       target: { tabId }, func: () => {
         const snapshot = globalThis.cue?.gaze.exportCalibration();
-        return { count: snapshot?.samples.length,
-          width: snapshot?.samples[0]?.eyes.left.patch.width,
-          height: snapshot?.samples[0]?.eyes.left.patch.height };
+        return { version: snapshot?.version, engine: snapshot?.engine,
+          error: snapshot?.accuracy?.after_px };
       },
     }), started.tabId);
-    assert.deepEqual(saved.result, { count: 20, width: 10, height: 6 });
+    assert.deepEqual(saved.result, { version: 2, engine: 'eyetrax', error: 90 });
   });

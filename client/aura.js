@@ -10,6 +10,7 @@ import { playSplash } from "./splash.js";
 let memoryStorage;
 try { memoryStorage = CONFIG.injected ? window.CUE_MEMORY_STORAGE : sessionStorage; } catch {}
 const comparisons = productMemory({ storage: memoryStorage });
+const isGazeMode = mode => mode === "webgazer" || mode === "eyetrax";
 
 
 // ── Overlay chrome ──────────────────────────────────────────────────────────
@@ -132,7 +133,8 @@ bus.on("FOCUS", ({ target }) => {
 // The chip is the one place you can tell, mid-demo, what is actually running.
 const chip = { mode: null, stt: null };
 function paintChip() {
-  const m = { mouse: "mouse", sim: `sim ±${CONFIG.sigma}px`, webgazer: "gaze" }[chip.mode] ?? chip.mode;
+  const m = { mouse: "mouse", sim: `sim ±${CONFIG.sigma}px`, webgazer: "WebGazer",
+    eyetrax: "EyeTrax" }[chip.mode] ?? chip.mode;
   ui.mode.textContent = [m, chip.stt].filter(Boolean).join(" · ");
 }
 
@@ -589,8 +591,8 @@ function perform(verb, args, opts = {}) {
       else bus.emit("SAY", { text: "There's no passkey set-up on this page." });
       break;
     case "recalibrate":
-      const cameraUnavailable = gaze.getState().mode !== "webgazer" || !gaze.getState().running;
-      if (gaze.getState().mode !== "webgazer") {
+      const cameraUnavailable = !isGazeMode(gaze.getState().mode) || !gaze.getState().running;
+      if (!isGazeMode(gaze.getState().mode)) {
         bus.emit("SAY", { text: "Eye tracking is not running. I'll try the camera again." });
       }
       recalibrate().catch(e => {
@@ -676,12 +678,17 @@ async function recalibrate() {
   badges.setEnabled(false);
   try {
     await clearCalibration();
-    if (gaze.getState().mode !== "webgazer") {
-      const actual = await gaze.start({ mode: "webgazer", sigma: CONFIG.sigma,
-        tune: CONFIG.tune, keepData: CONFIG.keepData });
-      if (actual !== "webgazer") {
+    if (!isGazeMode(gaze.getState().mode)) {
+      let gazeToken = CONFIG.gazeToken;
+      if (CONFIG.injected && CONFIG.gazeMode === "eyetrax") {
+        try { gazeToken = (await chrome.runtime.sendMessage({ type: "cue:gaze:session" }))?.token; }
+        catch {}
+      }
+      const actual = await gaze.start({ mode: CONFIG.gazeMode, sigma: CONFIG.sigma,
+        tune: CONFIG.tune, keepData: CONFIG.keepData, gazeToken });
+      if (!isGazeMode(actual)) {
         const reason = gaze.getState().gazeError || "the camera is unavailable";
-        bus.emit("SAY", { text: `Eye tracking still can't start: ${reason}. Check camera permission for this page, then try again.` });
+        bus.emit("SAY", { text: `Eye tracking still can't start: ${reason}. Check camera permission for the app running Cue, then try again.` });
         return false;
       }
     }
@@ -729,14 +736,14 @@ export async function boot() {
   // Ask for the mic BEFORE the camera prompt and before calibration. Chrome
   // will not reliably prompt for it later once a video stream is live, which
   // is why speech looked "broken" rather than "not permitted".
-  if (CONFIG.gazeMode === "webgazer") await voice.requestMic();
+  if (isGazeMode(CONFIG.gazeMode)) await voice.requestMic();
   if (exited) return;
 
   // start() reports the mode it ACTUALLY got, which may not be the one asked
   // for — no camera, or a browser blocking WebGL, degrades it to the mouse.
   const actual = await gaze.start({ mode: CONFIG.gazeMode, sigma: CONFIG.sigma,
                                     tune: CONFIG.tune, keepData: CONFIG.keepData,
-                                    resume: CONFIG.calibration });
+                                    resume: CONFIG.calibration, gazeToken: CONFIG.gazeToken });
   if (exited) return;
   // Listening starts BEFORE calibration on purpose: "Cue, next" advances the
   // dots, and someone who cannot press space has no other way through the
@@ -750,9 +757,9 @@ export async function boot() {
   if (exited) return;
 
   let announced = false;
-  if (actual === "webgazer" && gaze.getState().calibrated) {
+  if (isGazeMode(actual) && gaze.getState().calibrated) {
     announced = true;
-  } else if (actual === "webgazer" && CONFIG.autoCal) {
+  } else if (isGazeMode(actual) && CONFIG.autoCal) {
     await gaze.calibrate();
     gaze.hideCamera();
     await persistCalibration();
@@ -762,7 +769,7 @@ export async function boot() {
     announced = true;
   }
 
-  if (CONFIG.gazeMode === "webgazer" && actual !== "webgazer" && !CONFIG.resuming) {
+  if (isGazeMode(CONFIG.gazeMode) && !isGazeMode(actual) && !CONFIG.resuming) {
     bus.emit("SAY", { text: "I couldn't use the camera, so I'm following the mouse instead. Everything else works." });
   } else if (!announced && !CONFIG.resuming) {
     bus.emit("SAY", { text: "Cue is ready. Look at something and ask me about it." });
@@ -787,7 +794,7 @@ bus.on("GAZE", ({ confidence }) => {
   const gs = gaze.getState();
   // Low confidence during calibration is expected, not drift. Announcing it
   // there interrupts the very thing that would fix it.
-  if (recalibrating || gs.calibrating || !gs.calibrated || gs.mode !== "webgazer") {
+  if (recalibrating || gs.calibrating || !gs.calibrated || !isGazeMode(gs.mode)) {
     lowSince = null;
     return;
   }

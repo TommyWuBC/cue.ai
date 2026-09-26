@@ -5,12 +5,16 @@ enforced limits and passkey approval. Demo orders do not charge a card.
 
 ## Run
 
-    python3 -m venv .venv && .venv/bin/pip install -r server/requirements.txt
+    python3 -m venv .venv
+    uv pip install --python .venv/bin/python -r server/requirements-gaze.txt
     cp .env.example .env          # then paste your two keys in
     .venv/bin/uvicorn main:app --app-dir server --port 4173 --reload
 
 Open **http://localhost:4173** in Chrome (not the Claude preview pane — it blocks
-camera and mic). Use `localhost` exactly: the passkey origin is configured for it.
+microphone). Use `localhost` exactly: the passkey origin is configured for it.
+On first gaze startup, macOS may ask for camera access for Terminal, Cursor, or
+whichever app launched Uvicorn. Grant it there. EyeTrax downloads its MediaPipe
+face-landmark model once into `~/.cache/eyetrax`.
 
 ### Experimental live-page extension
 
@@ -34,8 +38,9 @@ see [extension setup and deployment notes](docs/EXTENSION.md).
     ?cal=0           skip calibration
 
 Calibration is thirteen points: look at each dot, then press SPACE, tap the dot,
-or say “Cue, next”. Keep looking while the capture message is shown. Five more
-points then measure accuracy without any input. If the camera cannot capture
+or say “Cue, next”. Keep looking while the capture message is shown. Five points
+fit screen-range correction and five different points report held-out accuracy,
+without further input. If the camera cannot capture
 your eyes, the current point shows a retry message. The accuracy figure is
 printed to the console; over 150px prompts a retry, and over 220px uses numbered
 items for voice selection. Say “Cue, recalibrate” to start again.
@@ -64,7 +69,9 @@ Same code path as speech — only the wake word and STT are bypassed.
 ## How the pieces fit
 
     client/bus.js       one event bus, everything crosses it
-    client/gaze.js      webgazer -> outlier gate -> One Euro -> dwell -> FOCUS
+    server/gaze_companion.py  webcam -> EyeTrax landmarks/ridge model -> localhost coordinates
+    client/eyetrax.js   authenticated localhost gaze websocket
+    client/gaze.js      gaze coordinates -> outlier gate -> One Euro -> dwell -> FOCUS
     client/mic.js       mic -> 16kHz PCM -> /stt websocket -> Grok
     client/resolver.js  gaze point -> nearest tagged element
     client/voice.js     wake word, push-to-talk, barge-in, echo rejection, TTS playback
@@ -84,7 +91,7 @@ Markup contract and event shapes: see `ARCHITECTURE.md`.
 ## Why it is built this way
 
 **Gaze never selects; voice commits.** Gaze sets focus, speech confirms. This is
-the accessibility story and it is also why a few cm of webgazer error is harmless.
+the accessibility story and it also limits the effect of residual webcam error.
 
 **AI answers cannot purchase.** Grok can answer questions and suggest reversible
 selection or scrolling. The server filters its action list; adding, clicking,
@@ -95,9 +102,9 @@ passkey step. Partial product data produces an honest "I can't see it" answer.
 (the `data-cue-*` spelling is also accepted). Six big hit targets on a page
 beats pixel-accurate tracking.
 
-**Everything in one coordinate frame.** Camera, mic, calibration and overlay all
-run in the store page. Running webgazer from a separate extension page would put
-its regression output in the wrong frame.
+**Everything uses the browser viewport coordinate frame.** Calibration targets
+are labelled in CSS viewport pixels, EyeTrax trains against those labels, and the
+extension consumes coordinates in that same frame.
 
 **Nothing spends money on one utterance.** Checkout only *stages* an order and
 reads it back; a separate "yes" completes it. The budget is enforced at add time,

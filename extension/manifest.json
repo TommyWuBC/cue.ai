@@ -11,7 +11,7 @@
   },
   "background": {"service_worker": "extension/background.js", "type": "module"},
   "web_accessible_resources": [{
-    "resources": ["client/*.js", "extension/assets/cue-splash.jpg", "vendor/models/*/*"],
+    "resources": ["client/*.js", "extension/assets/cue-splash.jpg"],
     "matches": ["http://*/*", "https://*/*"]
   }]
 }

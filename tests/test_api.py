@@ -41,6 +41,17 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.client.post(path).status_code, 200)
         self.assertEqual(self.client.post('/api/passkey/authenticate/options/' + quote['intent_id']).status_code, 409)
 
+    def test_gaze_session_is_limited_to_extension_or_loopback_origins(self):
+        denied = self.client.post('/api/gaze/session', headers={'Origin': 'https://store.example'})
+        self.assertEqual(denied.status_code, 403)
+        allowed = self.client.post('/api/gaze/session',
+                                   headers={'Origin': 'chrome-extension://cue-test'})
+        self.assertEqual(allowed.status_code, 200)
+        self.assertGreater(len(allowed.json()['token']), 20)
+        gaze = self.client.get('/health').json()['gaze']
+        self.assertEqual(gaze['engine'], 'eyetrax')
+        self.assertIn('installed', gaze)
+
 
     def prepared_approval(self):
         quote = main.checkout.prepare([{'id': 'j4', 'size': 'M', 'color': 'Oat'}], 'Add in medium. Check out.')
