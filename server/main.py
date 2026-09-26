@@ -10,7 +10,7 @@ from pydantic import BaseModel
 import fallback, router, tts
 
 ROOT = pathlib.Path(__file__).parent.parent
-app = FastAPI(title="Aura")
+app = FastAPI(title="Cue")
 
 
 class Utterance(BaseModel):

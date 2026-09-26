@@ -15,10 +15,10 @@ function mountUI() {
     <div class="aura-reticle"></div>
     <div class="aura-outline"><span class="aura-outline-label"></span></div>
     <div class="aura-hud">
-      <div class="aura-hud-row"><span class="aura-dot"></span><b>Aura</b><span class="aura-chip aura-mode"></span></div>
+      <div class="aura-hud-row"><span class="aura-dot"></span><b>Cue</b><span class="aura-chip aura-mode"></span></div>
       <div class="aura-hud-heard"></div>
       <div class="aura-hud-said"></div>
-      <div class="aura-hud-foot">hold <kbd>space</kbd> to talk · say “Aura, …”</div>
+      <div class="aura-hud-foot">hold <kbd>space</kbd> to talk · say “Cue, …”</div>
     </div>`;
   document.body.appendChild(root);
   ui.reticle = root.querySelector(".aura-reticle");
@@ -140,12 +140,13 @@ async function boot() {
     gaze.hideCamera();
   }
   voice.startListening();
-  bus.emit("SAY", { text: "Aura is ready. Look at something and ask me about it." });
+  bus.emit("SAY", { text: "Cue is ready. Look at something and ask me about it." });
 }
 
 // say() is how you drive Aura with no mic: from the console, from a test, or
 // from the on-stage fallback if the demo floor is too loud to be heard.
 const say = (text) => bus.emit("UTTERANCE", { text, final: true });
 
-window.aura = { bus, gaze, voice, context, perform, boot, say, CONFIG };
+window.cue = { bus, gaze, voice, context, perform, boot, say, CONFIG };
+window.aura = window.cue; // Compatibility for existing demo scripts.
 addEventListener("DOMContentLoaded", boot);

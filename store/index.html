@@ -84,7 +84,7 @@ grid.addEventListener("click", (e) => {
     document.getElementById("budget").textContent = "$" + budget.toFixed(2);
   }
 });
-window.checkout = () => window.aura?.bus.emit("SAY", {
+window.checkout = () => window.cue?.bus.emit("SAY", {
   text: cart.length
     ? `That's ${cart.length} item${cart.length > 1 ? "s" : ""}, $${(250 - budget).toFixed(2)} total. You'd have $${budget.toFixed(2)} left this month. Say yes to approve.`
     : "Your cart is empty."

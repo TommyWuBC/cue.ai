@@ -1,4 +1,4 @@
-# Aura — architecture contract
+# Cue — architecture contract
 
 Everyone codes against this. Stub the parts you don't own.
 
@@ -11,7 +11,7 @@ outline overlay all run inside the page. Served from a single origin
 Real H&M is handled later by mirroring a PDP onto our origin. Do not try to run
 WebGazer from an extension page — the regression output would be in the wrong frame.
 
-## Events (window.aura.bus)
+## Events (window.cue.bus)
 
     GAZE      { x, y, confidence }        raw-ish, smoothed, ~25Hz. Debug only.
     FOCUS     { target, prev }            dwell-committed. target = AuraTarget | null

@@ -1,6 +1,6 @@
 import { bus } from "./bus.js";
 
-const WAKE = /\b(aura|ora|aurora)\b/i;   // STT mishears "aura" constantly; accept near-misses
+const WAKE = /\b(cue|q)\b/i;   // Wake word is short, so push-to-talk is more reliable in noisy rooms
 const SELF_HEAR_GUARD_MS = 300;
 
 const state = { rec: null, listening: false, speaking: false, mutedUntil: 0, ptt: false, ttsMode: "browser" };
@@ -19,7 +19,7 @@ export function startListening() {
       const text = r[0].transcript.trim();
       if (!text) continue;
 
-      // Barge-in: the moment the user talks over Aura, Aura shuts up.
+      // Barge-in: the moment the user talks over Cue, Cue shuts up.
       if (state.speaking && text.length > 2) stopSpeaking();
       // Don't let the mic transcribe our own TTS.
       if (performance.now() < state.mutedUntil) continue;
@@ -41,7 +41,7 @@ export function startListening() {
     if (FATAL.has(e.error)) {
       state.listening = false;
       bus.emit("STATE", { listening: false, micError: e.error });
-      console.warn("[aura] mic unavailable — push-to-type via aura.say('...') still works");
+      console.warn("[aura] mic unavailable — push-to-type via cue.say('...') still works");
     }
   };
   // Chrome ends recognition every ~60s; restart, but back off so a flapping

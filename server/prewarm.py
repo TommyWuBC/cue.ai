@@ -12,7 +12,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import tts
 
 LINES = [
-    "Aura is ready. Look at something and ask me about it.",
+    "Cue is ready. Look at something and ask me about it.",
     "Look at each dot and press space.",
     "Calibration done. I can see where you're looking.",
     "Added.",

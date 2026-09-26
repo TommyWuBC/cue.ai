@@ -1,11 +1,11 @@
-# Aura — shop with your eyes and your voice
+# Cue — shop with your eyes and your voice
 
 Track 1 of the build: **gaze targeting + conversational AI**. Payments, passkey and
 the merchant console come later — see the plan.
 
 ## Run
 
-    cd aura
+    cd cue
     python3 -m venv .venv && .venv/bin/pip install -r server/requirements.txt
     cp .env.example .env          # optional: add XAI_API_KEY
     .venv/bin/uvicorn main:app --app-dir server --port 4173 --reload
@@ -20,9 +20,9 @@ Calibration: look at each dot, press SPACE. Nine points, ~30 seconds.
 
 ## Testing without a mic
 
-    aura.say("is this wool")
-    aura.say("the third one")
-    aura.say("add it")
+    cue.say("is this wool")
+    cue.say("the third one")
+    cue.say("add it")
 
 Same code path as speech — the wake word and STT are the only thing bypassed.
 
@@ -54,7 +54,7 @@ its regression output in the wrong frame.
 
 **The demo degrades instead of dying.** No xAI key or dead wifi falls back to
 `fallback.py`. No ElevenLabs credits falls back to the browser voice. No camera
-falls back to `?gaze=mouse`. No mic falls back to `aura.say()`.
+falls back to `?gaze=mouse`. No mic falls back to `cue.say()`.
 
 ## ElevenLabs credits
 
