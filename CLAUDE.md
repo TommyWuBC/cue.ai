@@ -409,6 +409,21 @@ which has no DOM — that is why their top-level `addEventListener` calls are
 guarded and why `key()` reads viewport globals off `globalThis` with
 fallbacks. Keep new top-level DOM access out of those two files, or guard it.
 
+## Two things that will silently break the overlay
+
+**Class names are `aura-*`, not `cue-*`.** `client/overlay.css` and
+`client/avatar.js` both key off them — the avatar seats itself by querying
+`#aura-root .aura-hud`. Rename them and the overlay renders completely
+unstyled with no avatar, and nothing throws. Only `cue-badge(s)` and
+`cue-modal*` use a cue- prefix, and those have their own styles appended at
+the bottom of overlay.css.
+
+**`frame()` reschedules itself at the end.** One throw inside it kills the
+render loop permanently — no reticle, no badges, no outline tracking, and no
+error after the first. If the overlay looks frozen, check that
+`ui.reticle.style.transform` is being written; empty means the loop is dead.
+Everything it touches (`render`, `ui.*`, `badges`) must exist before boot.
+
 ## Known gaps
 
 - `client/resolver.js` cache key is scroll + viewport + element counts. It misses
