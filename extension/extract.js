@@ -73,14 +73,25 @@
       '[data-component-type="s-search-result"][data-asin], .product-item, [data-testid="product-card"]');
     for (const card of cards) {
       if (!rectVisible(card)) continue;
-      const title = clean(card.querySelector('h2, h3, [class*="product-name"]')?.textContent);
-      const amount = price(card.querySelector('.a-price .a-offscreen, [class*="price"]')?.textContent);
-      const link = card.querySelector('h2 a[href], h3 a[href], a[href*="productpage"], a[href*="/dp/"]');
+      // Amazon now puts the brand in the first h2 and the actual product title
+      // in a second h2. The title's enclosing anchor is the product link.
+      const amazonTitle = card.matches?.('[data-component-type="s-search-result"][data-asin]')
+        ? card.querySelector('h2[aria-label]') : null;
+      const title = clean(amazonTitle?.getAttribute('aria-label') || amazonTitle?.textContent ||
+        card.querySelector('h2, h3, [class*="product-name"]')?.textContent);
+      // querySelector with a selector list returns the earliest DOM element;
+      // Amazon's price wrapper also contains the crossed-out list price.
+      const amount = price((card.querySelector('.a-price .a-offscreen') ||
+        card.querySelector('[class*="price"]'))?.textContent);
+      const link = amazonTitle?.closest('a[href]') ||
+        card.querySelector('h2 a[href], h3 a[href], a[href*="productpage"], a[href*="/dp/"]');
       if (!title || amount === null || !link?.href) continue;
       const id = clean(card.getAttribute('data-asin') || link.href);
       if (seen.has(id)) continue;
+      const productUrl = amazonTitle && /^[A-Z0-9]{10}$/.test(id)
+        ? new URL(`/dp/${id}`, pageUrl).href : link.href;
       found.push({ el: card, product: { id, title, price: amount, currency: 'USD',
-        url: link.href, attrs: {} } });
+        url: productUrl, attrs: {} } });
       seen.add(id);
     }
     return found.slice(0, 40);

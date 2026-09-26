@@ -20,6 +20,7 @@ class ExtensionBuildTests(unittest.TestCase):
             names = set(package.namelist())
             self.assertEqual(manifest['manifest_version'], 3)
             self.assertEqual(manifest['host_permissions'], ['http://localhost:4173/*'])
+            self.assertFalse(manifest['web_accessible_resources'][0].get('use_dynamic_url', False))
             self.assertIn(manifest['action']['default_popup'], names)
             self.assertIn(manifest['background']['service_worker'], names)
             self.assertIn('extension/runtime.js', names)
@@ -27,6 +28,9 @@ class ExtensionBuildTests(unittest.TestCase):
             self.assertIn('vendor/models/facemesh/model.json', names)
             self.assertIn('vendor/models/facemesh/group1-shard1of1.bin', names)
             self.assertIn('client/aura.js', names)
+            self.assertIn('client/avatar.js', names)
+            self.assertIn(b"import(chrome.runtime.getURL('client/avatar.js'))",
+                          package.read('extension/content.js'))
             for icon in manifest['icons'].values():
                 self.assertTrue(package.read(icon).startswith(b'\x89PNG\r\n\x1a\n'))
 

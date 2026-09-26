@@ -16,9 +16,10 @@ face-landmarks-detection library accepts, so there is no supported way in. We
 patch the bundle.
 
 The patch is deliberately minimal and idempotent: each hardcoded URL becomes a
-lookup on `globalThis.CUE_MODELS`, falling back to the original URL. Nothing
-changes unless a page sets that global, so the unpatched behaviour is preserved
-for anyone running this standalone without the local copies.
+lookup on `globalThis.CUE_MODELS`, falling back to the original URL. Local URLs
+must also bypass TensorFlow Hub's URL rewriting or the model.json request fails.
+Nothing changes unless a page sets that global, so the unpatched behaviour is
+preserved for anyone running this standalone without the local copies.
 
 It also disables the iris model. WebGazer calls estimateFaces with
 `predictIrises: false`, so iris is downloaded (2.6 MB of 6 MB) and never used.
@@ -26,7 +27,6 @@ It also disables the iris model. WebGazer calls estimateFaces with
 Usage:  python3 tools/patch-webgazer.py [--check]
 """
 import pathlib
-import re
 import sys
 
 VENDOR = pathlib.Path(__file__).resolve().parent.parent / "vendor" / "webgazer.js"
@@ -37,24 +37,37 @@ MODELS = {
     "iris":      "https://tfhub.dev/mediapipe/tfjs-model/iris/1/default/2",
 }
 
-MARKER = "globalThis.CUE_MODELS"
-
-
 def patched_expr(key: str, url: str) -> str:
     # Kept on one line: the bundle is a single 14k-column line and we must not
     # introduce a newline into a string context.
     return f'((globalThis.CUE_MODELS&&globalThis.CUE_MODELS.{key})||"{url}")'
 
 
+def patched_call(key: str, url: str) -> str:
+    local = f'globalThis.CUE_MODELS&&globalThis.CUE_MODELS.{key}'
+    return f'Ak({patched_expr(key, url)},{{fromTFHub:!({local})}})'
+
+
+def is_patched(src: str) -> bool:
+    return all(patched_call(key, url) in src for key, url in MODELS.items()) and (
+        '(KP.mediapipeFacemesh,{maxFaces:1,shouldLoadIrisModel:false})' in src)
+
+
 def apply(src: str) -> tuple[str, list[str]]:
     notes = []
     for key, url in MODELS.items():
-        target = f'"{url}"'
-        if target not in src:
-            notes.append(f"  {key}: URL not found (already patched?)")
-            continue
-        src = src.replace(target, patched_expr(key, url))
-        notes.append(f"  {key}: redirected to globalThis.CUE_MODELS.{key}")
+        original = f'Ak("{url}",{{fromTFHub:!0}})'
+        previous = f'Ak({patched_expr(key, url)},{{fromTFHub:!0}})'
+        if original in src:
+            src = src.replace(original, patched_call(key, url))
+            notes.append(f"  {key}: redirected to local model without TF Hub rewriting")
+        elif previous in src:
+            src = src.replace(previous, patched_call(key, url))
+            notes.append(f"  {key}: disabled TF Hub rewriting for local model")
+        elif patched_call(key, url) in src:
+            notes.append(f"  {key}: already patched")
+        else:
+            raise ValueError(f"Could not locate the {key} model call in webgazer.js")
 
     # Iris is loaded by default and never used (predictIrises is false in
     # getEyePatches), so 2.6 MB is downloaded and thrown away.
@@ -71,17 +84,19 @@ def main() -> int:
         print(f"missing {VENDOR}", file=sys.stderr)
         return 1
     src = VENDOR.read_text(encoding="utf-8")
-    already = MARKER in src
-
     if "--check" in sys.argv:
-        print("patched" if already else "NOT patched")
-        return 0 if already else 1
+        patched = is_patched(src)
+        print("patched" if patched else "NOT patched")
+        return 0 if patched else 1
 
-    if already:
+    try:
+        out, notes = apply(src)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 1
+    if out == src:
         print("already patched; nothing to do")
         return 0
-
-    out, notes = apply(src)
     backup = VENDOR.with_suffix(".orig.js")
     if not backup.exists():
         backup.write_text(src, encoding="utf-8")

@@ -41,6 +41,7 @@
       },
     };
     await import(chrome.runtime.getURL('client/aura.js'));
+    await import(chrome.runtime.getURL('client/avatar.js'));
   };
   boot().catch(error => {
     console.error('[cue] Could not load the shopping overlay:', error);

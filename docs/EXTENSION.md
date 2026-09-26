@@ -54,6 +54,14 @@ tests/extension.test.mjs tests/product-memory.test.mjs` and
 `python3 -m unittest tests/test_extension_build.py`. The build test verifies
 the upload ZIP, required assets, manifest permissions, and icons.
 
+For a browser check, run `npm ci`, install Chrome for Testing or Chromium, then
+set `CUE_CHROME_PATH` to that browser executable and run
+`node --test tests/extension-browser.test.mjs`. The test launches the unpacked
+extension on a local shopping fixture and checks the overlay, avatar, product
+tagging, and WebGazer's bundled model downloads. It grants the fixture origin
+to its temporary unpacked manifest because a programmatically opened popup
+does not receive Chrome's toolbar-click `activeTab` grant.
+
 ## Chrome Web Store handoff
 
 The ZIP is an upload candidate, not a published extension. The publisher must
