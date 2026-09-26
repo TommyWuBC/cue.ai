@@ -61,7 +61,7 @@ const LOW_CONFIDENCE_MS = 2200;
 const STALE_SAMPLE_MS   = 1200;
 
 const state = {
-  running: false, calibrated: false, mode: "webgazer",
+  running: false, calibrated: false, mode: "webgazer", gazeError: null,
   point: null, focus: null, cand: null, candSince: 0, conf: 0, lockUntil: 0,
   precise: true,   // is gaze accurate enough to be trusted as a pointer?
   fx: null, fy: null,
@@ -95,7 +95,10 @@ export const getPointerIdleMs = () => Math.round(performance.now() - lastPointer
 // straight through; a human one is stopped and explained.
 const MONEY_ACTIONS = new Set(["add_to_cart", "checkout"]);
 
+let clickGuardBound = false;
 function guardStrayClicks() {
+  if (clickGuardBound) return;
+  clickGuardBound = true;
   addEventListener("click", (e) => {
     if (state.mode !== "webgazer" || !state.calibrated) return;
     if (!e.isTrusted) return;                 // this was us, via el.click()
@@ -297,6 +300,7 @@ function ingest(rawX, rawY) {
   // learned, so this is a no-op until there is evidence for it.
   if (state.mode === "webgazer") {
     head.now = readHead() ?? head.now;
+    if (state.calibrated && !head.base) head.base = head.now;
     const off = headOffset();
     // Keep the pre-compensation estimate: fitting the gain against an already
     // compensated error would feed the correction back into its own input and
@@ -335,6 +339,23 @@ function startDwellLoop() {
       commitDwell(state.point.x, state.point.y);
     }
   }, 60);
+}
+
+export function stop() {
+  cancelCalibration?.();
+  cancelCalibration = null;
+  state.running = false;
+  state.calibrating = false;
+  state.calibrated = false;
+  state.point = null;
+  setFocus(null, 0);
+  if (dwellTimer) { clearInterval(dwellTimer); dwellTimer = null; }
+  try { window.webgazer?.end(); } catch {}
+  document.querySelectorAll(".aura-cal,.cue-modal").forEach((el) => {
+    try { el.hidePopover?.(); } catch {}
+    el.remove();
+  });
+  bus.emit("STATE", { calibrating: false, calibrated: false, listening: false });
 }
 
 // Bad tracking is not always noisy. A frozen feed or a face out of frame
@@ -446,6 +467,98 @@ function rms(obs, ax, bx, ay, by) {
 // and the numbered-badge path has to carry the interaction instead.
 const GOOD_PX = 150;
 const POOR_PX = 220;
+let cancelCalibration = null;
+
+// Chrome destroys the page's JS world on a full store navigation. Keep the
+// trained ridge samples and Cue's correction in extension session storage so
+// the next document in this tab can resume without asking for 13 dots again.
+// ImageData's data property does not JSON-serialize as an array, so copy it
+// explicitly before sending the snapshot through Chrome messaging.
+function packEye(eye) {
+  const patch = eye?.patch;
+  if (!patch?.data) return null;
+  // Ridge regression reduces every eye patch to 10 x 6 before fitting. Save
+  // those 60 pixels rather than hundreds of full camera crops per session.
+  const width = 10, height = 6;
+  let data = patch.data;
+  if (patch.width !== width || patch.height !== height) {
+    const source = document.createElement("canvas");
+    source.width = patch.width; source.height = patch.height;
+    source.getContext("2d").putImageData(patch, 0, 0);
+    const reduced = document.createElement("canvas");
+    reduced.width = width; reduced.height = height;
+    const ctx = reduced.getContext("2d");
+    ctx.drawImage(source, 0, 0, width, height);
+    data = ctx.getImageData(0, 0, width, height).data;
+  }
+  return { ...eye, width, height,
+    patch: { width, height, data: Array.from(data) } };
+}
+
+function validEye(eye) {
+  const patch = eye?.patch;
+  return Number.isInteger(patch?.width) && patch.width > 0 && patch.width <= 256 &&
+    Number.isInteger(patch.height) && patch.height > 0 && patch.height <= 256 &&
+    Array.isArray(patch.data) && patch.data.length === patch.width * patch.height * 4;
+}
+
+export function canResume(snapshot) {
+  return snapshot?.version === 1 && snapshot.viewport?.width === innerWidth &&
+    snapshot.viewport?.height === innerHeight &&
+    Array.isArray(snapshot.samples) && snapshot.samples.length >= 20 &&
+    snapshot.samples.length <= 500 && snapshot.samples.every(sample =>
+      sample?.type === "click" && Array.isArray(sample.screenPos) &&
+      sample.screenPos.length === 2 && sample.screenPos.every(Number.isFinite) &&
+      validEye(sample.eyes?.left) && validEye(sample.eyes?.right)) &&
+    [snapshot.cal?.ax, snapshot.cal?.bx, snapshot.cal?.ay, snapshot.cal?.by,
+      snapshot.accuracy?.after_px].every(Number.isFinite);
+}
+
+export function exportCalibration() {
+  if (state.mode !== "webgazer" || !state.calibrated || !state.accuracy) return null;
+  try {
+    const samples = window.webgazer.getRegression()[0].getData().map(sample => ({
+      eyes: { left: packEye(sample.eyes?.left), right: packEye(sample.eyes?.right) },
+      screenPos: sample.screenPos, type: sample.type,
+    }));
+    const snapshot = { version: 1, viewport: { width: innerWidth, height: innerHeight },
+      samples, cal: { ...state.cal }, accuracy: { ...state.accuracy } };
+    return canResume(snapshot) ? snapshot : null;
+  } catch (error) {
+    console.warn("[cue] Could not save gaze calibration", error);
+    return null;
+  }
+}
+
+async function restoreCalibration(snapshot) {
+  if (!canResume(snapshot)) return false;
+  try {
+    window.webgazer.getRegression()[0].setData(snapshot.samples);
+    state.cal = { ...snapshot.cal };
+    state.accuracy = { ...snapshot.accuracy };
+    state.calibrated = true;
+    state.precise = state.accuracy.after_px <= POOR_PX;
+    state.qualityLow = false;
+    state.lowSince = 0;
+    head.base = readHead();
+    head.samples = []; head.gain = null;
+    if (!state.tuneLocked) {
+      state.tuning = tuningFor(state.accuracy.after_px);
+      state.fx = oneEuro(state.tuning);
+      state.fy = oneEuro(state.tuning);
+    }
+    recent.length = 0; pending = [];
+    state.fx.reset(innerWidth / 2, performance.now() / 1000);
+    state.fy.reset(innerHeight / 2, performance.now() / 1000);
+    bus.emit("STATE", { calibrated: true, accuracy: state.accuracy,
+      precise: state.precise });
+    return true;
+  } catch (error) {
+    console.warn("[cue] Could not restore gaze calibration", error);
+    try { await window.webgazer.clearData(); } catch {}
+    return false;
+  }
+}
 
 function runCalibration(attempt) {
   return new Promise((done, reject) => {
@@ -524,6 +637,7 @@ function runCalibration(attempt) {
       } catch (error) {
         reject(error);
       } finally {
+        if (cancelCalibration === cancel) cancelCalibration = null;
         ov.remove();
       }
     };
@@ -599,6 +713,18 @@ function runCalibration(attempt) {
       capture();
     };
 
+    const cancel = () => {
+      captureId++;
+      recording = false;
+      removeEventListener("keydown", onKey, true);
+      cleanup.forEach((fn) => fn());
+      ov.remove();
+      state.calibrating = false;
+      if (cancelCalibration === cancel) cancelCalibration = null;
+      done(false);
+    };
+    cancelCalibration = cancel;
+
     // Utterances still reach us during calibration; aura.js declines to send
     // them to the server while calibrating, so this is the only consumer.
     const stopVoice = bus.on("UTTERANCE", ({ text, final }) => {
@@ -654,7 +780,15 @@ function qualityModal(acc, attempt) {
     // only click targets is the wrong shape. aura.js drops utterances while
     // calibrating, so subscribe directly — exactly as the dots do for "next".
     let stopVoice = null;
-    const pick = (act) => { stopVoice?.(); try { ov.hidePopover(); } catch {} ov.remove(); choose(act); };
+    const pick = (act) => {
+      stopVoice?.();
+      try { ov.hidePopover(); } catch {}
+      ov.remove();
+      if (cancelCalibration === cancel) cancelCalibration = null;
+      choose(act);
+    };
+    const cancel = () => pick("exit");
+    cancelCalibration = cancel;
     ov.addEventListener("click", (e) => {
       const b = e.target.closest("[data-act]");
       if (b) pick(b.dataset.act);
@@ -880,8 +1014,14 @@ const gauss = () => {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 };
 
-export async function start({ mode = "webgazer", sigma = 70, tune = null, keepData = false } = {}) {
+export async function start({ mode = "webgazer", sigma = 70, tune = null,
+  keepData = false, resume = null } = {}) {
   state.mode = mode;
+  state.running = false;
+  state.calibrated = false;
+  state.gazeError = null;
+  state.point = null;
+  setFocus(null, 0);
   const tuning = tune ?? (mode === "mouse"
     ? MOUSE_TUNING
     : { minCutoff: MIN_CUTOFF, beta: BETA, dCutoff: D_CUTOFF });
@@ -891,7 +1031,7 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null, keepDa
   state.fy = oneEuro(tuning);
 
   if (mode === "mouse") {                     // dev + demo fallback, no camera
-    addEventListener("mousemove", (e) => { touchPointer(); ingest(e.clientX, e.clientY); });
+    startMouseInput();
     startDwellLoop();
     state.calibrated = true; state.running = true;
     bus.emit("STATE", { calibrated: true, mode: "mouse" });
@@ -928,7 +1068,7 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null, keepDa
   }
 
   wg.setRegression("ridge").setTracker("TFFacemesh");
-  wg.setGazeListener((d) => { if (d) ingest(d.x, d.y); });
+  wg.setGazeListener((d) => { if (d && state.mode === "webgazer") ingest(d.x, d.y); });
 
   // Webgazer persists its training data across sessions by default, and
   // begin() installs capture-phase click/mousemove listeners on document that
@@ -973,7 +1113,8 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null, keepDa
   startDwellLoop();
   guardStrayClicks();
   state.running = true;
-  bus.emit("STATE", { mode: "webgazer", calibrated: false });
+  const restored = await restoreCalibration(resume);
+  bus.emit("STATE", { mode: "webgazer", calibrated: restored });
   return "webgazer";
 }
 
@@ -989,13 +1130,25 @@ function webglAvailable() {
 function degrade(why, sigma) {
   console.error("[cue] gaze unavailable:", why, "— falling back to the mouse");
   state.mode = "mouse";
+  state.gazeError = why;
   state.fx = oneEuro(MOUSE_TUNING);
   state.fy = oneEuro(MOUSE_TUNING);
-  addEventListener("mousemove", (e) => ingest(e.clientX, e.clientY));
+  startMouseInput();
   startDwellLoop();
   state.calibrated = true; state.running = true;
   bus.emit("STATE", { calibrated: true, mode: "mouse", gazeError: why });
   return "mouse";
+}
+
+let mouseInputBound = false;
+function startMouseInput() {
+  if (mouseInputBound) return;
+  mouseInputBound = true;
+  addEventListener("mousemove", (e) => {
+    if (state.mode !== "mouse") return;
+    touchPointer();
+    ingest(e.clientX, e.clientY);
+  });
 }
 
 // ── Learning from what the voice confirms ───────────────────────────────────

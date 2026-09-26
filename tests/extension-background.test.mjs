@@ -1,16 +1,35 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-let onMessage, onRemoved;
+let onActionClicked, onActivated, onMessage, onRemoved, onUpdated;
 const calls = [];
+const actionState = new Map();
 const memory = new Map();
+const allowedOrigins = new Set();
 let active = false;
 let healthy = true;
 
 globalThis.chrome = {
+  action: {
+    onClicked: { addListener: listener => { onActionClicked = listener; } },
+    setBadgeBackgroundColor: async options => { calls.push(['badge-color', options]); },
+    setBadgeText: async options => {
+      calls.push(['badge-text', options]);
+      actionState.set(options.tabId, options.text);
+    },
+    setTitle: async options => { calls.push(['title', options]); },
+  },
   runtime: {
     id: 'cue-test', getURL: path => `chrome-extension://cue-test/${path}`,
     onMessage: { addListener: listener => { onMessage = listener; } },
+  },
+  permissions: {
+    contains: async ({ origins }) => origins.every(origin => allowedOrigins.has(origin)),
+    request: async ({ origins }) => {
+      origins.forEach(origin => allowedOrigins.add(origin));
+      calls.push(['permission', origins]);
+      return true;
+    },
   },
   scripting: {
     executeScript: async options => {
@@ -19,11 +38,18 @@ globalThis.chrome = {
     },
     insertCSS: async options => { calls.push(['css', options]); },
   },
-  tabs: { onRemoved: { addListener: listener => { onRemoved = listener; } } },
+  tabs: {
+    get: async id => ({ id, url: 'https://store.example/product' }),
+    onActivated: { addListener: listener => { onActivated = listener; } },
+    onRemoved: { addListener: listener => { onRemoved = listener; } },
+    onUpdated: { addListener: listener => { onUpdated = listener; } },
+  },
   storage: { session: {
     get: async key => ({ [key]: memory.get(key) }),
     set: async record => { for (const [key, value] of Object.entries(record)) memory.set(key, value); },
-    remove: async key => { memory.delete(key); },
+    remove: async key => {
+      for (const item of Array.isArray(key) ? key : [key]) memory.delete(item);
+    },
   } },
 };
 globalThis.fetch = async () => ({ ok: healthy, json: async () => ({ ok: healthy }) });
@@ -59,9 +85,73 @@ test('activation injects packaged models and code once', async () => {
   const config = calls.find(([kind, options]) => kind === 'script' && options.args);
   assert.equal(config[1].args[0], 'http://localhost:4173');
   assert.match(config[1].args[1].facemesh, /^chrome-extension:\/\/cue-test\/vendor\/models/);
+  assert.equal(config[1].args[2], 'chrome-extension://cue-test/extension/assets/cue-splash.jpg');
   active = true;
   assert.equal((await send({ type: 'cue:start', tab }, popup)).ok, true);
   assert.equal(calls.filter(([kind]) => kind === 'css').length, 1);
+});
+
+test('toolbar action starts Cue directly and reports status on its badge', async () => {
+  active = false;
+  const cssBefore = calls.filter(([kind]) => kind === 'css').length;
+  await onActionClicked(tab);
+  assert.equal(calls.filter(([kind]) => kind === 'css').length, cssBefore + 1);
+  assert.equal(actionState.get(tab.id), 'ON');
+  assert.ok(allowedOrigins.has('https://store.example/*'));
+  const titles = calls.filter(([kind]) => kind === 'title').map(([, options]) => options);
+  assert.equal(titles.at(-1).title, 'Cue is active on this page');
+
+  healthy = false;
+  await onActionClicked({ id: 8, url: 'https://store.example/another-product' });
+  assert.equal(actionState.get(8), '!');
+  assert.match(calls.filter(([kind]) => kind === 'title').at(-1)[1].title, /cannot reach/);
+  healthy = true;
+});
+
+test('approved stores start automatically and voice exit pauses the tab', async () => {
+  active = false;
+  const cssBefore = calls.filter(([kind]) => kind === 'css').length;
+  await onUpdated(tab.id, { status: 'complete' }, tab);
+  assert.equal(calls.filter(([kind]) => kind === 'css').length, cssBefore + 1);
+
+  assert.deepEqual(await send({ type: 'cue:exit' }, content), { ok: true });
+  assert.equal(actionState.get(tab.id), 'OFF');
+  active = false;
+  const pausedCss = calls.filter(([kind]) => kind === 'css').length;
+  await onActivated({ tabId: tab.id });
+  assert.equal(calls.filter(([kind]) => kind === 'css').length, pausedCss);
+
+  await onActionClicked(tab);
+  assert.equal(actionState.get(tab.id), 'ON');
+  assert.equal(calls.filter(([kind]) => kind === 'css').length, pausedCss + 1);
+});
+
+test('same-store navigation resumes the tab session and exit discards it', async () => {
+  onRemoved(tab.id);
+  await new Promise(resolve => setImmediate(resolve));
+  active = false;
+  await onActionClicked(tab);
+  const initial = calls.filter(([kind, options]) => kind === 'script' && options.args).at(-1)[1];
+  assert.equal(initial.args[3], null);
+
+  const snapshot = { version: 1, samples: [{ type: 'click' }] };
+  assert.deepEqual(await send({ type: 'cue:calibration:write', value: snapshot }, content), { ok: true });
+  await onUpdated(tab.id, { status: 'complete' },
+    { id: tab.id, url: 'https://store.example/dp/jacket' });
+  const resumed = calls.filter(([kind, options]) => kind === 'script' && options.args).at(-1)[1];
+  assert.equal(resumed.args[3].started, true);
+  assert.deepEqual(resumed.args[3].calibration, snapshot);
+
+  assert.deepEqual(await send({ type: 'cue:calibration:clear' }, content), { ok: true });
+  await onUpdated(tab.id, { status: 'complete' }, tab);
+  const cleared = calls.filter(([kind, options]) => kind === 'script' && options.args).at(-1)[1];
+  assert.equal(cleared.args[3].started, true);
+  assert.equal(cleared.args[3].calibration, null);
+
+  assert.deepEqual(await send({ type: 'cue:exit' }, content), { ok: true });
+  assert.equal(memory.has('cue.session.7'), false);
+  assert.deepEqual(await send({ type: 'cue:calibration:write', value: snapshot }, content), { ok: false });
+  assert.equal(memory.has('cue.session.7'), false);
 });
 
 test('product memory stays in extension storage for its tab', async () => {

@@ -50,6 +50,11 @@ export const CONFIG = {
   // chrome-extension:// URLs, which is the only way past a host page's CSP.
   models: injectedCfg.models || null,
 
+  // Packaged artwork for the extension's short startup screen.
+  splashImage: injectedCfg.splashImage || null,
+  resuming: Boolean(injectedCfg.resuming),
+  calibration: injectedCfg.calibration || null,
+
   injected,
 };
 

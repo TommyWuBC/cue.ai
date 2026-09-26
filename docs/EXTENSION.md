@@ -1,9 +1,10 @@
 # Cue Chrome extension
 
 This branch packages Cue's existing gaze and voice client as a Manifest V3
-extension. The extension runs only after the shopper opens its toolbar panel and
-selects **Start on this page**. The video stays in the browser. Product details,
-the page URL, and speech requests go to the configured Cue backend.
+extension. The shopper uses the toolbar icon once to approve a store. Cue then
+starts automatically whenever that store opens. The video stays in the browser.
+Product details, the page URL, and speech requests go to the configured Cue
+backend.
 
 ## Run locally
 
@@ -11,15 +12,31 @@ the page URL, and speech requests go to the configured Cue backend.
 2. Run `python3 tools/build-extension.py` from the repo root.
 3. Open `chrome://extensions` in Chrome, enable **Developer mode**, select
    **Load unpacked**, and choose `dist/cue-extension`.
-4. Open a normal HTTPS shopping page. Select the Cue toolbar icon, confirm the
-   server is connected, and select **Start on this page**.
-5. Grant camera and microphone permission to that page. Follow the calibration
-   dots with Space, a click, or “Cue, next.” Reload the page to stop Cue.
+4. Open a normal HTTPS shopping page and select the Cue toolbar icon once. Allow
+   Cue to run on that store when Chrome asks. Cue starts immediately and will
+   start automatically on later visits to the same store. Its icon badge changes
+   to **ON** when startup succeeds or **!** if it fails; hover to read the error.
+5. Cue shows its logo for about two seconds, fading in and out. Grant camera
+   and microphone permission to that page, then follow the calibration dots
+   with Space, a click, or “Cue, next.” Calibration closes over the same
+   shopping page; it does not open a new tab or change the page URL. Cue keeps
+   the calibration for this tab as you open other pages on the same store.
 
-The toolbar panel also opens the local Northfield demo store. That store is
-where passkey checkout and merchant verification currently run. The extension
-supports product questions, comparisons, gaze focus, and page controls on live
-sites; it does not map live merchant products into a Northfield order.
+Say **“Cue, exit”** at any time, including during calibration, to stop the
+camera and microphone and remove Cue from the page. Automatic startup remains
+paused for that tab as the shopper navigates. Select the Cue toolbar icon to
+resume; the store approval remains in place.
+
+After rebuilding an already loaded extension, click **Reload** on Cue's card in
+`chrome://extensions`, then reload the shopping tab. An already approved store
+starts Cue automatically. If the dock says **mouse**, camera tracking did not start. Saying
+“Cue, recalibrate” retries the camera and announces why it cannot start if the
+retry fails.
+
+The local Northfield demo store is where passkey checkout and merchant
+verification currently run. The extension supports product questions,
+comparisons, gaze focus, and page controls on live sites; it does not map live
+merchant products into a Northfield order.
 
 The build writes an unpacked directory for local testing and
 `dist/cue-extension-0.1.0.zip` for upload. Both are ignored by Git. The ZIP has
@@ -47,7 +64,9 @@ use the localhost build and keep checkout on the demo store.
 - The store page's content security policy does not block the bundled model
   requests or local backend connection.
 - Speech questions and browser controls work, including after an in-page
-  navigation. Reloading stops camera and microphone use on that page.
+  navigation. Full-page navigation restarts camera and microphone capture in
+  the new document but restores the gaze model without the splash or dots.
+  A changed viewport or unavailable model requires calibration again.
 
 For local checks, run `node --test tests/extension-background.test.mjs
 tests/extension.test.mjs tests/product-memory.test.mjs` and
@@ -59,8 +78,8 @@ set `CUE_CHROME_PATH` to that browser executable and run
 `node --test tests/extension-browser.test.mjs`. The test launches the unpacked
 extension on a local shopping fixture and checks the overlay, avatar, product
 tagging, and WebGazer's bundled model downloads. It grants the fixture origin
-to its temporary unpacked manifest because a programmatically opened popup
-does not receive Chrome's toolbar-click `activeTab` grant.
+to its temporary unpacked manifest because an automated tab does not receive
+Chrome's toolbar-click `activeTab` grant.
 
 ## Chrome Web Store handoff
 

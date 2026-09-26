@@ -6,6 +6,14 @@
 
   let timer;
   let tagged = new Set();
+  const cleanup = () => {
+    clearTimeout(timer);
+    observer.disconnect();
+    removeEventListener('scroll', schedule);
+    for (const el of tagged) delete el.dataset.cueProduct;
+    tagged.clear();
+    globalThis.__cueExternalActive = false;
+  };
   function tagProducts() {
     const next = new Set();
     for (const entry of CueExtract.extract(document, location.href)) {
@@ -27,6 +35,7 @@
   const observer = new MutationObserver(schedule);
   observer.observe(document.documentElement, { childList: true, subtree: true });
   addEventListener('scroll', schedule, { passive: true });
+  globalThis.__cueExternalCleanup = cleanup;
   // Content scripts share a page's Web Storage. Keep product memory in the
   // extension's session area so the store cannot read it from sessionStorage.
   const boot = async () => {
@@ -40,12 +49,16 @@
         chrome.runtime.sendMessage({ type: 'cue:memory:write', value: next }).catch(() => {});
       },
     };
-    await import(chrome.runtime.getURL('client/aura.js'));
+    const aura = await import(chrome.runtime.getURL('client/aura.js'));
+    if (globalThis.__cueExited) {
+      globalThis.__cueExited = false;
+      await aura.boot();
+    }
     await import(chrome.runtime.getURL('client/avatar.js'));
   };
   boot().catch(error => {
     console.error('[cue] Could not load the shopping overlay:', error);
-    observer.disconnect();
+    cleanup();
     globalThis.__cueExternalActive = false;
   });
 })();

@@ -54,10 +54,14 @@ start.addEventListener('click', async () => {
   start.disabled = true;
   status.textContent = 'Starting Cue…';
   try {
-    const result = await chrome.runtime.sendMessage({ type: 'cue:start', tab: await currentTab() });
+    const tab = await currentTab();
+    const result = await chrome.runtime.sendMessage({ type: 'cue:start', tab });
     if (!result?.ok) throw new Error(result?.error || 'Cue could not start.');
     status.textContent = 'Cue is starting. Follow the calibration dots on the page.';
     start.textContent = 'Cue is active';
+    // The two-second logo is on the shopping tab, behind this toolbar panel.
+    // Close the panel as soon as injection succeeds so the shopper sees it.
+    window.close();
   } catch (error) {
     status.textContent = error.message;
     start.disabled = false;

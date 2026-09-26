@@ -264,6 +264,16 @@ export function stopSpeaking() {
   state.mutedUntil = now() + SELF_HEAR_TAIL_MS;
 }
 
+export function stopListening() {
+  state.listening = false;
+  state.provider = "none";
+  try { state.rec?.abort(); } catch {}
+  state.rec = null;
+  mic.stop();
+  stopSpeaking();
+  bus.emit("STATE", { listening: false, sttProvider: "none" });
+}
+
 // Every call takes a ticket. stopSpeaking() cancels whatever is AUDIBLE, but a
 // call that is still fetching its audio has nothing to cancel yet — so two
 // SAYs landing close together (the calibration verdict and "Cue is ready", say)
