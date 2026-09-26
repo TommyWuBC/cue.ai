@@ -300,12 +300,18 @@ function resolveConfirm(ok) {
   if (!pendingConfirm) return false;
   const p = pendingConfirm;
   pendingConfirm = null;
+  if (p.kind === "add") {
+    if (!ok) { bus.emit("SAY", { text: "Okay, left it." }); return true; }
+    perform("add_to_cart", {}, { confirmed: true });
+    return true;
+  }
   if (p.kind === "action") {
     if (!ok) { bus.emit("SAY", { text: "Okay, left it." }); return true; }
     // Run everything that was read back, in order, stopping if a step is
     // refused — the confirmation covered the whole sequence, not just the end.
     for (const a of p.actions) {
-      if (perform(a.verb, a.args ?? {}) === false) break;
+      // Already read back as a whole — do not ask again for the add inside it.
+      if (perform(a.verb, a.args ?? {}, { confirmed: true }) === false) break;
     }
     return true;
   }
@@ -358,7 +364,23 @@ function scrollableUnderGaze(horizontal) {
   return null;
 }
 
-function perform(verb, args) {
+// What is about to go in the bag, in the words the shopper will hear. For some
+// users this is the only description of the purchase they get, so it names the
+// item, the chosen options and the price.
+function describeAdd(card) {
+  let p = {};
+  try { p = JSON.parse(card?.dataset?.cueProduct ?? card?.dataset?.auraProduct ?? "{}"); } catch {}
+  const title = p.title ?? "this one";
+  const size = card?.querySelector('.variants [aria-pressed="true"]')?.dataset?.auraValue
+            ?? card?.querySelector('[data-cue-action="select_variant"][aria-pressed="true"]')?.dataset?.cueValue;
+  const color = card?.querySelector('.colors [aria-pressed="true"]')?.dataset?.auraValue;
+  const needsSize = !!card?.querySelector('.variants [data-aura-action="select_variant"]') && !size;
+  const bits = [title, color, size && `size ${size}`].filter(Boolean);
+  const price = typeof p.price === "number" ? `, $${p.price.toFixed(2)}` : "";
+  return { title, size, color, missing: needsSize, line: `${bits.join(", ")}${price}.` };
+}
+
+function perform(verb, args, opts = {}) {
   // While the passkey dialog is up, nothing else may act — but recalibrate
   // and confirm/cancel must still get through, or losing tracking mid-dialog
   // traps you in it with no way out.
@@ -445,8 +467,25 @@ function perform(verb, args) {
     case "add_to_cart": {
       // MUST be scoped to what they were looking at. A global querySelector here
       // adds the first product on the page — i.e. charges for the wrong item.
-      const el = scope()?.querySelector('[data-cue-action="add_to_cart"],[data-aura-action="add_to_cart"]');
+      const card = scope();
+      const el = card?.querySelector('[data-cue-action="add_to_cart"],[data-aura-action="add_to_cart"]');
       if (!el) { bus.emit("SAY", { text: "Look at the item you want first." }); return false; }
+
+      // The bag is where a wrong item first gets in, and at 300px of gaze
+      // error that is a live possibility on every add. So an add is read back
+      // and waits, exactly like a charge. Done here rather than per-caller so
+      // the spoken command and the agent are held to the same bar.
+      if (!opts.confirmed) {
+        const d = describeAdd(card);
+        if (d.missing) {
+          bus.emit("SAY", { text: `Which size for the ${d.title}?` });
+          return false;
+        }
+        pendingConfirm = { kind: "add", el, said: d.line };
+        bus.emit("SAY", { text: `${d.line} Add it?` });
+        break;
+      }
+
       const before = window.CART?.().length;
       el.click();
       if (before !== undefined && window.CART().length === before) return false;
@@ -470,8 +509,12 @@ function perform(verb, args) {
       else if (!resolveConfirm(true)) bus.emit("SAY", { text: "There's nothing waiting for approval." });
       break;
     case "cancel_checkout":
-      if (checkoutOpen()) window.cueCheckout.cancel();
-      else if (!resolveConfirm(false)) bus.emit("SAY", { text: "Okay." });
+      if (checkoutOpen()) {
+        window.cueCheckout.cancel();
+        bus.emit("SAY", { text: "Okay, checkout cancelled." });
+      } else if (!resolveConfirm(false)) {
+        bus.emit("SAY", { text: "Okay." });
+      }
       break;
     case "setup_passkey":
       if (window.cueCheckout?.register) window.cueCheckout.register();

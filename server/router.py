@@ -42,7 +42,7 @@ def route(text: str):
     if t in {"stop", "quiet", "never mind", "cancel"}:
         return result("Okay.")
     if t in {"no", "cancel checkout", "cancel order"}:
-        return result("Okay, checkout cancelled.", [action("cancel_checkout")])
+        return result(None, [action("cancel_checkout")])
     if t in {"yes", "yes approve", "approve", "confirm", "approve the order", "confirm the order",
              "approve checkout", "confirm checkout"}:
         return result(actions=[action("approve_checkout")])

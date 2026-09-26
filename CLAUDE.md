@@ -381,6 +381,22 @@ someone who cannot see the screen "adding it to your bag" while doing nothing
 leaves them believing they bought something they did not — the worst failure
 this system has.
 
+## Every add is confirmed too
+
+The bag is where a wrong item first gets in, and at 300px of gaze error that
+is a live possibility on every add — so an add is read back and waits, exactly
+like a charge.
+
+`perform("add_to_cart")` stages rather than acts unless it is passed
+`{ confirmed: true }`. One place, so the spoken command, the compound command
+and the agent are all held to the same bar. `describeAdd()` builds the line —
+item, colour, size, price — because for some users it is the only description
+of the purchase they will get. No size chosen means it asks for the size
+instead of guessing.
+
+A staged sequence from the agent passes `confirmed: true` when it runs, since
+the whole sequence was already read back; otherwise a yes would ask again.
+
 ## Nothing charges on one utterance
 
 `checkout` **stages** an order and reads it back — item, total, remaining
