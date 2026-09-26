@@ -859,8 +859,8 @@ async function calibrateOnce({ allowRetry = true, maxAttempts = 2 } = {}) {
       text: !acc
         ? "I couldn't measure your gaze. Check the camera and say Cue, recalibrate. You can select items by saying their numbers."
         : q <= GOOD_PX
-        ? "Calibration done. I can see where you're looking."
-        : "Alright. I'll show numbers on the items so you can just say which one.",
+        ? "Calibration done. Look at something and ask me about it."
+        : "Alright. I'll number the items — just say the number of the one you want.",
     });
     // Tell the rest of the app whether gaze is precise enough to be trusted as
     // a pointer. Below this bar, numbered badges lead the interaction.

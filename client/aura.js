@@ -437,14 +437,19 @@ async function boot() {
   // very first screen they meet.
   await voice.startListening();
 
+  let announced = false;
   if (actual === "webgazer" && CONFIG.autoCal) {
     await gaze.calibrate();
     gaze.hideCamera();
+    // calibrate() already said how it went and what to do next. Adding "Cue is
+    // ready" on top of it is two spoken lines for one event, and they landed
+    // close enough together to talk over each other.
+    announced = true;
   }
 
   if (CONFIG.gazeMode === "webgazer" && actual !== "webgazer") {
     bus.emit("SAY", { text: "I couldn't use the camera, so I'm following the mouse instead. Everything else works." });
-  } else {
+  } else if (!announced) {
     bus.emit("SAY", { text: "Cue is ready. Look at something and ask me about it." });
   }
 }

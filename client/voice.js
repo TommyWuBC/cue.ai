@@ -262,18 +262,30 @@ export function stopSpeaking() {
   state.mutedUntil = now() + SELF_HEAR_TAIL_MS;
 }
 
+// Every call takes a ticket. stopSpeaking() cancels whatever is AUDIBLE, but a
+// call that is still fetching its audio has nothing to cancel yet — so two
+// SAYs landing close together (the calibration verdict and "Cue is ready", say)
+// both finished their fetch and both played, on top of each other. After every
+// await, a call that is no longer the current one gives up.
+let speakTicket = 0;
+
 export async function speak(text) {
   if (!text) return;
+  const mine = ++speakTicket;
+  const current = () => mine === speakTicket;
   stopSpeaking();
+  speakTicket = mine;            // stopSpeaking must not invalidate our own ticket
   state.speaking = true;
   // What we are saying, so the echo check can recognise it coming back.
   // We deliberately do NOT mute the mic here: barge-in has to keep working.
   speakingText = text;
   try {
     const res = await fetch(url("/tts?text=" + encodeURIComponent(text)));
+    if (!current()) return;                       // superseded while fetching
     const ct = res.headers.get("content-type") || "";
     if (ct.startsWith("audio/")) {
       const url = URL.createObjectURL(await res.blob());
+      if (!current()) { URL.revokeObjectURL(url); return; }
       audio = new Audio(url);
       state.ttsMode = res.headers.get("x-cue-tts") || "eleven";
       bus.emit("STATE", { ttsMode: state.ttsMode });
@@ -294,6 +306,7 @@ export async function speak(text) {
       if (blocked) { state.speaking = false; speakingText = ""; return; }
     } else {
       const body = await res.json().catch(() => ({}));
+      if (!current()) return;
       state.ttsMode = "browser";
       bus.emit("STATE", { ttsMode: "browser" });
       await browserSpeak(body.text || text);       // server hands back spoken form
@@ -302,6 +315,7 @@ export async function speak(text) {
     console.warn("[cue] tts fell back to browser:", e.message);
     await browserSpeak(text);
   }
+  if (!current()) return;          // a newer line owns the state now
   state.speaking = false;
   speakingText = "";
   state.mutedUntil = now() + SELF_HEAR_TAIL_MS;
