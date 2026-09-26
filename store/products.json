@@ -1,0 +1,143 @@
+[
+  {
+    "id": "j1",
+    "title": "Oversized Wool-Blend Coat",
+    "price": 129,
+    "currency": "USD",
+    "tone": "#3c4a5a",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "62% wool, 33% polyester, 5% other fibres",
+      "fit": "Oversized fit, drops below the knee",
+      "care": "Dry clean only",
+      "origin": "Made in Turkey",
+      "sizing": "Runs one size large; size down if between sizes",
+      "rating": 4.4,
+      "reviews": 218,
+      "warmth": "Heavy — rated for 0 to 10°C"
+    }
+  },
+  {
+    "id": "j2",
+    "title": "Quilted Puffer Jacket",
+    "price": 79.99,
+    "currency": "USD",
+    "tone": "#7a4b32",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% recycled polyester shell, down-alternative fill",
+      "fit": "Regular fit, hits at the hip",
+      "care": "Machine wash cold",
+      "origin": "Made in Vietnam",
+      "sizing": "True to size",
+      "rating": 4.1,
+      "reviews": 963,
+      "warmth": "Medium — rated for 5 to 15°C"
+    }
+  },
+  {
+    "id": "j3",
+    "title": "Cropped Denim Jacket",
+    "price": 44.99,
+    "currency": "USD",
+    "tone": "#4a6480",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L"
+    ],
+    "attrs": {
+      "material": "100% cotton denim",
+      "fit": "Cropped, boxy through the body",
+      "care": "Machine wash cold",
+      "origin": "Made in Bangladesh",
+      "sizing": "Runs small in the shoulders",
+      "rating": 3.9,
+      "reviews": 412,
+      "warmth": "Light — layering piece"
+    }
+  },
+  {
+    "id": "j4",
+    "title": "Merino Crew-Neck Sweater",
+    "price": 59.99,
+    "currency": "USD",
+    "tone": "#6b6250",
+    "variants": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% extra-fine merino wool",
+      "fit": "Slim fit",
+      "care": "Hand wash cold, dry flat",
+      "origin": "Made in Portugal",
+      "sizing": "True to size",
+      "rating": 4.7,
+      "reviews": 1504,
+      "warmth": "Medium — breathable"
+    }
+  },
+  {
+    "id": "j5",
+    "title": "Relaxed Trench Coat",
+    "price": 149,
+    "currency": "USD",
+    "tone": "#8a7a5e",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L"
+    ],
+    "attrs": {
+      "material": "55% cotton, 45% polyester, water-repellent finish",
+      "fit": "Relaxed, mid-calf length",
+      "care": "Machine wash cold",
+      "origin": "Made in China",
+      "sizing": "True to size",
+      "rating": 4.2,
+      "reviews": 87,
+      "warmth": "Light — wind and rain resistant, not insulated"
+    }
+  },
+  {
+    "id": "j6",
+    "title": "Ribbed Knit Cardigan",
+    "price": 39.99,
+    "currency": "USD",
+    "tone": "#5c5566",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "70% acrylic, 30% nylon",
+      "fit": "Regular fit",
+      "care": "Machine wash cold",
+      "origin": "Made in Cambodia",
+      "sizing": "True to size",
+      "rating": 4,
+      "reviews": 640,
+      "warmth": "Light"
+    }
+  }
+]

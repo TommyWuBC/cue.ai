@@ -4,3 +4,4 @@ __pycache__/
 server/cache/*.mp3
 server/cache/_ledger.json
 graphify-out/
+server/data/

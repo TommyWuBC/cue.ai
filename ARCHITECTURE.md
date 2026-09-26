@@ -37,6 +37,14 @@ WebGazer from an extension page — the regression output would be in the wrong 
       context = { focused: Product|null, visible: Product[], url }
     GET  /tts?text=..  ->  audio/mpeg  |  { mode: "browser" }
 
+Checkout endpoints are implemented in `server/checkout.py`. The server loads
+`store/products.json`, validates item ids and sizes, reprices every order, checks
+the order and monthly caps, and writes a pending intent. A WebAuthn challenge is
+bound to that intent; only a verified passkey response creates an order. Approval
+rechecks the budget inside the same SQLite write transaction, so a replayed or
+concurrent approval cannot overspend it. The merchant screen reads demo orders
+from `/api/merchant/orders`.
+
 ## Markup contract for any store page
 
     <div data-aura-product='{"id":"j1","title":"...","price":129, ...}'>

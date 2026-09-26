@@ -35,22 +35,59 @@
   .checkout-bar button { background:#f7b600; border:0; border-radius:13px; padding:15px 26px;
                          font:inherit; font-weight:700; font-size:15px; cursor:pointer;
                          box-shadow:0 10px 28px rgba(0,0,0,.16); }
+  .merchant-link { color:#1a1f71; font-size:13px; }
+  #checkout-dialog { width:min(92vw,520px); border:0; border-radius:18px; padding:28px;
+                     box-shadow:0 24px 80px rgba(0,0,0,.28); color:var(--ink); }
+  #checkout-dialog::backdrop { background:rgba(14,16,28,.65); }
+  #checkout-dialog h2 { margin:0 0 12px; color:var(--ink); font-size:21px; text-transform:none; }
+  #checkout-dialog p { margin:10px 0; }
+  .checkout-details { font-weight:600; }
+  .checkout-message { min-height:40px; color:#5b4210; }
+  .checkout-controls { display:flex; gap:9px; flex-wrap:wrap; margin-top:20px; }
+  .checkout-controls button { border:0; border-radius:9px; padding:11px 14px; font:inherit; font-weight:600; cursor:pointer; }
+  .checkout-approve { background:#1a1f71; color:#fff; }
+  .checkout-setup { background:#f7b600; color:#191919; }
+  .checkout-controls button:disabled { opacity:.45; cursor:not-allowed; }
 </style>
 </head>
 <body>
 <header>
   <h1>Northfield</h1><span>Outerwear · Autumn</span>
   <div class="cart">Cart <b id="count">0</b> · Budget left <b id="budget">$250</b></div>
+  <a class="merchant-link" href="/merchant.html" target="_blank" rel="noopener">Merchant view</a>
 </header>
 <main><h2>Jackets &amp; Coats</h2><div class="grid" id="grid"></div></main>
 <div class="checkout-bar">
   <button data-aura-action="checkout" data-aura-label="Check out" onclick="checkout()">Check out</button>
 </div>
+<dialog id="checkout-dialog" aria-labelledby="checkout-title">
+  <h2 id="checkout-title">Review demo order</h2>
+  <p class="checkout-details"></p>
+  <p class="checkout-message" role="status" aria-live="polite"></p>
+  <div class="checkout-controls">
+    <button class="checkout-setup" type="button" disabled>Set up passkey</button>
+    <button class="checkout-approve" type="button" disabled>Approve with passkey</button>
+    <button class="checkout-cancel" type="button">Cancel</button>
+  </div>
+</dialog>
 
 <script type="module">
-import { PRODUCTS } from "/products.js";
+import { setupCheckout } from "/checkout.js";
+const PRODUCTS = await fetch("/products.json").then(r => r.json());
 const grid = document.getElementById("grid");
-let cart = [], budget = 250;
+let cart = [], remaining = 25000;
+const money = cents => "$" + (cents / 100).toFixed(2);
+function renderCart() {
+  document.getElementById("count").textContent = cart.length;
+  document.getElementById("budget").textContent = money(remaining - cart.reduce((sum, p) => sum + Math.round(p.price * 100), 0));
+}
+const checkoutFlow = setupCheckout({
+  getCart: () => cart,
+  clearCart: () => { cart = []; renderCart(); },
+  onStatus: status => { remaining = status.remaining_cents; renderCart(); },
+});
+window.cueCheckout = checkoutFlow;
+window.checkout = checkoutFlow.prepare;
 
 grid.innerHTML = PRODUCTS.map(p => `
   <article class="card" data-aura-product='${JSON.stringify(p).replace(/'/g, "&#39;")}'>
@@ -79,15 +116,9 @@ grid.addEventListener("click", (e) => {
   if (a) {
     const p = PRODUCTS.find(x => x.id === a.dataset.id);
     const size = a.closest(".card").querySelector('[aria-pressed="true"]')?.dataset.auraValue ?? "M";
-    cart.push({ ...p, size }); budget -= p.price;
-    document.getElementById("count").textContent = cart.length;
-    document.getElementById("budget").textContent = "$" + budget.toFixed(2);
+    cart.push({ ...p, size, words: window.cue?.lastActionUtterance || "" });
+    renderCart();
   }
-});
-window.checkout = () => window.cue?.bus.emit("SAY", {
-  text: cart.length
-    ? `That's ${cart.length} item${cart.length > 1 ? "s" : ""}, $${(250 - budget).toFixed(2)} total. You'd have $${budget.toFixed(2)} left this month. Say yes to approve.`
-    : "Your cart is empty."
 });
 window.CART = () => cart;
 </script>

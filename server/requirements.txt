@@ -3,3 +3,4 @@ uvicorn[standard]>=0.32
 httpx>=0.27
 openai>=1.54
 python-dotenv>=1.0
+webauthn>=2.2,<3

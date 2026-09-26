@@ -88,12 +88,14 @@ bus.on("UTTERANCE", async ({ text, final }) => {
       body: JSON.stringify({ text, context: context() }),
     });
     const out = await res.json();
+    window.cue.lastActionUtterance = text;
     for (const a of out.do ?? []) perform(a.verb, a.args ?? {});
+    window.cue.lastActionUtterance = null;
     if (out.say) bus.emit("SAY", { text: out.say });
   } catch (e) {
     bus.emit("SAY", { text: "Sorry, I lost my connection." });
     console.error(e);
-  } finally { inflight = false; }
+  } finally { window.cue.lastActionUtterance = null; inflight = false; }
 });
 
 // ── Actions the page can perform ────────────────────────────────────────────
@@ -106,6 +108,11 @@ function scope() {
 }
 
 function perform(verb, args) {
+  if (document.getElementById("checkout-dialog")?.open &&
+      !["approve_checkout", "cancel_checkout", "setup_passkey"].includes(verb)) {
+    bus.emit("SAY", { text: "Finish or cancel this checkout first." });
+    return;
+  }
   switch (verb) {
     case "scroll":
       scrollBy({ top: (args.dir === "up" ? -1 : 1) * innerHeight * 0.75, behavior: "smooth" });
@@ -135,6 +142,9 @@ function perform(verb, args) {
     case "checkout":
       document.querySelector('[data-aura-action="checkout"]')?.click();
       break;
+    case "approve_checkout": window.cueCheckout?.approve(); break;
+    case "cancel_checkout": window.cueCheckout?.cancel(); break;
+    case "setup_passkey": window.cueCheckout?.register(); break;
     case "recalibrate":
       gaze.calibrate().then(() => gaze.hideCamera()).catch(e => {
         console.error("[cue] recalibration failed", e);
@@ -164,4 +174,5 @@ const say = (text) => bus.emit("UTTERANCE", { text, final: true });
 
 window.cue = { bus, gaze, voice, context, perform, boot, say, CONFIG };
 window.aura = window.cue; // Compatibility for existing demo scripts.
-addEventListener("DOMContentLoaded", boot);
+if (document.readyState === "loading") addEventListener("DOMContentLoaded", boot, { once: true });
+else boot();

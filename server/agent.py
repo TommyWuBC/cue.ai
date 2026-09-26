@@ -28,7 +28,9 @@ Reply with JSON only:
 {"say": "<what to speak>", "do": [{"verb": "...", "args": {}}]}
 
 Verbs you may use: scroll{dir}, focus_nth{n}, select_variant{value},
-add_to_cart{}, checkout{}, click_focused{}. Use [] when nothing should happen.
+add_to_cart{}, checkout{}, approve_checkout{}, cancel_checkout{},
+setup_passkey{}, click_focused{}.
+Use [] when nothing should happen.
 Never add to cart or check out unless they clearly asked."""
 
 
