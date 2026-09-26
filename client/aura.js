@@ -150,6 +150,13 @@ let inflight = false;
 bus.on("UTTERANCE", async ({ text, final }) => {
   ui.heard.textContent = (final ? "" : "… ") + text;
   if (!final || inflight) return;
+
+  // Naming an item and then talking about it must not let gaze quietly take
+  // the focus back. The lock used to expire on a 3.5s timer, so "two" ... two
+  // questions ... "add it" added whatever the eyes had drifted onto — and at
+  // 242px of error that is effectively random. While the conversation
+  // continues, what you named stays what you meant.
+  gaze.holdFocus();
   inflight = true;
   try {
     const res = await fetch(url("/utterance"), {
@@ -325,8 +332,24 @@ bus.on("GAZE", ({ confidence }) => {
   if (t - lowSince < DRIFT_WINDOW_MS || t - nudgedAt < 45000) return;
   nudgedAt = t;
   lowSince = null;
-  ui.drift?.classList.add("on");
-  bus.emit("SAY", { text: "My tracking has drifted. Say recalibrate whenever you want to fix it." });
+
+  // Name the actual cause. "Tracking has drifted" is useless; "you've moved
+  // since we calibrated" tells someone what to do about it.
+  const reason = gaze.driftReason();
+  const msg = {
+    face:  ["I can't see your face", "Move back into view of the camera."],
+    head:  ["You've moved since we calibrated",
+            "Sit back how you were, or say recalibrate."],
+    far:   ["You've moved further from the camera",
+            "Come back in a bit, or say recalibrate."],
+    close: ["You've leaned in since we calibrated",
+            "Sit back a little, or say recalibrate."],
+    signal:["My tracking has drifted", "Say recalibrate whenever you want to fix it."],
+  }[reason ?? "signal"];
+
+  ui.drift.textContent = `${msg[0]} · say “recalibrate”`;
+  ui.drift.classList.add("on");
+  bus.emit("SAY", { text: `${msg[0]}. ${msg[1]}` });
 });
 
 // say() is how you drive Cue with no mic: from the console, from a test, or
@@ -336,6 +359,7 @@ const say = (text) => bus.emit("UTTERANCE", { text, final: true });
 window.cue = { bus, gaze, voice, badges, context, perform, boot, say, recalibrate, CONFIG,
                measure: (...a) => gaze.measure(...a),
                experiment: (...a) => gaze.experiment(...a),
+               head: () => gaze.getHead(),
                get pending() { return pendingConfirm; } };
 window.aura = window.cue;          // nothing that already says aura.* breaks
 addEventListener("DOMContentLoaded", boot);

@@ -42,6 +42,13 @@ function tuningFor(px) {
 const OUTLIER_PX       = 190;
 const SACCADE_CONFIRM  = 3;
 const SACCADE_AGREE_PX = 150;
+// Escape hatch. Requiring three consecutive samples to agree within 150px is
+// fine at sigma=70, but at the sigma=242 we actually measure, consecutive
+// samples differ by ~340px on average and that agreement almost never happens
+// — so a genuine large gaze shift could be rejected indefinitely and the
+// estimate would sit frozen at the old location. If we have been rejecting
+// this long, the world has moved whether the samples agree or not.
+const SACCADE_STUCK = 6;
 
 const DWELL_MS      = 380;  // how long a candidate holds before FOCUS commits
 const SWITCH_MARGIN = 0.82; // new target must be this much closer to steal focus
@@ -60,6 +67,41 @@ const state = {
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
 const mean   = (a) => a.reduce((s, v) => s + v, 0) / a.length;
 const sleep  = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ── Stray trackpad input ────────────────────────────────────────────────────
+// A palm brushing the trackpad, or a stray swipe, should not steer Cue. In the
+// mouse-driven modes the pointer only counts while it is actually being moved;
+// after POINTER_IDLE_MS of stillness it is treated as abandoned and stops
+// driving gaze, so focus stays where it was rather than being held hostage by
+// wherever the cursor happened to land.
+const POINTER_IDLE_MS = 3000;
+let lastPointer = 0;
+
+function touchPointer() { lastPointer = performance.now(); }
+function pointerStale() { return performance.now() - lastPointer > POINTER_IDLE_MS; }
+
+export const getPointerIdleMs = () => Math.round(performance.now() - lastPointer);
+
+// In gaze mode the user is not holding the trackpad at all, so a real click on
+// something that spends money is far more likely to be an accident than an
+// intent. Cue's own clicks are synthetic (isTrusted === false) and pass
+// straight through; a human one is stopped and explained.
+const MONEY_ACTIONS = new Set(["add_to_cart", "checkout"]);
+
+function guardStrayClicks() {
+  addEventListener("click", (e) => {
+    if (state.mode !== "webgazer" || !state.calibrated) return;
+    if (!e.isTrusted) return;                 // this was us, via el.click()
+    const el = e.target?.closest?.("[data-cue-action],[data-aura-action]");
+    if (!el) return;
+    const verb = el.dataset.cueAction ?? el.dataset.auraAction;
+    if (!MONEY_ACTIONS.has(verb)) return;     // sizes etc. are harmless
+    e.preventDefault();
+    e.stopPropagation();
+    bus.emit("SAY", { text: "I ignored that tap. Say it out loud instead." });
+    console.warn("[cue] blocked a stray trusted click on", verb);
+  }, true);
+}
 
 // ── One Euro ────────────────────────────────────────────────────────────────
 function lowpass() {
@@ -94,6 +136,87 @@ export function oneEuro({ minCutoff, beta, dCutoff }) {
   };
 }
 
+// ── Head pose ───────────────────────────────────────────────────────────────
+// Webgazer maps eye appearance to screen position with a ridge regression
+// fitted at one head position. Move your head and that mapping is simply wrong
+// — this is the single largest source of drift after calibration, and no amount
+// of filtering fixes it because the error is systematic, not noise.
+//
+// We cannot retrain webgazer per frame, but we can see the head move: the face
+// mesh is right there. So we track it, and do three things with it.
+//
+//   1. Penalise confidence while the head is away from where it calibrated.
+//      A wider reticle and badge-led selection is the honest response to a
+//      mapping we know is off.
+//   2. Nudge for recalibration once it has moved too far to rescue.
+//   3. Subtract a linear estimate of the induced error, with the gain LEARNED
+//      from spoken selections rather than guessed — see fitHeadGain().
+
+// MediaPipe FaceMesh indices: outer corners of each eye.
+const EYE_L = 33, EYE_R = 263;
+
+// How far the head can drift, as a fraction of interocular distance, before we
+// stop trusting the mapping. One IOD is roughly the width of an eye socket —
+// moving that far genuinely invalidates the fit.
+const HEAD_SOFT = 0.35;   // confidence starts falling
+const HEAD_HARD = 1.10;   // suggest recalibrating
+
+const head = { base: null, now: null, samples: [], gain: null };
+
+function readHead() {
+  try {
+    const pos = window.webgazer?.getTracker?.()?.getPositions?.();
+    if (!pos || pos.length <= EYE_R) return null;
+    const a = pos[EYE_L], b = pos[EYE_R];
+    if (!a || !b) return null;
+    const iod = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (!(iod > 1)) return null;
+    // Interocular distance doubles as a distance-from-camera proxy: lean in and
+    // it grows. Normalising by it makes the offsets comparable across depths.
+    return { x: (a[0] + b[0]) / 2, y: (a[1] + b[1]) / 2, iod };
+  } catch { return null; }
+}
+
+/** Head offset from the calibration pose, in interocular-distance units. */
+function headOffset() {
+  const h = head.now, b = head.base;
+  if (!h || !b) return null;
+  const scale = b.iod || 1;
+  return {
+    dx: (h.x - b.x) / scale,
+    dy: (h.y - b.y) / scale,
+    dz: (h.iod - b.iod) / scale,       // positive = leaned closer
+    dist: Math.hypot((h.x - b.x) / scale, (h.y - b.y) / scale),
+  };
+}
+
+/**
+ * Learn how head movement maps to gaze error, from the pairs the voice gives
+ * us. Each spoken selection contributes (head offset, resulting error); a
+ * least-squares fit per axis turns that into a correction.
+ *
+ * Deliberately conservative: nothing is applied until there are enough samples
+ * spread over enough head movement, and the gain is clamped. A wrong
+ * compensation is worse than none.
+ */
+const HEAD_MIN_SAMPLES = 8;
+const HEAD_MAX_GAIN = 900;     // px of correction per IOD of head movement
+
+function fitHeadGain() {
+  const S = head.samples;
+  if (S.length < HEAD_MIN_SAMPLES) return null;
+  // Require real spread, or we are fitting to noise around a single pose.
+  const spreadX = Math.max(...S.map((s) => s.dx)) - Math.min(...S.map((s) => s.dx));
+  const spreadY = Math.max(...S.map((s) => s.dy)) - Math.min(...S.map((s) => s.dy));
+  if (spreadX < 0.12 && spreadY < 0.12) return null;
+
+  const fx = fit1d(S.map((s) => s.dx), S.map((s) => s.ex));
+  const fy = fit1d(S.map((s) => s.dy), S.map((s) => s.ey));
+  const gx = Math.max(-HEAD_MAX_GAIN, Math.min(HEAD_MAX_GAIN, fx.a));
+  const gy = Math.max(-HEAD_MAX_GAIN, Math.min(HEAD_MAX_GAIN, fy.a));
+  return { gx, gy, n: S.length };
+}
+
 // ── Outlier gate ────────────────────────────────────────────────────────────
 const recent = [];
 let pending = [];
@@ -110,15 +233,26 @@ function gate(x, y, t) {
   // Far from the cloud. Saccade, or flyer?
   pending.push([x, y]);
   const tail = pending.slice(-SACCADE_CONFIRM);
-  const confirmed = tail.length === SACCADE_CONFIRM &&
+  const agreed = tail.length === SACCADE_CONFIRM &&
     tail.every(([px, py]) => Math.hypot(px - x, py - y) < SACCADE_AGREE_PX);
 
-  if (!confirmed) { recent.pop(); return null; }   // drop it, keep the cloud clean
+  // Either the samples agree (clean saccade), or we have rejected so many in a
+  // row that continuing to reject is the bigger error.
+  const stuck = pending.length >= SACCADE_STUCK;
+  if (!agreed && !stuck) { recent.pop(); return null; }
 
-  recent.length = 0; recent.push([x, y]);
+  // When we get here by being stuck the individual samples are noisy, so
+  // re-acquire at the median of what we rejected rather than at the last one.
+  let nx = x, ny = y;
+  if (stuck && !agreed) {
+    nx = median(pending.map((q) => q[0]));
+    ny = median(pending.map((q) => q[1]));
+  }
+
+  recent.length = 0; recent.push([nx, ny]);
   pending = [];
-  state.fx.reset(x, t); state.fy.reset(y, t);
-  return { x, y };
+  state.fx.reset(nx, t); state.fy.reset(ny, t);
+  return { x: nx, y: ny };
 }
 
 function confidence() {
@@ -126,7 +260,17 @@ function confidence() {
   const mx = median(recent.map((p) => p[0]));
   const my = median(recent.map((p) => p[1]));
   const spread = mean(recent.map((p) => Math.hypot(p[0] - mx, p[1] - my)));
-  return Math.max(0, Math.min(1, 1 - spread / 150));
+  let c = Math.max(0, Math.min(1, 1 - spread / 150));
+
+  // A tight sample cloud from a head that has moved is confidently wrong.
+  // Dispersion alone cannot see that, so fold the head offset in directly.
+  const off = state.head;
+  if (off) {
+    const over = Math.max(0, off.dist - HEAD_SOFT) / (HEAD_HARD - HEAD_SOFT);
+    c *= Math.max(0.15, 1 - over);
+  }
+  if (state.mode === "webgazer" && !head.now) c = 0;   // face lost entirely
+  return c;
 }
 
 // ── Ingest ──────────────────────────────────────────────────────────────────
@@ -137,6 +281,22 @@ function ingest(rawX, rawY) {
   // centre, so the corners are literally unreachable without this.
   let x = state.cal.ax * rawX + state.cal.bx;
   let y = state.cal.ay * rawY + state.cal.by;
+
+  // Then undo the error the head has introduced since calibration. The gain is
+  // learned, so this is a no-op until there is evidence for it.
+  if (state.mode === "webgazer") {
+    head.now = readHead() ?? head.now;
+    const off = headOffset();
+    // Keep the pre-compensation estimate: fitting the gain against an already
+    // compensated error would feed the correction back into its own input and
+    // let it run away.
+    state.uncomp = { x, y };
+    if (off && head.gain) {
+      x -= head.gain.gx * off.dx;
+      y -= head.gain.gy * off.dy;
+    }
+    state.head = off;
+  }
 
   const kept = gate(x, y, t);
   if (!kept) return;
@@ -268,6 +428,9 @@ function runCalibration(attempt) {
 
       ov.remove();
       state.calibrated = true;
+      // Whatever pose they calibrated in is the pose the mapping is valid for.
+      head.base = readHead();
+      head.samples = []; head.gain = null;
 
       // Retune the filter to the signal we actually got.
       if (state.accuracy && state.mode === "webgazer" && !state.tuneLocked) {
@@ -537,7 +700,7 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null, keepDa
   state.fy = oneEuro(tuning);
 
   if (mode === "mouse") {                     // dev + demo fallback, no camera
-    addEventListener("mousemove", (e) => ingest(e.clientX, e.clientY));
+    addEventListener("mousemove", (e) => { touchPointer(); ingest(e.clientX, e.clientY); });
     startDwellLoop();
     state.calibrated = true; state.running = true;
     bus.emit("STATE", { calibrated: true, mode: "mouse" });
@@ -549,8 +712,14 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null, keepDa
   // experience is actually like, and tune it, without a camera or a face.
   if (mode === "sim") {
     let tx = innerWidth / 2, ty = innerHeight / 2;
-    addEventListener("mousemove", (e) => { tx = e.clientX; ty = e.clientY; });
-    setInterval(() => ingest(tx + gauss() * sigma, ty + gauss() * sigma), 40);
+    addEventListener("mousemove", (e) => { touchPointer(); tx = e.clientX; ty = e.clientY; });
+    setInterval(() => {
+      // A brushed trackpad should not leave the cursor steering Cue for the
+      // rest of the demo. Once the pointer has been still a while, stop
+      // feeding it — the last position freezes instead of holding focus.
+      if (pointerStale()) return;
+      ingest(tx + gauss() * sigma, ty + gauss() * sigma);
+    }, 40);
     startDwellLoop();
     state.calibrated = true; state.running = true;
     bus.emit("STATE", { calibrated: true, mode: "sim" });
@@ -611,6 +780,7 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null, keepDa
       .showFaceOverlay(false).showFaceFeedbackBox(true).applyKalmanFilter(true);
   } catch { /* version drift in the show* chain is not fatal */ }
   startDwellLoop();
+  guardStrayClicks();
   state.running = true;
   bus.emit("STATE", { mode: "webgazer", calibrated: false });
   return "webgazer";
@@ -668,15 +838,59 @@ export function learnFromSelection(target) {
   try {
     window.webgazer?.recordScreenPosition(cx, cy, "click");
     learned++;
+
+    // The same pair tells us how much of the error the head accounts for:
+    // where we thought they were looking, where they actually were, and how
+    // far the head had moved at that moment.
+    const off = headOffset();
+    const est = state.uncomp ?? p;      // always the uncompensated estimate
+    if (off) {
+      head.samples.push({ dx: off.dx, dy: off.dy, ex: est.x - cx, ey: est.y - cy });
+      if (head.samples.length > 40) head.samples.shift();
+      const g = fitHeadGain();
+      if (g) {
+        const first = !head.gain;
+        head.gain = g;
+        if (first || learned % 5 === 0) {
+          console.log(`[cue] head compensation fitted from ${g.n} samples:`,
+                      `gx=${g.gx.toFixed(0)} gy=${g.gy.toFixed(0)} px per IOD`);
+        }
+      }
+    }
+
     if (learned % 5 === 0) console.log(`[cue] learned from ${learned} spoken selections`);
     return true;
   } catch { return false; }
 }
 
 export const getLearned = () => learned;
+export const getHead = () => ({
+  tracked: !!head.now, offset: state.head ?? null,
+  gain: head.gain, samples: head.samples.length,
+});
+
+/** Why is tracking poor right now? Used for a message worth acting on. */
+export function driftReason() {
+  if (state.mode !== "webgazer") return null;
+  if (!head.now) return "face";
+  const off = state.head;
+  if (off && off.dist > HEAD_HARD) return "head";
+  if (off && off.dz < -0.25) return "far";
+  if (off && off.dz > 0.30) return "close";
+  return "signal";
+}
 
 // Voice-driven selection ("the second one"). Locks out dwell briefly so the
 // follow-up command acts on what was just named.
+/** Keep a voice-chosen focus alive while the conversation about it continues. */
+export function holdFocus(ms = 6000) {
+  if (!state.focus) return false;
+  state.lockUntil = Math.max(state.lockUntil, performance.now() + ms);
+  return true;
+}
+
+export const isFocusLocked = () => performance.now() < state.lockUntil;
+
 export function setFocus(target, lockMs = 3500) {
   const prev = state.focus;
   state.focus = target;

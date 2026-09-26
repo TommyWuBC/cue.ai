@@ -124,6 +124,56 @@ and prints the verdict. Both need the camera — they return null in
 **If `error_px` is flat after a dozen selections, the self-learning is not
 working and it is worth saying so** rather than assuming it helped.
 
+### Head movement
+
+`client/gaze.js`, the "Head pose" section. Webgazer fits its regression at ONE
+head position; move and the mapping is simply wrong. This is the largest source
+of drift after calibration and filtering cannot fix it, because the error is
+systematic rather than noise.
+
+We read the face mesh (`webgazer.getTracker().getPositions()`), take the
+midpoint of the eye corners as head position and interocular distance as a
+depth proxy, and baseline it at calibration. Then three things:
+
+1. **Confidence falls** as the head moves away from the calibration pose. A
+   tight sample cloud from a moved head is *confidently wrong*, and dispersion
+   alone cannot see that. Losing the face entirely drops confidence to 0.
+2. **The drift nudge names the cause** — "you've moved since we calibrated",
+   "you've leaned in", "I can't see your face" — instead of something generic.
+   See `driftReason()`.
+3. **A linear correction is subtracted**, with the gain *learned* from spoken
+   selections rather than guessed. Each selection contributes (head offset,
+   resulting error); `fitHeadGain()` least-squares it per axis.
+
+The compensation is deliberately timid: nothing is applied until there are 8+
+samples spread over real head movement, and the gain is clamped. A wrong
+compensation is worse than none. Inspect with `cue.head()`.
+
+**The fit must use `state.uncomp`, the estimate before compensation.** Fitting
+against an already-compensated error feeds the correction into its own input
+and lets it run away.
+
+### Stray trackpad input
+
+- **The pointer goes stale after 3s.** In mouse and sim modes a brushed
+  trackpad would otherwise leave the cursor steering Cue for the rest of the
+  demo. After `POINTER_IDLE_MS` of stillness the estimate freezes where it is
+  — frozen, not cleared, so what you already selected stays selected — and
+  resumes the instant the pointer genuinely moves.
+- **Real clicks on money actions are blocked in gaze mode.** In gaze mode the
+  user is not holding the trackpad, so a trusted click on add-to-cart or
+  checkout is far more likely to be a palm than an intent. Cue's own clicks are
+  synthetic (`isTrusted === false`) and pass straight through. Sizes and other
+  harmless actions are not blocked.
+
+### Voice-set focus is sticky
+
+Saying "two" and then talking about it must not let gaze take the focus back.
+The lock used to expire on a 3.5s timer, so `"two"` → two questions → `"add it"`
+added whatever the eyes had drifted onto — effectively random at 242px. Every
+utterance now calls `gaze.holdFocus()`. Gaze regains control once the
+conversation stops.
+
 ### The filter
 
 One Euro, not an EMA. `client/gaze.js` top of file.
@@ -145,6 +195,13 @@ cannot serve both a good and a bad signal:
 `tuningFor()` picks from the accuracy measured at calibration. **`dCutoff` must
 stay well below the noise frequency** — if it drifts up, the speed estimate is
 driven by the noise itself and `beta` re-opens the filter it was meant to close.
+
+**The outlier gate needs its `SACCADE_STUCK` escape.** Requiring three
+consecutive samples to agree within 150px is fine at σ=70, but at σ=242
+consecutive samples differ by ~340px on average, so that agreement essentially
+never happens and a genuine large gaze shift is rejected forever — the estimate
+sits frozen at the old location. After 6 consecutive rejections the gate
+re-acquires at the median of what it rejected. Large shifts land in ~290ms.
 
 To re-sweep: open `?gaze=sim&sigma=<yours>`, `import { oneEuro } from '/client/gaze.js'`,
 and bench stillness against settle time. The harness is ~40 lines; see git
