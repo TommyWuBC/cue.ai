@@ -1,0 +1,70 @@
+# Cue Chrome extension
+
+This branch packages Cue's existing gaze and voice client as a Manifest V3
+extension. The extension runs only after the shopper opens its toolbar panel and
+selects **Start on this page**. The video stays in the browser. Product details,
+the page URL, and speech requests go to the configured Cue backend.
+
+## Run locally
+
+1. Start the Cue backend: `.venv/bin/uvicorn main:app --app-dir server --port 4173`.
+2. Run `python3 tools/build-extension.py` from the repo root.
+3. Open `chrome://extensions` in Chrome, enable **Developer mode**, select
+   **Load unpacked**, and choose `dist/cue-extension`.
+4. Open a normal HTTPS shopping page. Select the Cue toolbar icon, confirm the
+   server is connected, and select **Start on this page**.
+5. Grant camera and microphone permission to that page. Follow the calibration
+   dots with Space, a click, or “Cue, next.” Reload the page to stop Cue.
+
+The toolbar panel also opens the local Northfield demo store. That store is
+where passkey checkout and merchant verification currently run. The extension
+supports product questions, comparisons, gaze focus, and page controls on live
+sites; it does not map live merchant products into a Northfield order.
+
+The build writes an unpacked directory for local testing and
+`dist/cue-extension-0.1.0.zip` for upload. Both are ignored by Git. The ZIP has
+the manifest at its root and bundles WebGazer, its models, the Cue client,
+icons, and the privacy details page. No remote JavaScript is loaded.
+
+## Backend address
+
+The default backend is `http://localhost:4173`. To build against a different
+origin, run `python3 tools/build-extension.py --server-url https://cue.example`.
+The build sets the extension's single backend host permission and runtime
+configuration together. Non-local HTTP addresses are refused.
+
+A remotely hosted Cue backend is not ready for public use. The current server
+is a single shopper demo with no account authentication or merchant login, and
+its passkey relying party is configured for `localhost`. Host the backend only
+after adding those controls and configuring its WebAuthn origin. Until then,
+use the localhost build and keep checkout on the demo store.
+
+## What to validate on each target store
+
+- The shopping tab is a secure context and grants camera and microphone access.
+- Calibration advances with Space and gaze focus follows the intended product.
+- Cue reads only product details actually visible or present in Product JSON-LD.
+- The store page's content security policy does not block the bundled model
+  requests or local backend connection.
+- Speech questions and browser controls work, including after an in-page
+  navigation. Reloading stops camera and microphone use on that page.
+
+For local checks, run `node --test tests/extension-background.test.mjs
+tests/extension.test.mjs tests/product-memory.test.mjs` and
+`python3 -m unittest tests/test_extension_build.py`. The build test verifies
+the upload ZIP, required assets, manifest permissions, and icons.
+
+## Chrome Web Store handoff
+
+The ZIP is an upload candidate, not a published extension. The publisher must
+complete the listing, screenshots, privacy fields, distribution choices, and
+review submission in the Chrome Developer Dashboard. Cue handles page content
+and speech, so the publisher must host an accurate privacy policy URL and keep
+it consistent with the in-extension privacy details. The privacy statement
+should name the actual backend host and whichever speech/AI providers are
+enabled for the deployment.
+
+Chrome's [publishing guide](https://developer.chrome.com/docs/webstore/publish/)
+describes ZIP upload and review. Its [privacy fields guide](https://developer.chrome.com/docs/webstore/cws-dashboard-privacy)
+explains the required data and permission disclosures. Manifest V3 requires
+[all executable code to be packaged](https://developer.chrome.com/docs/extensions/develop/migrate/remote-hosted-code).
