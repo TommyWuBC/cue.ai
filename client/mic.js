@@ -57,6 +57,20 @@ function flush(force = false) {
 export async function start() {
   if (st.running) return true;
 
+  // Get the mic BEFORE opening the socket. Grok bills streaming by the hour,
+  // and the old order opened an upstream session to xAI and then discovered
+  // there was no audio to put in it.
+  try {
+    st.stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true,
+               noiseSuppression: true, autoGainControl: true },
+    });
+  } catch (e) {
+    console.warn("[cue] mic denied:", e.name);
+    bus.emit("STATE", { listening: false, micError: e.name });
+    return false;
+  }
+
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${proto}//${location.host}/stt`);
   ws.binaryType = "arraybuffer";
@@ -67,7 +81,12 @@ export async function start() {
     ws.onopen  = () => { clearTimeout(t); resolve(true); };
     ws.onerror = () => { clearTimeout(t); resolve(false); };
   });
-  if (!opened) { console.warn("[cue] stt socket failed to open"); return false; }
+  if (!opened) {
+    console.warn("[cue] stt socket failed to open");
+    st.stream.getTracks().forEach((t) => t.stop());
+    st.stream = null;
+    return false;
+  }
 
   let unavailable = false;
   ws.onmessage = (ev) => {
@@ -102,19 +121,6 @@ export async function start() {
       setTimeout(() => { st.running = false; start(); }, 1200);
     }
   };
-
-  // echoCancellation is what stops the mic transcribing Cue's own voice.
-  try {
-    st.stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true,
-               noiseSuppression: true, autoGainControl: true },
-    });
-  } catch (e) {
-    console.warn("[cue] mic denied:", e.name);
-    bus.emit("STATE", { listening: false, micError: e.name });
-    ws.close();
-    return false;
-  }
 
   // Asking the context for 16 kHz makes the browser do the resampling for us.
   st.ctx = new AudioContext({ sampleRate: TARGET_RATE });
