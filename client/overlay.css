@@ -75,7 +75,7 @@ body:has(dialog:modal) .aura-outline { display: none; }
 /* ── Low-confidence notice ────────────────────────────────────────────────── */
 .aura-quality[hidden] { display: none; }
 .aura-quality { position: absolute; top: 88px; left: 50%; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 14px; width: max-content; max-width: min(92vw, 540px);
+  display: flex; align-items: center; gap: 14px; width: max-content; max-width: min(92vw, 640px); text-wrap: balance;
   padding: 12px 12px 12px 18px; border-radius: 18px; pointer-events: auto;
   background: rgba(255,255,255,.94); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(0,0,0,.06); box-shadow: 0 16px 48px rgba(20,24,40,.18);
