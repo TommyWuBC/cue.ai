@@ -109,12 +109,20 @@ minutes.
 ### Measuring, honestly
 
 ```js
-await cue.gaze.measure()   // { error_px, raw_px, samples, learned_from }
+await cue.experiment()     // the whole before/after, hands-free
+await cue.measure()        // one reading: { error_px, raw_px, samples, learned_from }
 ```
 
-Runs the five validation points **without retraining or changing anything**, so
-before/after comparisons are real. Use it to check whether the learning is
-working: measure, use Cue for two minutes, measure again.
+`measure()` runs the five validation points **without retraining or changing
+anything**, so before/after comparisons are real.
+
+`experiment()` is the one to reach for. It measures, tells you to use Cue
+normally, waits until it has learned from 8 spoken selections, measures again,
+and prints the verdict. Both need the camera — they return null in
+`?gaze=sim` / `?gaze=mouse`.
+
+**If `error_px` is flat after a dozen selections, the self-learning is not
+working and it is worth saying so** rather than assuming it helped.
 
 ### The filter
 

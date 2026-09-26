@@ -334,6 +334,8 @@ bus.on("GAZE", ({ confidence }) => {
 const say = (text) => bus.emit("UTTERANCE", { text, final: true });
 
 window.cue = { bus, gaze, voice, badges, context, perform, boot, say, recalibrate, CONFIG,
+               measure: (...a) => gaze.measure(...a),
+               experiment: (...a) => gaze.experiment(...a),
                get pending() { return pendingConfirm; } };
 window.aura = window.cue;          // nothing that already says aura.* breaks
 addEventListener("DOMContentLoaded", boot);

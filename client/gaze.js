@@ -430,6 +430,70 @@ export async function measure() {
   }
 }
 
+/**
+ * Does learning from spoken selections actually reduce error? Run the whole
+ * experiment hands-free:
+ *
+ *   cue.experiment()
+ *
+ * Measures now, waits while you use Cue normally, measures again when enough
+ * spoken selections have landed, and prints the comparison. Nothing is
+ * retrained by the measurements themselves, so the before/after is honest.
+ */
+export async function experiment({ selections = 8 } = {}) {
+  if (state.mode !== "webgazer") {
+    console.warn("[cue] experiment() needs the camera (drop ?gaze=sim)");
+    return null;
+  }
+  bus.emit("SAY", { text: "Measuring where we are now. Just look at each dot." });
+  const before = await measure();
+  if (!before) return null;
+
+  const start = learned;
+  const need = start + selections;
+  console.log(`%c[cue] baseline ${before.error_px}px. Now use Cue normally — ` +
+              `say the number on things to pick them. ${selections} selections to go.`,
+              "font-weight:bold");
+  bus.emit("SAY", {
+    text: `Right now I'm off by about ${before.error_px} pixels. Use me normally for a minute — ` +
+          `say the number on things to pick them. I'll measure again when I've learned enough.`,
+  });
+
+  await new Promise((done) => {
+    let last = start;
+    const t = setInterval(() => {
+      if (learned !== last) {
+        last = learned;
+        const left = Math.max(0, need - learned);
+        console.log(`[cue] learned from ${learned - start}/${selections} selections` +
+                    (left ? ` — ${left} to go` : ""));
+      }
+      if (learned >= need) { clearInterval(t); done(); }
+    }, 400);
+  });
+
+  bus.emit("SAY", { text: "That's enough. Measuring again — look at each dot." });
+  const after = await measure();
+  if (!after) return null;
+
+  const delta = before.error_px - after.error_px;
+  const pct = Math.round((delta / before.error_px) * 100);
+  const verdict = delta > 15 ? `BETTER by ${delta}px (${pct}%)`
+                : delta < -15 ? `WORSE by ${-delta}px`
+                : "no meaningful change";
+  const result = { before_px: before.error_px, after_px: after.error_px,
+                   selections_learned_from: learned - start, verdict };
+  console.log("%c[cue] experiment:", "font-weight:bold", result);
+  bus.emit("SAY", {
+    text: delta > 15
+      ? `I improved from ${before.error_px} to ${after.error_px} pixels.`
+      : delta < -15
+        ? `I got worse, ${before.error_px} to ${after.error_px} pixels.`
+        : `About the same, ${after.error_px} pixels.`,
+  });
+  return result;
+}
+
 export async function calibrate({ allowRetry = true, maxAttempts = 2 } = {}) {
   for (let attempt = 1; ; attempt++) {
     const acc = await runCalibration(attempt);
