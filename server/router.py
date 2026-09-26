@@ -81,6 +81,12 @@ def route(text: str):
         if word in ORDINALS:
             return result(actions=[action("focus_number", n=ORDINALS[word])])
 
+    # "What can I click" is phrased as a question but is really a request to
+    # read the page aloud — the one thing a user who cannot see it needs most.
+    if re.fullmatch(r"(?:what(?:'s| is| are)?(?: there)?(?: to)? (?:click|do|say|here)"
+                    r"|what can i (?:click|do|say)|where am i|read (?:me )?the (?:page|options))\??", t):
+        return result(actions=[action("list_controls")])
+
     # Do not turn a question about an item into a cart action.
     if re.match(r"^(?:is|are|should|would|what|why|how|do|does|will)\b", t):
         return None
@@ -129,4 +135,20 @@ def route(text: str):
             return result(actions=parts)
     if re.fullmatch(r"(?:please )?(?:click|open|press|select) (?:this|that|it|the focused button)", t):
         return result(actions=[action("click_focused")])
+
+    # "what can I click", so a user who cannot read the page can orient.
+    if re.fullmatch(r"(?:what(?:'s| is| are)?(?: there)?(?: to)? (?:click|here|on this page)"
+                    r"|what can i (?:click|do|say)|where am i|read the (?:page|options))\??", t):
+        return result(actions=[action("list_controls")])
+
+    # "click X" / "go to X" / "open X" — resolved against the page's own
+    # accessibility names on the client, which is what lets this work on a site
+    # nobody tagged for Cue.
+    named = re.fullmatch(
+        r"(?:please )?(?:click|open|press|tap|select|go to|take me to|show me|visit)"
+        r"(?: the| my| on)? (.{2,60}?)(?: page| button| link| tab)?\.?", t)
+    if named:
+        phrase = named.group(1).strip()
+        if phrase and phrase not in {"it", "this", "that", "here", "back", "forward"}:
+            return result(actions=[action("click_named", name=phrase)])
     return None

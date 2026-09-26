@@ -102,12 +102,17 @@ export function update(x, y, focusedId) {
 
   root.textContent = "";
   shown = picked.map((target, k) => {
+    const box = document.createElement("div");
+    box.className = "cue-cand";
+    box.dataset.focused = String(target.id === focusedId);
+    root.appendChild(box);
+
     const el = document.createElement("div");
     el.className = "cue-badge";
     el.textContent = String(k + 1);
     el.dataset.focused = String(target.id === focusedId);
     root.appendChild(el);
-    return { target, n: k + 1, el };
+    return { target, n: k + 1, el, box };
   });
   reposition();
 }
@@ -116,17 +121,25 @@ export function update(x, y, focusedId) {
 export function reposition() {
   for (const b of shown) {
     const r = b.target.el.getBoundingClientRect();
-    if (r.width === 0 || r.bottom < 0 || r.top > innerHeight) {
-      b.el.style.opacity = "0";
-      continue;
-    }
-    b.el.style.opacity = "1";
+    const off = r.width === 0 || r.bottom < 0 || r.top > innerHeight;
+    b.el.style.opacity = off ? "0" : "1";
+    if (b.box) b.box.style.opacity = off ? "0" : "1";
+    if (off) continue;
     b.el.style.transform = `translate3d(${Math.round(r.left + 10)}px, ${Math.round(r.top + 10)}px, 0)`;
+    if (b.box) {
+      b.box.style.transform = `translate3d(${Math.round(r.left)}px, ${Math.round(r.top)}px, 0)`;
+      b.box.style.width = Math.round(r.width) + "px";
+      b.box.style.height = Math.round(r.height) + "px";
+    }
   }
 }
 
 export function setFocused(id) {
-  for (const b of shown) b.el.dataset.focused = String(b.target.id === id);
+  for (const b of shown) {
+    const on = String(b.target.id === id);
+    b.el.dataset.focused = on;
+    if (b.box) b.box.dataset.focused = on;
+  }
 }
 
 /** Resolve a spoken number to the target it is currently stamped on. */

@@ -1,7 +1,7 @@
 import { bus } from "./bus.js";
 import * as gaze from "./gaze.js";
 import * as voice from "./voice.js";
-import { scan, nth, invalidate } from "./resolver.js";
+import { scan, nth, invalidate, controls, findControl } from "./resolver.js";
 import * as badges from "./badges.js";
 import { CONFIG, url } from "./config.js";
 
@@ -91,6 +91,8 @@ function frame() {
   // Badges follow the gaze neighbourhood. Recomputing which products are
   // numbered is throttled; repositioning the ones already up is not, or they
   // detach from their cards the moment the page scrolls.
+  edgeScrollTick();
+
   if (gaze.getState().calibrating) {
     badges.clear();               // the dots on screen are the calibration's
   } else if (now() - lastBadge > BADGE_MS) {
@@ -155,6 +157,53 @@ bus.on("SAY", ({ text }) => { ui.said.textContent = text; voice.speak(text); });
 // than waiting for its own key check to notice.
 addEventListener("scroll", invalidate, { passive: true });
 
+// ── Look at the edge to scroll ──────────────────────────────────────────────
+// Hands-free browsing needs a way down the page that is not a spoken command
+// every screenful. Hold your gaze in the top or bottom band and the page
+// moves, accelerating the closer to the edge you look, and stopping the
+// moment you look away.
+//
+// The band has to be generous — at 220-350px of error a narrow strip would be
+// unreachable — and it must not fire while calibrating, while a dialog is up,
+// or while the pointer has been abandoned in mouse mode.
+const EDGE_BAND = 130;     // px from the top/bottom that counts as "the edge"
+const EDGE_ARM_MS = 500;   // hold this long before it starts, so a glance is safe
+const EDGE_MAX_PX = 13;    // per frame at the very edge
+
+let edgeSince = 0, edgeDir = 0;
+
+function edgeScrollTick() {
+  const p = render;
+  const gs = gaze.getState();
+  if (gs.calibrating || document.querySelector("dialog[open]") || !gs.point) {
+    edgeSince = 0; edgeDir = 0; document.body.classList.remove("cue-edge-top", "cue-edge-bottom");
+    return;
+  }
+
+  const top = p.y < EDGE_BAND;
+  const bottom = p.y > innerHeight - EDGE_BAND;
+  const dir = top ? -1 : bottom ? 1 : 0;
+
+  if (!dir) {
+    edgeSince = 0; edgeDir = 0;
+    document.body.classList.remove("cue-edge-top", "cue-edge-bottom");
+    return;
+  }
+  if (dir !== edgeDir) { edgeDir = dir; edgeSince = now(); return; }
+  if (now() - edgeSince < EDGE_ARM_MS) return;
+
+  // Deeper into the band = faster, so you can control pace by where you look.
+  const depth = dir < 0
+    ? (EDGE_BAND - p.y) / EDGE_BAND
+    : (p.y - (innerHeight - EDGE_BAND)) / EDGE_BAND;
+  const step = dir * EDGE_MAX_PX * Math.min(1, Math.max(0.15, depth));
+
+  const box = scrollableUnderGaze(false);
+  (box ?? window).scrollBy({ top: step, behavior: "instant" });
+  document.body.classList.toggle("cue-edge-top", dir < 0);
+  document.body.classList.toggle("cue-edge-bottom", dir > 0);
+}
+
 // ── The loop: utterance -> server -> speech + actions ───────────────────────
 function context() {
   const f = gaze.getFocus();
@@ -162,6 +211,9 @@ function context() {
     focused: f?.kind === "product" ? f.product : null,
     focusedAction: f?.kind === "action" ? { verb: f.verb, label: f.label } : null,
     visible: scan().filter((t) => t.kind === "product").map((t) => t.product),
+    // What a person could click on this page right now. Without this the agent
+    // can describe a page but never move through one.
+    controls: controls().slice(0, 25).map((c) => c.name),
     pending: pendingConfirm?.kind ?? null,
     url: location.href,
   };
@@ -244,6 +296,8 @@ function scope() {
   if (!f) return null;
   return f.kind === "product" ? f.el : f.el.closest("[data-cue-product],[data-aura-product]");
 }
+
+const MONEY_VERBS = new Set(["add_to_cart", "checkout"]);
 
 const checkoutOpen = () =>
   !!(document.getElementById("checkout-dialog")?.open && window.cueCheckout);
@@ -388,6 +442,49 @@ function perform(verb, args) {
         bus.emit("SAY", { text: "I couldn't recalibrate. Please check the camera." });
       });
       break;
+    // "click the bag", "open women's coats", "go to checkout" — resolve a
+    // spoken phrase against the page's own accessibility names and click it.
+    // Works on a page nobody tagged for Cue, which is the whole point.
+    case "click_named":
+    case "open_named": {
+      const c = findControl(args.name ?? args.text ?? "");
+      if (!c) {
+        const near = controls().slice(0, 6).map((x) => x.name).filter(Boolean);
+        bus.emit("SAY", { text: near.length
+          ? `I can't find ${args.name}. I can see ${near.slice(0, 3).join(", ")}.`
+          : `I can't find ${args.name} on this page.` });
+        return false;
+      }
+      // Navigation only. Anything that spends money has to come through the
+      // explicit spoken command, so an agent that ignores its prompt still
+      // cannot reach the cart by naming a button.
+      const verb2 = c.el.dataset?.cueAction ?? c.el.dataset?.auraAction;
+      if (MONEY_VERBS.has(verb2)) {
+        bus.emit("SAY", { text: verb2 === "checkout"
+          ? "Say check out when you're ready and I'll read the order back."
+          : "Say add it and I'll add what you're looking at." });
+        return false;
+      }
+      // Say what is about to happen before it happens — on a page the user
+      // cannot see well, a silent navigation is disorienting.
+      bus.emit("SAY", { text: `Opening ${c.name}.` });
+      c.el.click();
+      break;
+    }
+    case "back": history.back(); break;
+    case "forward": history.forward(); break;
+    case "history":
+      if (args.dir === "back") history.back();
+      else if (args.dir === "forward") history.forward();
+      else return false;
+      break;
+    case "list_controls": {
+      const names = controls().slice(0, 8).map((c) => c.name);
+      bus.emit("SAY", { text: names.length
+        ? `I can see ${names.slice(0, 6).join(", ")}.`
+        : "I don't see anything clickable here." });
+      break;
+    }
     case "navigate": {
       let u;
       try { u = new URL(String(args.url), location.href); } catch { u = null; }

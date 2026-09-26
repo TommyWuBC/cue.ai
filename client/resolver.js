@@ -5,6 +5,15 @@
 const MAX_DIST = 320;        // px; beyond this, gaze resolves to nothing
 
 const PRODUCT_SEL = "[data-cue-product],[data-aura-product]";
+// Anything a sighted person could click. This is what lets Cue work on a page
+// nobody tagged for it: links, buttons and controls are discoverable from the
+// accessibility tree, which every real site already has because screen readers
+// depend on it.
+const CONTROL_SEL = [
+  "a[href]", "button", "summary",
+  "[role=button]", "[role=link]", "[role=tab]", "[role=menuitem]",
+  "input[type=submit]", "input[type=button]",
+].join(",");
 const ACTION_SEL  = "[data-cue-action],[data-aura-action]";
 
 const productJson = (el) => el.dataset.cueProduct ?? el.dataset.auraProduct;
@@ -64,6 +73,53 @@ export function scan() {
   }
   cache = out; cacheKey = k;
   return out;
+}
+
+// The visible label a person would use to refer to a control. aria-label wins
+// because that is what the site itself says it means.
+export function controlName(el) {
+  const aria = el.getAttribute("aria-label");
+  if (aria?.trim()) return aria.trim().slice(0, 60);
+  const labelled = el.getAttribute("aria-labelledby");
+  if (labelled) {
+    const t = labelled.split(/\s+/).map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ").trim();
+    if (t) return t.slice(0, 60);
+  }
+  const text = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+  if (text) return text.slice(0, 60);
+  return (el.getAttribute("title") || el.getAttribute("alt") || "").trim().slice(0, 60);
+}
+
+/** Every visible, named control on the page — what Cue can be asked to click. */
+export function controls() {
+  const out = [];
+  const seen = new Set();
+  for (const el of document.querySelectorAll(CONTROL_SEL)) {
+    if (el.closest("#aura-root") || el.disabled) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8) continue;
+    if (r.bottom <= 0 || r.top >= (globalThis.innerHeight ?? Infinity)) continue;
+    const name = controlName(el);
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    out.push({ name, el, rect: r, href: el.getAttribute("href") || null });
+    if (out.length >= 40) break;
+  }
+  return out;
+}
+
+/** Best control for a spoken phrase. Exact, then prefix, then contains. */
+export function findControl(phrase) {
+  const q = String(phrase || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  if (!q) return null;
+  const list = controls();
+  const norm = (n) => n.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  return list.find((c) => norm(c.name) === q)
+      ?? list.find((c) => norm(c.name).startsWith(q))
+      ?? list.find((c) => norm(c.name).includes(q))
+      ?? list.find((c) => q.includes(norm(c.name)) && norm(c.name).length > 2)
+      ?? null;
 }
 
 export function invalidate() { cache = null; cacheKey = ""; }
