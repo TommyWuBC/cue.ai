@@ -226,14 +226,27 @@ async function boot() {
   // is why speech looked "broken" rather than "not permitted".
   if (CONFIG.gazeMode === "webgazer") await voice.requestMic();
 
-  await gaze.start({ mode: CONFIG.gazeMode, sigma: CONFIG.sigma, tune: CONFIG.tune });
-  if (CONFIG.gazeMode === "webgazer" && CONFIG.autoCal) {
+  // start() reports the mode it ACTUALLY got, which may not be the one asked
+  // for — no camera, or a browser blocking WebGL, degrades it to the mouse.
+  const actual = await gaze.start({ mode: CONFIG.gazeMode, sigma: CONFIG.sigma, tune: CONFIG.tune });
+  if (actual === "webgazer" && CONFIG.autoCal) {
     await gaze.calibrate();
     gaze.hideCamera();
   }
   await voice.startListening();
-  bus.emit("SAY", { text: "Cue is ready. Look at something and ask me about it." });
+
+  if (CONFIG.gazeMode === "webgazer" && actual !== "webgazer") {
+    bus.emit("SAY", { text: "I couldn't use the camera, so I'm following the mouse instead. Everything else works." });
+  } else {
+    bus.emit("SAY", { text: "Cue is ready. Look at something and ask me about it." });
+  }
 }
+
+// A silent failure in boot is the worst outcome: a blank page with no reason.
+bus.on("STATE", (s) => {
+  if (!s.gazeError) return;
+  ui.said.textContent = `⚠ ${s.gazeError} — using the mouse`;
+});
 
 // say() is how you drive Cue with no mic: from the console, from a test, or
 // from the on-stage fallback if the demo floor is too loud to be heard.

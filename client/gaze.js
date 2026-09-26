@@ -219,7 +219,9 @@ export function calibrate() {
     bus.emit("STATE", { calibrating: true });
 
     const finish = async () => {
-      removeEventListener("keydown", onKey);
+      // Must match the capture flag it was added with, or it is never removed
+      // and space keeps re-triggering calibration points under the store page.
+      removeEventListener("keydown", onKey, true);
       hint.textContent = "Now just look at each dot — no key, checking accuracy";
       const obs = [];
       for (let k = 0; k < VALIDATE.length; k++) {
@@ -324,7 +326,7 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null } = {})
     startDwellLoop();
     state.calibrated = true; state.running = true;
     bus.emit("STATE", { calibrated: true, mode: "mouse" });
-    return;
+    return "mouse";
   }
 
   // ?gaze=sim — mouse as ground truth with synthetic webgazer noise on top,
@@ -337,13 +339,32 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null } = {})
     startDwellLoop();
     state.calibrated = true; state.running = true;
     bus.emit("STATE", { calibrated: true, mode: "sim" });
-    return;
+    return "sim";
   }
   const wg = window.webgazer;
-  if (!wg) throw new Error("webgazer not loaded");
+  if (!wg) return degrade("webgazer did not load", sigma);
+
+  // Webgazer's face mesh runs on TF.js, which needs WebGL. Brave's
+  // fingerprinting protection farbles canvas/WebGL readback and can take it
+  // away entirely — in which case begin() hangs instead of failing, and the
+  // page sits there forever with no calibration and no explanation.
+  if (!webglAvailable()) {
+    return degrade("this browser is blocking WebGL (Brave Shields?)", sigma);
+  }
+
   wg.setRegression("ridge").setTracker("TFFacemesh");
   wg.setGazeListener((d) => { if (d) ingest(d.x, d.y); });
-  await wg.begin();
+
+  const began = await Promise.race([
+    wg.begin().then(() => true).catch((e) => { console.warn("[cue] webgazer.begin", e); return false; }),
+    new Promise((r) => setTimeout(() => r("timeout"), 15000)),
+  ]);
+  if (began !== true) {
+    return degrade(began === "timeout"
+      ? "the camera did not start within 15 seconds"
+      : "webgazer could not start the camera", sigma);
+  }
+
   try {
     wg.showVideoPreview(true).showPredictionPoints(false)
       .showFaceOverlay(false).showFaceFeedbackBox(true).applyKalmanFilter(true);
@@ -351,6 +372,28 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null } = {})
   startDwellLoop();
   state.running = true;
   bus.emit("STATE", { mode: "webgazer", calibrated: false });
+  return "webgazer";
+}
+
+function webglAvailable() {
+  try {
+    const c = document.createElement("canvas");
+    return !!(c.getContext("webgl2") || c.getContext("webgl"));
+  } catch { return false; }
+}
+
+// Never leave a blank page. If the camera cannot work, say why out loud and
+// fall through to the mouse so the demo still runs.
+function degrade(why, sigma) {
+  console.error("[cue] gaze unavailable:", why, "— falling back to the mouse");
+  state.mode = "mouse";
+  state.fx = oneEuro(MOUSE_TUNING);
+  state.fy = oneEuro(MOUSE_TUNING);
+  addEventListener("mousemove", (e) => ingest(e.clientX, e.clientY));
+  startDwellLoop();
+  state.calibrated = true; state.running = true;
+  bus.emit("STATE", { calibrated: true, mode: "mouse", gazeError: why });
+  return "mouse";
 }
 
 // Voice-driven selection ("the second one"). Locks out dwell briefly so the
