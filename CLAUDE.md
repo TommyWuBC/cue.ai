@@ -536,6 +536,22 @@ carried from view to view.
   `PHOTOS` map in `store/catalog.js` (it lists which colors have a photo).
   `o8` is priced over the $200 per-order limit on purpose, to demo a refusal.
 
+## Cue's face reacts to what it says
+
+`client/avatar.js` picks its reaction from the text of each `SAY`: a hop and
+sparkles for "Added…", "Order approved", "Removed the…"; a head tilt for
+anything ending in "?" (so every staged "…Add it?"); worried brows and a
+head shake for "couldn't", "isn't", "cancel…"; a nod for "Okay". The patterns
+are `HAPPY`, `CONCERN` and `ACK` at the top of the file. **Rewording a reply
+can change or drop its reaction**, so check them when you change what Cue says.
+
+Everything else comes from real signals: gaze, clicks, `STATE` (`ptt`,
+`awake`), `STT`/`UTTERANCE` partials (antenna pings), in-flight requests
+(visor dots), and `voice.getVoiceState().speaking` (the mouth follows the
+reply's letters). It drifts off after 30s of nothing. The dock mirrors the
+avatar through `data-cue-state`. Try any reaction from the console:
+`cueAvatar.react("celebrate" | "concerned" | "ask" | "thinking" | "boop" | "perk" | "sleep")`.
+
 ## Two things that will silently break the overlay
 
 **Class names are `aura-*`, not `cue-*`.** `client/overlay.css` and
