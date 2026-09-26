@@ -74,7 +74,7 @@
 .media:hover .alt.ready { opacity: 1; }
 .media:hover img { transform: scale(1.015); }
 .media img.swap { opacity: 0; }
-.tag { position: absolute; z-index: 1; top: 14px; left: 14px; padding: 5px 10px; border-radius: 999px;
+.tag { position: absolute; z-index: 1; top: 14px; right: 14px; padding: 5px 10px; border-radius: 999px;
   background: rgba(255,255,255,.92); font-size: 12px; font-weight: 500; }
 
 .info { padding-top: 16px; display: flex; flex-direction: column; flex: 1; }
