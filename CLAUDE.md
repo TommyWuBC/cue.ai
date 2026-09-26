@@ -367,6 +367,31 @@ it had failed when it had actually worked.
 
 The model sees the last ten turns of this browser tab, plus a shopper profile that survives visits. Both live in the same SQLite file as orders (`server/memory.py`, shopper id `local`, session id from the tab). The profile records sizes, colours, price sensitivity, and short notes from what the shopper actually said, and recent purchases are read from the orders table. There is no account login.
 
+**This is already most of "make the agent persistent and personalised."** If a
+session is asked to bolt on cross-visit memory or a shopper profile from
+scratch, check `server/memory.py` first — it likely already exists and the
+real work is extending it, not creating it.
+
+### What "understanding" is built from, three separate signals
+
+Do not read these as redundant — each covers a failure the others do not:
+
+- **`server/memory.py`** — the shopper, across visits and across this tab's
+  turns. Sizes, colours, price sensitivity, short notes, recent orders.
+- **`client/product-memory.js`** — the last two products actually *discussed*,
+  across page navigations, in `sessionStorage` (or the extension's isolated
+  memory area — see below). Incidental gaze passing over a product does not
+  overwrite it; only a named or focused-and-spoken-about product does. This is
+  what makes "how's this different from the one before" work after a page
+  change.
+- **`client/intent.js`** — within one turn, what the shopper actually *said*
+  versus where they happened to be looking. A product named in the sentence
+  outranks gaze; size and colour are recorded only when spoken, because a
+  card's default colour showing on screen is not a choice the shopper made.
+  `matchCandidates()` returns every top-scoring product — a tie means the
+  words were not specific enough, which is a real state Cue has to ask about,
+  not silently resolve by picking one.
+
 ## Who says what
 
 The **page** announces outcomes only it can know: "Added.", the over-budget
@@ -436,6 +461,58 @@ someone who cannot see the screen "adding it to your bag" while doing nothing
 leaves them believing they bought something they did not — the worst failure
 this system has.
 
+## PLANNED, NOT BUILT: guardian approval
+
+**Nothing below this line exists in the repo yet.** This is a direction under
+active discussion (as of the guardian pitch), written down here so a session
+working on it has the context and so no other session assumes it is already
+wired up because it reads like architecture.
+
+The pitch, verbatim: *"Cue is a clerk you talk to, and a lock on the payment
+… Children, older adults, and anyone who should not put payment details on a
+website get one protection: the request goes to a guardian. It shows the
+item, the price, the page, and the exact words that were spoken. Visa signs
+that request so it cannot be swapped. The guardian approves and pays, or
+declines and nothing happens. The agent can help you shop. It cannot spend."*
+
+**This is a different trust model from what is built, not an extension of it.**
+Today: shopper says yes → shopper's own passkey approves → order completes.
+Self-approval; the confirmation step exists to catch a wrong item, not a wrong
+person. The guardian pitch removes the shopper's own ability to pay at all —
+approval comes from a second, different human who was not looking at the
+screen when the order was assembled.
+
+Known gaps between the pitch and the code, for whoever picks this up:
+
+- **No guardian identity exists.** There is no second account, no
+  phone/email/notification channel, nothing to route a request *to*. The
+  closest existing concept is `server/checkout.py`'s single local shopper
+  (`SHOPPER = "local"` in `server/memory.py`) — there is exactly one party in
+  the system today.
+- **Self-approval and guardian-approval likely need to coexist, not replace
+  each other.** An adult shopping for themselves probably still self-approves;
+  a minor's or a protected shopper's order should always route to a guardian.
+  That is a mode switch nothing currently reads (no field for "this shopper
+  requires guardian approval").
+- **The signing infrastructure this needs partly exists, aimed the wrong
+  direction.** `server/trust.py` already does real RFC 9421 HTTP message
+  signing with a pinned Ed25519 key — see "Signed agent requests" below — but
+  it authenticates *the agent's request to the merchant server*. The pitch
+  needs a signature over *the request the merchant sends to the guardian*
+  (item, price, page, the shopper's exact words), so the guardian can verify
+  nothing was altered in transit. Same primitive, different direction; check
+  whether `AgentTrust` can be reused or needs a second instance.
+- **The "exact words that were spoken" already exist as data.** Every order
+  row already stores `customer_words` (see `server/checkout.py`,
+  `intent["customer_words"]`) — assembled in `store/checkout.js` from each
+  cart item's recorded utterance plus `window.cue.lastActionUtterance`. The
+  guardian-facing screen would read from data that is already captured; it
+  does not need a new capture mechanism.
+- **`store/merchant.html` is the closest existing UI shape** — it already
+  renders order/trust evidence for a human reviewer. A guardian-approval
+  screen is closer to a rebuild of that audience (a specific approving human,
+  not a generic merchant dashboard) than to the shopper-facing checkout dialog.
+
 ## There has to be a way back out
 
 A system whose premise is that gaze is imprecise will put the wrong thing in
@@ -471,9 +548,11 @@ the whole sequence was already read back; otherwise a yes would ask again.
 ## Nothing charges on one utterance
 
 `checkout` opens private payment mode first (`store/private-payment.js`).
-The microphone and speaker turn off. The shopper dwells on a gaze keypad to
-enter the fictional demo card shown on screen. Only a matching fixture
-continues to the order review. Looking at Approve with passkey opens the
+The microphone and speaker turn off — nobody nearby can dictate a card number
+and nobody can overhear one read back. The shopper dwells on a gaze keypad
+(`DwellActivator`, 1000ms default — long enough that a glance cannot approve
+anything) to enter the fictional demo card shown on screen. Only a matching
+fixture continues to the order review. Looking at Approve with passkey opens the
 Mac passkey prompt, which on this laptop is Touch ID. Nothing is charged.
 `checkout` **stages** an order and reads it back — item, total, remaining
 budget. A separate `confirm` completes it. Budget is enforced at add time, in
@@ -491,6 +570,69 @@ asked something and got silence. `can/could/would you …` are deliberately
 excluded; those are polite commands.
 
 ---
+
+## Cue on any site: the browser extension
+
+`extension/` (manifest v3) is what makes "any website" real rather than a
+claim. It is a genuinely separate delivery mechanism from the demo store —
+build it with `python3 tools/build-extension.py`.
+
+- **`extension/extract.js`** reads product evidence already on the live page:
+  schema.org/JSON-LD `Product` blocks first (most real retailers ship these,
+  clean and structured), falling back to DOM heuristics. No network fetches,
+  no hidden-page crawling — it only ever reads what is already rendered.
+  `isProduct()`/`normalize()` pull title, price, currency and material out of
+  a JSON-LD node; a search page with many products' JSON-LD present does not
+  get them all tagged onto one container (`canonical()` checks the node's own
+  URL against the page's).
+- **`extension/content.js`** runs `extract.js` on a `MutationObserver` +
+  scroll-debounced loop, writing `data-cueProduct` onto matched elements —
+  the exact same attribute the demo store's own markup uses, so
+  `client/resolver.js` needs no adapter-awareness at all. It calls
+  `resolver.js`'s `invalidate()` after every pass, because the resolver's
+  cache cannot see a live SPA updating a card in place.
+- **`extension/background.js`** keeps one session per tab in
+  `chrome.storage.session`, keyed by tab id and checked against the tab's
+  origin. A shopper approves a store once from the toolbar icon; later visits
+  to *that store* start Cue automatically, show the splash, then calibrate.
+  Moving to another page on the *same* store restores the already-trained
+  gaze model and skips both the splash and the calibration dots
+  (`resuming`/`calibration` passed through `client/config.js`'s
+  `injectedCfg`). "Cue, end" or "Cue, exit" stops the camera and pauses that
+  tab until the icon is clicked again.
+- **Content scripts share the page's Web Storage with the page itself** — so
+  `client/product-memory.js` cannot use `sessionStorage` there without a real
+  site being able to read Cue's own memory of what was discussed.
+  `content.js` instead proxies reads/writes through
+  `chrome.runtime.sendMessage({type: 'cue:memory:read'|'cue:memory:write'})`
+  into the extension's own isolated storage, and hands that to
+  `productMemory()` as a custom `storage` object with the same
+  `getItem`/`setItem` shape `sessionStorage` has.
+- **Checkout still redirects to the demo store.** The extension shows Cue on
+  the live page for browsing, discussing and adding to a bag; the actual
+  passkey/order flow is `server/checkout.py`'s, which only that origin serves.
+
+## Signed agent requests (RFC 9421 / Ed25519)
+
+`server/trust.py`. Real HTTP message signing per RFC 9421, not a demo
+placeholder: `HTTPMessageSigner`/`HTTPMessageVerifier` from
+`http_message_signatures`, an Ed25519 keypair, and a signature over
+`@method @authority @path @query content-type content-digest` plus a
+`content-digest` body hash. Verification runs before passkey approval in the
+merchant checkout path.
+
+**Read its own docstring before describing this to anyone**, because it
+draws an exact boundary the project must not overstate: *"This demo pins
+Cue's own Ed25519 public key. It does not claim Visa enrollment, Visa
+consumer identity, or a Visa payment container."* It authenticates that a
+request genuinely came from Cue's signing key unmodified — a real, useful
+property — but it is not a claim of Visa's Trusted Agent Protocol enrollment.
+Signing keys stay server-side; the merchant verifies the whole HTTP request
+before a passkey prompt is ever shown.
+
+This is the piece the guardian-approval pitch (above) would need to extend or
+duplicate, aimed at a different recipient — see that section for what is
+missing to get there.
 
 ## Config and origins
 
@@ -528,6 +670,25 @@ MODULE_NOT_FOUND — it resolves the path as a module. Use the glob.
 which has no DOM — that is why their top-level `addEventListener` calls are
 guarded and why `key()` reads viewport globals off `globalThis` with
 fallbacks. Keep new top-level DOM access out of those two files, or guard it.
+
+### `node --check file.js` does not parse it the way the browser does
+
+There is no `"type": "module"` in `package.json`, so `node --check` reads a
+`.js` file as a **script**, and a script is sloppier than a module. `aura.js`
+shipped a stray `);` closing `async function beginTurn` — valid as a script,
+a `SyntaxError` in the browser. Nothing imports `aura.js` in the tests, so it
+was never parsed as a module, and the whole dispatch layer silently failed to
+load on every page for several commits while the avatar and gaze, which are
+separate module graphs, kept running and made it look alive.
+
+To actually check a browser module, force module parsing:
+
+```bash
+cp client/aura.js /tmp/check.mjs && node --check /tmp/check.mjs
+```
+
+A file that no test imports is a file nothing has ever parsed. If you add one
+to `client/`, either import it from a test or check it this way.
 
 ## #aura-root is in the TOP LAYER
 
@@ -604,25 +765,49 @@ Everything it touches (`render`, `ui.*`, `badges`) must exist before boot.
 
 ## Known gaps
 
-- `client/resolver.js` cache key is scroll + viewport + element counts. It misses
-  lazy-loaded images resizing cards and SPA route changes (the demo store
-  calls `invalidate()` for both; a real site has no such hook). No `MutationObserver`
-  yet — fine on the tagged demo store, not fine on a real site.
+- `client/resolver.js` cache key is scroll + viewport + element counts, and by
+  itself misses lazy-loaded images resizing cards or an SPA route change that
+  keeps the element count stable. Both places that inject Cue currently paper
+  over this by calling `invalidate()` themselves — the demo store's router on
+  every route change, `extension/content.js` after every `MutationObserver`
+  pass on a live page — so this is closed for both surfaces Cue actually runs
+  on today, not fixed at the source. A third way of injecting `resolver.js`
+  that forgets to call `invalidate()` will hit it again.
 - Action ids embed `Math.round(rect.top)`, so they change on scroll.
-- `case "navigate"` in `aura.js` writes an **LLM-supplied URL straight to
-  `location.href`** with no validation. Fix before this runs on arbitrary pages.
 - Push-to-talk captures Space globally, guarding only `INPUT`/`TEXTAREA` — not
   `contenteditable`, not shadow DOM.
 - The HUD has no Shadow DOM, so host-page CSS will leak into it.
-- `window.cueStore` is provided only by the demo store, so checkout/confirm is
-  dead on any other page.
-- `extension/` is the Chrome adapter. The shopper approves a store once from
-  the toolbar icon. Later visits to that store start Cue on their own, show
-  the logo, then calibrate. Moving to another page on the same store restores
-  the gaze model and skips the logo and the dots. "Cue, end" or "Cue, exit"
-  stops the camera and pauses that tab until the icon is clicked again.
-  Build it with `python3 tools/build-extension.py`. Checkout remains on the
-  demo store.
+- `window.cueStore` (the pre-`checkout.py` local-only fallback) is provided
+  only by the demo store, so `stageCheckout()`'s fallback path is dead on any
+  page without it. In practice this rarely matters: the real flow is
+  `window.cueCheckout` (server-backed, see "Checkout: two paths" above), and
+  both the extension and the demo store redirect an actual purchase back to
+  the demo store's origin regardless.
+
+## The toolbar icon opens a panel, and why
+
+`extension/popup.html` is the whole click. `4ddaf22` had replaced it with a
+bare `chrome.action.onClicked` that started Cue in one gesture, and the failure
+branches reported themselves only through `setBadgeText`. **An extension cannot
+pin its own icon** — there is no API, Chrome and Brave reserve that for the
+user — so on an unpinned icon that badge is invisible and every refusal looks
+identical to a broken extension. It is one of those refusals that sent a
+session hunting a bug that did not exist.
+
+The panel says, in words, which of them happened: server unreachable, not a
+shopping page, already running. `supported()` also rejects the demo store
+itself (`origin === SERVER.origin`) because Cue is already built into that
+page — clicking the icon on `localhost:4173` is *supposed* to do nothing.
+
+**The store grant has to be the first `await` in the panel's click handler.**
+`chrome.permissions.request()` is only allowed while the click is still the
+current gesture, and awaiting anything first — a `tabs.query`, a health check —
+loses it. `check()` resolves the tab up front so the handler does not have to.
+Lose that grant and hands-free startup on later visits goes with it.
+
+Setting `default_popup` means `chrome.action.onClicked` **never fires**. Both
+paths cannot exist; `background.js` keeps only `startFromPanel()`, which also
+clears the "Cue, end" pause.
 
 ## Things that are true and surprising
 
