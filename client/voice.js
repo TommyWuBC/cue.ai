@@ -155,7 +155,15 @@ export async function startListening() {
 
 function startBrowserStt() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { console.warn("[cue] no SpeechRecognition; use cue.say('...')"); return false; }
+  if (!SR) {
+    // Brave ships the constructor but no speech service, and some builds ship
+    // neither. Either way there is no fallback there — Grok has to be working.
+    console.warn("[cue] no SpeechRecognition in this browser. Fix XAI_API_KEY " +
+                 "so Grok STT runs, or drive it with cue.say('...').");
+    state.listening = false; state.provider = "none";
+    bus.emit("STATE", { listening: false, sttProvider: "none" });
+    return false;
+  }
   const rec = new SR();
   rec.continuous = true; rec.interimResults = true; rec.lang = "en-US";
   rec.maxAlternatives = 3;
@@ -226,6 +234,24 @@ function bindPushToTalk() {
   });
 }
 
+// ── Autoplay unlock ─────────────────────────────────────────────────────────
+// Browsers refuse to play audio before the user has interacted with the page,
+// and Brave is stricter than Chrome about it. The first line Cue says ("Cue is
+// ready…") therefore lands before any gesture and is silently dropped — the
+// demo opens with nothing audible. Hold it and speak it on the first gesture.
+let audioUnlocked = false;
+let heldLine = null;
+
+function unlock() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  try { speechSynthesis.resume(); } catch {}
+  if (heldLine) { const t = heldLine; heldLine = null; speak(t); }
+}
+for (const ev of ["pointerdown", "keydown", "touchstart"]) {
+  addEventListener(ev, unlock, { once: false, passive: true });
+}
+
 // ── Speech out ──────────────────────────────────────────────────────────────
 export function stopSpeaking() {
   try { speechSynthesis.cancel(); } catch {}
@@ -250,8 +276,21 @@ export async function speak(text) {
       audio = new Audio(url);
       state.ttsMode = res.headers.get("x-cue-tts") || "eleven";
       bus.emit("STATE", { ttsMode: state.ttsMode });
-      await new Promise((r) => { audio.onended = audio.onerror = r; audio.play().catch(r); });
+      let blocked = false;
+      await new Promise((r) => {
+        audio.onended = audio.onerror = r;
+        audio.play().catch((err) => {
+          // NotAllowedError = no user gesture yet. Hold the line, don't lose it.
+          if (err?.name === "NotAllowedError" && !audioUnlocked) {
+            blocked = true;
+            heldLine = text;
+            console.warn("[cue] audio blocked until first interaction — will speak on click/keypress");
+          }
+          r();
+        });
+      });
       URL.revokeObjectURL(url);
+      if (blocked) { state.speaking = false; speakingText = ""; return; }
     } else {
       const body = await res.json().catch(() => ({}));
       state.ttsMode = "browser";

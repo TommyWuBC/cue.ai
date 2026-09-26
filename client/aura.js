@@ -89,10 +89,16 @@ bus.on("FOCUS", ({ target }) => {
     : target.label;
 });
 
+// The chip is the one place you can tell, mid-demo, what is actually running.
+const chip = { mode: null, stt: null };
+function paintChip() {
+  const m = { mouse: "mouse", sim: `sim ±${CONFIG.sigma}px`, webgazer: "gaze" }[chip.mode] ?? chip.mode;
+  ui.mode.textContent = [m, chip.stt].filter(Boolean).join(" · ");
+}
+
 bus.on("STATE", (s) => {
-  if (s.mode) ui.mode.textContent =
-    { mouse: "mouse mode", sim: `sim ±${CONFIG.sigma}px`, webgazer: "gaze" }[s.mode] ?? s.mode;
-  if (s.sttProvider) ui.mode.dataset.stt = s.sttProvider;
+  if (s.mode) { chip.mode = s.mode; paintChip(); }
+  if (s.sttProvider) { chip.stt = s.sttProvider; paintChip(); }
   if (s.ptt !== undefined) ui.dot.classList.toggle("hot", s.ptt);
   if (s.listening) ui.dot.classList.add("live");
   if (s.listening === false) ui.dot.classList.remove("live");
