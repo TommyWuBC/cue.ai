@@ -2,15 +2,15 @@ import os, pathlib
 from dotenv import load_dotenv
 load_dotenv(pathlib.Path(__file__).parent.parent / ".env")
 
-from fastapi import FastAPI, Response
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi import FastAPI, Response, WebSocket, UploadFile, File
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-import fallback, router, tts
+import fallback, router, stt, tts
 
 ROOT = pathlib.Path(__file__).parent.parent
-app = FastAPI(title="Aura")
+app = FastAPI(title="Cue")
 
 
 class Utterance(BaseModel):
@@ -33,17 +33,34 @@ def utterance(u: Utterance):
     return fallback.answer(u.text, u.context)
 
 
+# ── Speech in ───────────────────────────────────────────────────────────────
+@app.websocket("/stt")
+async def stt_socket(ws: WebSocket):
+    await stt.proxy(ws)
+
+
+@app.post("/stt/file")
+async def stt_file(file: UploadFile = File(...)):
+    """Batch fallback for when the stream will not hold."""
+    if not stt.available():
+        return JSONResponse({"text": "", "error": "grok stt unavailable"}, status_code=503)
+    return await stt.transcribe_file(await file.read(), file.filename or "clip.webm")
+
+
+# ── Speech out ──────────────────────────────────────────────────────────────
 @app.get("/tts")
 def speak(text: str):
-    audio, source = tts.synth(text)
+    audio, source, said = tts.synth(text)
     if audio is None:
-        return JSONResponse({"mode": "browser"})
-    return Response(audio, media_type="audio/mpeg", headers={"x-aura-tts": source})
+        # Hand back the normalised text so the browser voice says the same words.
+        return JSONResponse({"mode": "browser", "text": said})
+    return Response(audio, media_type="audio/mpeg",
+                    headers={"x-cue-tts": source, "x-aura-tts": source})
 
 
 @app.get("/health")
 def health():
-    return {"ok": True, "tts": tts.budget_status(),
+    return {"ok": True, "tts": tts.budget_status(), "stt": stt.status(),
             "grok_key": bool(os.getenv("XAI_API_KEY")),
             "grok_model": os.getenv("GROK_MODEL", "grok-4")}
 
@@ -52,6 +69,8 @@ def health():
 def models():
     """Model ids drift. Hit this to see what your key can actually call."""
     import httpx
+    if not os.getenv("XAI_API_KEY"):
+        return JSONResponse({"error": "no XAI_API_KEY"}, status_code=400)
     r = httpx.get("https://api.x.ai/v1/models",
                   headers={"Authorization": f"Bearer {os.environ['XAI_API_KEY']}"}, timeout=15)
     return r.json()

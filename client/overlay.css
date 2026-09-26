@@ -1,38 +1,44 @@
-#aura-root { position: fixed; inset: 0; pointer-events: none; z-index: 2147483000;
+#cue-root { position: fixed; inset: 0; pointer-events: none; z-index: 2147483000;
   font: 13px/1.4 ui-sans-serif, -apple-system, "Segoe UI", sans-serif; }
 
-.aura-reticle { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+/* The reticle is driven by a rAF loop, never by a CSS transition — a
+   transition on top of per-frame easing fights it and reads as lag. It grows
+   when confidence drops, so a poor signal looks honest instead of broken. */
+.cue-reticle { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+  --cue-reticle-scale: 1;
   border-radius: 50%; border: 2px solid #1a1f71; background: rgba(26,31,113,.14);
-  box-shadow: 0 0 0 3px rgba(255,255,255,.55); will-change: transform; }
+  box-shadow: 0 0 0 3px rgba(255,255,255,.55);
+  scale: var(--cue-reticle-scale);
+  will-change: transform, opacity; }
 
-.aura-outline { position: absolute; border-radius: 14px; opacity: 0;
+.cue-outline { position: absolute; border-radius: 14px; opacity: 0;
   border: 3px solid #1a1f71; box-shadow: 0 0 0 4px rgba(26,31,113,.16), 0 8px 30px rgba(0,0,0,.14);
-  transition: transform .13s cubic-bezier(.2,.8,.2,1), width .13s, height .13s, opacity .12s;
+  transition: opacity .12s;
   will-change: transform, width, height; }
-.aura-outline.on { opacity: 1; }
-.aura-outline[data-kind="action"] { border-color: #f7b600; box-shadow: 0 0 0 4px rgba(247,182,0,.22); }
-.aura-outline-label { position: absolute; left: 0; top: -30px; white-space: nowrap;
+.cue-outline.on { opacity: 1; }
+.cue-outline[data-kind="action"] { border-color: #f7b600; box-shadow: 0 0 0 4px rgba(247,182,0,.22); }
+.cue-outline-label { position: absolute; left: 0; top: -30px; white-space: nowrap;
   background: #1a1f71; color: #fff; padding: 4px 10px; border-radius: 8px; font-weight: 600; }
-.aura-outline[data-kind="action"] .aura-outline-label { background: #8a6300; }
+.cue-outline[data-kind="action"] .cue-outline-label { background: #8a6300; }
 
-.aura-hud { position: absolute; left: 20px; bottom: 20px; width: 330px; padding: 14px 16px;
+.cue-hud { position: absolute; left: 20px; bottom: 20px; width: 330px; padding: 14px 16px;
   background: rgba(14,16,28,.92); color: #fff; border-radius: 16px; backdrop-filter: blur(12px);
   box-shadow: 0 12px 40px rgba(0,0,0,.35); }
-.aura-hud-row { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-.aura-chip { margin-left: auto; font-size: 11px; opacity: .7; text-transform: uppercase; letter-spacing: .06em; }
-.aura-dot { width: 9px; height: 9px; border-radius: 50%; background: #555; }
-.aura-dot.live { background: #2ecc71; }
-.aura-dot.hot { background: #ff4757; box-shadow: 0 0 0 5px rgba(255,71,87,.25); }
-.aura-hud-heard { margin-top: 9px; min-height: 18px; opacity: .95; }
-.aura-hud-said { margin-top: 5px; min-height: 18px; color: #9fe6ff; }
-.aura-hud-foot { margin-top: 10px; font-size: 11px; opacity: .45; }
-.aura-hud kbd { background: #2b2f42; border-radius: 4px; padding: 1px 5px; }
+.cue-hud-row { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.cue-chip { margin-left: auto; font-size: 11px; opacity: .7; text-transform: uppercase; letter-spacing: .06em; }
+.cue-dot { width: 9px; height: 9px; border-radius: 50%; background: #555; transition: background .15s, box-shadow .15s; }
+.cue-dot.live { background: #2ecc71; }
+.cue-dot.hot { background: #ff4757; box-shadow: 0 0 0 5px rgba(255,71,87,.25); }
+.cue-hud-heard { margin-top: 9px; min-height: 18px; opacity: .95; }
+.cue-hud-said { margin-top: 5px; min-height: 18px; color: #9fe6ff; }
+.cue-hud-foot { margin-top: 10px; font-size: 11px; opacity: .45; }
+.cue-hud kbd { background: #2b2f42; border-radius: 4px; padding: 1px 5px; }
 
-.aura-cal { position: fixed; inset: 0; background: #0e101c; z-index: 2147483600; pointer-events: auto; }
-.aura-cal-hint { position: absolute; left: 50%; top: 26px; transform: translateX(-50%);
-  color: #fff; font: 15px ui-sans-serif, sans-serif; opacity: .85; }
-.aura-cal-dot { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px;
+.cue-cal { position: fixed; inset: 0; background: #0e101c; z-index: 2147483600; pointer-events: auto; }
+.cue-cal-hint { position: absolute; left: 50%; top: 26px; transform: translateX(-50%);
+  color: #fff; font: 15px ui-sans-serif, sans-serif; opacity: .85; text-align: center; }
+.cue-cal-dot { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px;
   border-radius: 50%; background: #f7b600; box-shadow: 0 0 0 0 rgba(247,182,0,.6);
-  transition: left .28s, top .28s; animation: aura-pulse 1.4s infinite; }
-.aura-cal-dot.armed { background: #2ecc71; animation: none; }
-@keyframes aura-pulse { 70% { box-shadow: 0 0 0 18px rgba(247,182,0,0); } }
+  transition: left .28s, top .28s; animation: cue-pulse 1.4s infinite; }
+.cue-cal-dot.armed { background: #2ecc71; animation: none; }
+@keyframes cue-pulse { 70% { box-shadow: 0 0 0 18px rgba(247,182,0,0); } }

@@ -14,7 +14,9 @@
            background:#fff; position:sticky; top:0; z-index:10; }
   header h1 { font-size:20px; margin:0; letter-spacing:-.02em; }
   header span { color:var(--muted); font-size:13px; }
-  .cart { margin-left:auto; font-size:13px; color:var(--muted); }
+  .cart { margin-left:auto; font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .cart b { color:var(--ink); }
+  .cart.over b#budget { color:#c0392b; }
   main { max-width:1160px; margin:0 auto; padding:36px 40px 120px; }
   h2 { font-size:15px; font-weight:600; margin:0 0 20px; color:var(--muted); letter-spacing:.04em; text-transform:uppercase; }
   .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:26px; }
@@ -35,61 +37,109 @@
   .checkout-bar button { background:#f7b600; border:0; border-radius:13px; padding:15px 26px;
                          font:inherit; font-weight:700; font-size:15px; cursor:pointer;
                          box-shadow:0 10px 28px rgba(0,0,0,.16); }
+  .receipt { position:fixed; right:24px; bottom:24px; background:#0e101c; color:#fff;
+             padding:18px 22px; border-radius:16px; box-shadow:0 14px 44px rgba(0,0,0,.3);
+             font-size:14px; display:none; }
+  .receipt.on { display:block; }
+  .receipt b { display:block; font-size:16px; margin-bottom:4px; }
 </style>
 </head>
 <body>
 <header>
   <h1>Northfield</h1><span>Outerwear · Autumn</span>
-  <div class="cart">Cart <b id="count">0</b> · Budget left <b id="budget">$250</b></div>
+  <div class="cart" id="cartbar">Cart <b id="count">0</b> · Budget left <b id="budget">$250.00</b></div>
 </header>
 <main><h2>Jackets &amp; Coats</h2><div class="grid" id="grid"></div></main>
-<div class="checkout-bar">
-  <button data-aura-action="checkout" data-aura-label="Check out" onclick="checkout()">Check out</button>
+<div class="checkout-bar" id="checkoutbar">
+  <button data-cue-action="checkout" data-cue-label="Check out" onclick="window.cueStore.checkout()">Check out</button>
 </div>
+<div class="receipt" id="receipt"></div>
 
 <script type="module">
 import { PRODUCTS } from "/products.js";
 const grid = document.getElementById("grid");
-let cart = [], budget = 250;
+const BUDGET_START = 250;
+let cart = [], budget = BUDGET_START;
 
 grid.innerHTML = PRODUCTS.map(p => `
-  <article class="card" data-aura-product='${JSON.stringify(p).replace(/'/g, "&#39;")}'>
+  <article class="card" data-cue-product='${JSON.stringify(p).replace(/'/g, "&#39;")}'>
     <div class="swatch" style="background:linear-gradient(150deg,${p.tone},${p.tone}bb)"></div>
     <div class="body">
       <p class="title">${p.title}</p>
       <div class="price">$${p.price.toFixed(2)}</div>
       <div class="meta">${p.attrs.material.split(",")[0]} · ★ ${p.attrs.rating} (${p.attrs.reviews})</div>
       <div class="variants">${p.variants.map(v => `
-        <button data-aura-action="select_variant" data-aura-value="${v}"
-                data-aura-label="Size ${v}" aria-pressed="false">${v}</button>`).join("")}</div>
+        <button data-cue-action="select_variant" data-cue-value="${v}"
+                data-cue-label="Size ${v}" aria-pressed="false">${v}</button>`).join("")}</div>
       <div class="actions">
-        <button class="add" data-aura-action="add_to_cart" data-aura-label="Add ${p.title} to cart"
+        <button class="add" data-cue-action="add_to_cart" data-cue-label="Add ${p.title} to cart"
                 data-id="${p.id}">Add to cart</button>
       </div>
     </div>
   </article>`).join("");
 
+function paint() {
+  document.getElementById("count").textContent = cart.length;
+  document.getElementById("budget").textContent = "$" + budget.toFixed(2);
+  document.getElementById("cartbar").classList.toggle("over", budget < 0);
+}
+
 grid.addEventListener("click", (e) => {
-  const v = e.target.closest('[data-aura-action="select_variant"]');
+  const v = e.target.closest('[data-cue-action="select_variant"]');
   if (v) {
     v.closest(".variants").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", "false"));
     v.setAttribute("aria-pressed", "true");
   }
-  const a = e.target.closest('[data-aura-action="add_to_cart"]');
+  const a = e.target.closest('[data-cue-action="add_to_cart"]');
   if (a) {
     const p = PRODUCTS.find(x => x.id === a.dataset.id);
-    const size = a.closest(".card").querySelector('[aria-pressed="true"]')?.dataset.auraValue ?? "M";
+    // The budget is part of the trust story, so it has to actually hold. The
+    // previous version let it go negative without a word.
+    if (p.price > budget) {
+      window.cue?.bus.emit("SAY", {
+        text: `The ${p.title} is $${p.price.toFixed(2)} and you have $${budget.toFixed(2)} left. That would put you over your budget.` });
+      return;
+    }
+    const size = a.closest(".card").querySelector('[aria-pressed="true"]')?.dataset.cueValue ?? "M";
     cart.push({ ...p, size }); budget -= p.price;
-    document.getElementById("count").textContent = cart.length;
-    document.getElementById("budget").textContent = "$" + budget.toFixed(2);
+    paint();
+    // The page confirms, not the router: only here do we know the click landed
+    // and was affordable. Saying "Added." optimistically up front meant a
+    // refused item was announced as added one breath later.
+    window.cue?.bus.emit("SAY", { text: "Added." });
   }
 });
-window.checkout = () => window.aura?.bus.emit("SAY", {
-  text: cart.length
-    ? `That's ${cart.length} item${cart.length > 1 ? "s" : ""}, $${(250 - budget).toFixed(2)} total. You'd have $${budget.toFixed(2)} left this month. Say yes to approve.`
-    : "Your cart is empty."
-});
-window.CART = () => cart;
+
+// The page owns the cart; Cue only ever asks it questions and asks permission.
+window.cueStore = {
+  get cart() { return cart; },
+  get budget() { return budget; },
+  summary() {
+    const total = cart.reduce((s, i) => s + i.price, 0);
+    const what = cart.length === 1
+      ? `the ${cart[0].title} in ${cart[0].size}`
+      : `${cart.length} items`;
+    return {
+      count: cart.length, total, remaining: budget,
+      readback: cart.length
+        ? `That's ${what}, $${total.toFixed(2)} total. You'd have $${budget.toFixed(2)} left this month. Say yes to approve.`
+        : "Your cart is empty.",
+    };
+  },
+  checkout() { window.cue?.perform("checkout", {}); },
+  approve() {
+    const s = this.summary();
+    const r = document.getElementById("receipt");
+    r.innerHTML = `<b>Order approved</b>${s.count} item${s.count > 1 ? "s" : ""} · $${s.total.toFixed(2)}<br>$${budget.toFixed(2)} left this month`;
+    r.classList.add("on");
+    document.getElementById("checkoutbar").style.display = "none";
+    return s;
+  },
+  reset() { cart = []; budget = BUDGET_START; paint();
+            document.getElementById("receipt").classList.remove("on");
+            document.getElementById("checkoutbar").style.display = ""; },
+};
+paint();
 </script>
 <script src="/vendor/webgazer.js"></script>
 <script type="module" src="/client/aura.js"></script>

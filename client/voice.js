@@ -1,73 +1,229 @@
 import { bus } from "./bus.js";
+import * as mic from "./mic.js";
 
-const WAKE = /\b(aura|ora|aurora)\b/i;   // STT mishears "aura" constantly; accept near-misses
-const SELF_HEAR_GUARD_MS = 300;
+// STT mishears the wake word constantly. Accept the near-misses it actually
+// produces, and keep the old name working so nothing breaks mid-demo.
+const WAKE = /\b(cue|q|queue|kew|cu|coo|aura|ora|aurora)\b/i;
 
-const state = { rec: null, listening: false, speaking: false, mutedUntil: 0, ptt: false, ttsMode: "browser" };
+// Once you have said the wake word you get a window to keep talking without
+// repeating it. Real conversation is "Cue, is this wool?" ... "does it run
+// small?" — not the wake word every single time.
+const WAKE_WINDOW_MS = 12000;
+
+// Chrome (and Grok) deliver a final transcript some hundreds of ms AFTER
+// speech stops — which is after the user has let go of the key. Reading an
+// instantaneous `ptt` flag at that moment always saw false, so every single
+// push-to-talk utterance was silently discarded. Arm a window instead.
+const PTT_TAIL_MS = 2500;
+
+// Tail after Cue stops talking, for speaker ring-out. It cannot be much longer
+// than this: anything the user says during that window is lost, and blanket-
+// muting for the whole utterance would make barge-in impossible.
+const SELF_HEAR_TAIL_MS = 450;
+
+// Barge-in has to survive the mic hearing our own speakers. getUserMedia's
+// echo cancellation does most of the work; this catches what leaks through by
+// noticing that the "command" is just a chunk of what Cue is currently saying.
+const BARGE_MIN_CHARS = 9;
+
+const state = {
+  rec: null, listening: false, speaking: false, provider: "none",
+  mutedUntil: 0, pttUntil: 0, wakeUntil: 0,
+  calibrating: false, ttsMode: "browser", micError: null,
+};
 let audio = null;
+let starting = false;
 
-// ── Speech in ───────────────────────────────────────────────────────────────
-export function startListening() {
+const now = () => performance.now();
+const pttArmed = () => now() < state.pttUntil;
+
+// ── One gate, both transports ───────────────────────────────────────────────
+// Grok and the browser recogniser both land here. Intent gating lives in
+// exactly one place so the two paths can never drift apart.
+function handleTranscript(text, final, alternatives = null) {
+  text = (text || "").trim();
+  if (!text) return;
+
+  let barged = false;
+  if (state.speaking) {
+    // Our own voice coming back through the mic is not a command, and it is
+    // not barge-in either. The old code took any 3+ characters as barge-in, so
+    // Cue reliably interrupted itself one syllable into every sentence.
+    if (isEcho(text)) return;
+    // A real interruption is a real phrase, not a leaked fragment.
+    if (!final && text.length < BARGE_MIN_CHARS) return;
+    stopSpeaking();
+    barged = true;
+  }
+
+  // Short tail for the speakers ringing out after we stop — but never applied
+  // to the utterance that just interrupted us, or interrupting Cue would
+  // reliably swallow the command you interrupted it with.
+  if (!barged && now() < state.mutedUntil) return;
+
+  if (!final) { bus.emit("UTTERANCE", { text, final: false }); return; }
+
+  // Push-to-talk, or still inside the wake window: take it verbatim.
+  if (pttArmed() || now() < state.wakeUntil) {
+    state.wakeUntil = now() + WAKE_WINDOW_MS;     // keep the conversation open
+    bus.emit("UTTERANCE", { text: strip(text), final: true });
+    return;
+  }
+
+  // Otherwise it has to be addressed to us. Check every alternative — the wake
+  // word is one syllable and is often only right in the second guess.
+  const cands = alternatives?.length ? alternatives : [text];
+  let hit = null;
+  for (const alt of cands) {
+    const m = (alt || "").match(WAKE);
+    if (m) { hit = { alt, m }; break; }
+  }
+  if (!hit) return;
+
+  const rest = hit.alt.slice(hit.m.index + hit.m[0].length).replace(/^[,.\s]+/, "").trim();
+  state.wakeUntil = now() + WAKE_WINDOW_MS;
+  if (rest) bus.emit("UTTERANCE", { text: rest, final: true });
+  else bus.emit("STATE", { awake: true });        // just the name: open the window
+}
+
+// Is this transcript just Cue's own voice bouncing off the speakers?
+let speakingText = "";
+const norm = (s) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+
+function isEcho(text) {
+  if (!speakingText) return false;
+  const a = norm(text), b = norm(speakingText);
+  if (!a) return true;
+  if (b.includes(a)) return true;                 // a literal chunk of our line
+  // Or mostly our words, in a short fragment — what leaks is rarely clean.
+  const words = a.split(" ");
+  if (words.length <= 6) {
+    const shared = words.filter((w) => w.length > 2 && b.includes(w)).length;
+    if (shared >= Math.max(2, Math.ceil(words.length * 0.6))) return true;
+  }
+  return false;
+}
+
+// Strip a leading wake word if push-to-talk picked it up anyway.
+function strip(text) {
+  const m = text.match(WAKE);
+  if (m && m.index <= 2) {
+    const rest = text.slice(m.index + m[0].length).replace(/^[,.\s]+/, "").trim();
+    if (rest) return rest;
+  }
+  return text;
+}
+
+bus.on("STT", ({ text, final }) => handleTranscript(text, final));
+
+// Calibration owns the space bar while it is up.
+bus.on("STATE", (s) => {
+  if (s.calibrating !== undefined) state.calibrating = s.calibrating;
+});
+
+// ── Mic permission ──────────────────────────────────────────────────────────
+export async function requestMic() {
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    s.getTracks().forEach((t) => t.stop());        // we only needed the grant
+    return true;
+  } catch (e) {
+    console.warn("[cue] mic permission denied:", e.name);
+    state.micError = e.name;
+    return false;
+  }
+}
+
+// ── Start listening ─────────────────────────────────────────────────────────
+export async function startListening() {
+  bindPushToTalk();
+
+  // Grok first. It is dramatically better in a loud room and it is the only
+  // one of the two with real push-to-talk finalisation.
+  let health = null;
+  try { health = await (await fetch("/health")).json(); } catch {}
+  if (health?.stt?.ready) {
+    if (await mic.start()) {
+      state.listening = true; state.provider = "grok";
+      bus.emit("STATE", { listening: true, sttProvider: "grok" });
+      return true;
+    }
+    console.warn("[cue] grok stt failed to start — falling back to the browser");
+  }
+  return startBrowserStt();
+}
+
+function startBrowserStt() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { console.warn("[aura] no SpeechRecognition; use push-to-type"); return false; }
+  if (!SR) { console.warn("[cue] no SpeechRecognition; use cue.say('...')"); return false; }
   const rec = new SR();
   rec.continuous = true; rec.interimResults = true; rec.lang = "en-US";
+  rec.maxAlternatives = 3;
 
   rec.onresult = (e) => {
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const r = e.results[i];
-      const text = r[0].transcript.trim();
-      if (!text) continue;
-
-      // Barge-in: the moment the user talks over Aura, Aura shuts up.
-      if (state.speaking && text.length > 2) stopSpeaking();
-      // Don't let the mic transcribe our own TTS.
-      if (performance.now() < state.mutedUntil) continue;
-
-      if (!r.isFinal) { bus.emit("UTTERANCE", { text, final: false }); continue; }
-
-      if (state.ptt) { bus.emit("UTTERANCE", { text, final: true }); continue; }
-      const m = text.match(WAKE);
-      if (!m) continue;                                   // no wake word, ignore
-      const rest = text.slice(m.index + m[0].length).replace(/^[,\s]+/, "").trim();
-      if (rest) bus.emit("UTTERANCE", { text: rest, final: true });
+      const alts = [];
+      for (let k = 0; k < r.length; k++) alts.push((r[k]?.transcript ?? "").trim());
+      handleTranscript(alts[0], r.isFinal, alts);
     }
   };
-  // A denied or unavailable mic is permanent — retrying it spins the CPU forever.
+
+  // A denied or unavailable mic is permanent — retrying it spins the CPU.
   const FATAL = new Set(["not-allowed", "service-not-allowed", "audio-capture"]);
   rec.onerror = (e) => {
-    if (e.error === "no-speech") return;
-    console.warn("[aura] stt", e.error);
+    if (e.error === "no-speech" || e.error === "aborted") return;
+    console.warn("[cue] stt", e.error);
     if (FATAL.has(e.error)) {
       state.listening = false;
+      state.micError = e.error;
       bus.emit("STATE", { listening: false, micError: e.error });
-      console.warn("[aura] mic unavailable — push-to-type via aura.say('...') still works");
+      console.warn("[cue] mic unavailable — cue.say('...') still drives everything");
     }
   };
+
   // Chrome ends recognition every ~60s; restart, but back off so a flapping
   // mic can never become a hot loop.
   let backoff = 250;
   rec.onend = () => {
     if (!state.listening) return;
     setTimeout(() => {
-      if (!state.listening) return;
+      if (!state.listening || starting) return;
+      starting = true;
       try { rec.start(); backoff = 250; }
-      catch { backoff = Math.min(backoff * 2, 5000); }
+      catch (err) { if (!/already/i.test(err.message)) backoff = Math.min(backoff * 2, 5000); }
+      finally { starting = false; }
     }, backoff);
   };
 
-  rec.start();
-  state.rec = rec; state.listening = true;
-  bus.emit("STATE", { listening: true });
+  try { rec.start(); } catch (err) { console.warn("[cue] rec.start", err.message); }
+  state.rec = rec; state.listening = true; state.provider = "browser";
+  bus.emit("STATE", { listening: true, sttProvider: "browser" });
+  return true;
+}
 
-  // Push-to-talk: hold Space to skip the wake word. Hackathon floors are loud.
+// ── Push to talk ────────────────────────────────────────────────────────────
+// Hold Space to skip the wake word. Hackathon floors are loud.
+let ptBound = false;
+function bindPushToTalk() {
+  if (ptBound) return;
+  ptBound = true;
   addEventListener("keydown", (e) => {
-    if (e.code === "Space" && !e.repeat && !state.ptt) { e.preventDefault(); state.ptt = true; bus.emit("STATE", { ptt: true }); }
+    if (e.code !== "Space" || e.repeat || state.calibrating) return;
+    if (/^(INPUT|TEXTAREA)$/.test(e.target?.tagName)) return;
+    e.preventDefault();
+    state.pttUntil = Infinity;
+    state.wakeUntil = 0;
+    bus.emit("STATE", { ptt: true });
   });
   addEventListener("keyup", (e) => {
-    if (e.code === "Space") { state.ptt = false; bus.emit("STATE", { ptt: false }); }
+    if (e.code !== "Space" || state.calibrating) return;
+    // Arm a tail rather than closing immediately — the final transcript has not
+    // arrived yet at the moment the key comes up.
+    state.pttUntil = now() + PTT_TAIL_MS;
+    if (state.provider === "grok") mic.finalize();   // cut it now, don't wait
+    bus.emit("STATE", { ptt: false });
   });
-  return true;
 }
 
 // ── Speech out ──────────────────────────────────────────────────────────────
@@ -75,42 +231,98 @@ export function stopSpeaking() {
   try { speechSynthesis.cancel(); } catch {}
   if (audio) { audio.pause(); audio = null; }
   state.speaking = false;
+  speakingText = "";
+  state.mutedUntil = now() + SELF_HEAR_TAIL_MS;
 }
 
 export async function speak(text) {
   if (!text) return;
   stopSpeaking();
   state.speaking = true;
+  // What we are saying, so the echo check can recognise it coming back.
+  // We deliberately do NOT mute the mic here: barge-in has to keep working.
+  speakingText = text;
   try {
     const res = await fetch("/tts?text=" + encodeURIComponent(text));
     const ct = res.headers.get("content-type") || "";
     if (ct.startsWith("audio/")) {
       const url = URL.createObjectURL(await res.blob());
       audio = new Audio(url);
-      state.ttsMode = res.headers.get("x-aura-tts") || "eleven";
+      state.ttsMode = res.headers.get("x-cue-tts") || "eleven";
+      bus.emit("STATE", { ttsMode: state.ttsMode });
       await new Promise((r) => { audio.onended = audio.onerror = r; audio.play().catch(r); });
       URL.revokeObjectURL(url);
     } else {
+      const body = await res.json().catch(() => ({}));
       state.ttsMode = "browser";
-      await browserSpeak(text);
+      bus.emit("STATE", { ttsMode: "browser" });
+      await browserSpeak(body.text || text);       // server hands back spoken form
     }
   } catch (e) {
-    console.warn("[aura] tts fell back to browser:", e.message);
+    console.warn("[cue] tts fell back to browser:", e.message);
     await browserSpeak(text);
   }
   state.speaking = false;
-  state.mutedUntil = performance.now() + SELF_HEAR_GUARD_MS;
+  speakingText = "";
+  state.mutedUntil = now() + SELF_HEAR_TAIL_MS;
+}
+
+// ── Browser voice (fallback only) ───────────────────────────────────────────
+// getVoices() is populated asynchronously. The old code called it once at speak
+// time, usually got [], picked nothing, and fell through to the default robot.
+let voicePromise = null;
+function voices() {
+  if (voicePromise) return voicePromise;
+  voicePromise = new Promise((resolve) => {
+    const got = () => {
+      const v = speechSynthesis.getVoices();
+      if (v.length) { resolve(v); return true; }
+      return false;
+    };
+    if (got()) return;
+    speechSynthesis.addEventListener("voiceschanged", got, { once: true });
+    setTimeout(() => resolve(speechSynthesis.getVoices()), 1200);
+  });
+  return voicePromise;
+}
+
+// Best-first. The Premium/Enhanced macOS voices and Google's network voices are
+// dramatically less robotic than Samantha, which was the old first choice.
+const VOICE_RANK = [
+  /Ava.*Premium/i, /Zoe.*Premium/i, /Allison.*Premium/i, /Samantha.*Premium/i,
+  /Google US English/i, /Microsoft (Aria|Jenny|Ava)/i,
+  /\(Enhanced\)/i, /Natural/i, /Samantha/i, /Daniel/i,
+];
+
+let chosenVoice = null;
+async function pickVoice() {
+  if (chosenVoice !== null) return chosenVoice;
+  const all = (await voices()).filter((v) => /^en(-|_|$)/i.test(v.lang));
+  for (const rx of VOICE_RANK) {
+    const hit = all.find((v) => rx.test(v.name));
+    if (hit) { chosenVoice = hit; break; }
+  }
+  if (!chosenVoice) chosenVoice = all[0] ?? false;
+  if (chosenVoice) console.log("[cue] browser voice:", chosenVoice.name);
+  return chosenVoice;
 }
 
 function browserSpeak(text) {
   return new Promise((done) => {
-    const u = new SpeechSynthesisUtterance(text);
-    u.rate = 1.05; u.pitch = 1.0;
-    const v = speechSynthesis.getVoices().find(v => /Samantha|Google US English|Daniel/.test(v.name));
-    if (v) u.voice = v;
-    u.onend = u.onerror = done;
-    speechSynthesis.speak(u);
+    pickVoice().then((v) => {
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 1.0; u.pitch = 1.0; u.volume = 1.0;
+      if (v) u.voice = v;
+      u.onend = u.onerror = done;
+      speechSynthesis.speak(u);
+    });
   });
 }
 
-export const getVoiceState = () => ({ ...state, rec: undefined });
+// Warm the voice list early so the very first line is not the robot.
+if (typeof speechSynthesis !== "undefined") pickVoice();
+
+export const getVoiceState = () => ({
+  ...state, rec: undefined,
+  pttArmed: pttArmed(), awake: now() < state.wakeUntil, mic: mic.getMicState(),
+});

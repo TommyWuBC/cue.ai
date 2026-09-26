@@ -12,9 +12,10 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import tts
 
 LINES = [
-    "Aura is ready. Look at something and ask me about it.",
+    "Cue is ready. Look at something and ask me about it.",
     "Look at each dot and press space.",
     "Calibration done. I can see where you're looking.",
+    "Calibration is a bit loose, but I can work with it. Look at something and ask me about it.",
     "Added.",
     "Okay.",
     "Sorry, say that again?",
@@ -22,15 +23,22 @@ LINES = [
     "Your cart is empty.",
     "I can't see that on the page.",
     "Which one do you mean, the first or the second?",
+    "Look at the item you want first.",
+    "Look at an item and I'll tell you about it.",
+    "Look at one of them and I'll compare it with the other.",
+    "That would put you over your budget.",
+    "Order approved.",
+    "Cancelled. Nothing was charged.",
 ]
 
 if __name__ == "__main__":
     total = 0
     for line in LINES:
-        if tts.cached(line):
+        said = tts.spoken(line)
+        if tts.cached(said):
             print(f"  cached   {line[:54]}")
             continue
-        audio, src = tts.synth(line, force=True)
+        audio, src, _ = tts.synth(line, force=True)
         print(f"  {'OK  ':8} {line[:54]}" if audio else f"  {'FAIL':8} {line[:54]}")
-        total += len(line) if audio else 0
+        total += len(said) if audio else 0
     print(f"\nspent {total} chars this run · {tts.budget_status()}")
