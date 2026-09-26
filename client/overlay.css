@@ -12,8 +12,14 @@
 /* avatar.js promotes the layer into the top layer as a popover; undo UA popover chrome. */
 #aura-root[popover] { inset: 0; width: auto; height: auto; max-width: none; max-height: none;
   margin: 0; padding: 0; border: 0; background: transparent; overflow: visible; }
+/* avatar.js promotes #aura-root into the TOP LAYER as a popover, so anything
+   inside it paints above the calibration screen no matter what z-index says.
+   Everything Cue draws over the page has to be listed here or it floats on top
+   of the dots the user is meant to be looking at. */
 body:has(.aura-cal) .aura-reticle, body:has(.aura-cal) .aura-outline,
-body:has(dialog:modal) .aura-outline { display: none; }
+body:has(.aura-cal) .cue-badges, body:has(.aura-cal) .aura-quality,
+body:has(.aura-cal) .aura-hud-drift,
+body:has(dialog:modal) .aura-outline, body:has(dialog:modal) .cue-badges { display: none; }
 
 /* ── Gaze ─────────────────────────────────────────────────────────────────── */
 .aura-reticle { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px;

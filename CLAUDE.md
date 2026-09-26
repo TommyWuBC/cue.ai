@@ -409,6 +409,18 @@ which has no DOM — that is why their top-level `addEventListener` calls are
 guarded and why `key()` reads viewport globals off `globalThis` with
 fallbacks. Keep new top-level DOM access out of those two files, or guard it.
 
+## #aura-root is in the TOP LAYER
+
+`avatar.js` promotes it with `root.popover = "manual"; root.showPopover()`.
+Anything inside `#aura-root` therefore paints above everything on the page,
+**z-index is ignored**. That is why the calibration screen appeared covered in
+stray dots: the numbered badges live in that root and floated over it.
+
+Anything Cue draws over the page must be listed in the
+`body:has(.aura-cal)` hide rule at the top of `overlay.css`, or it will sit on
+top of the dots the user is being asked to look at. Same for
+`body:has(dialog:modal)` and the passkey dialog.
+
 ## Two things that will silently break the overlay
 
 **Class names are `aura-*`, not `cue-*`.** `client/overlay.css` and

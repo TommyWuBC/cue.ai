@@ -91,7 +91,9 @@ function frame() {
   // Badges follow the gaze neighbourhood. Recomputing which products are
   // numbered is throttled; repositioning the ones already up is not, or they
   // detach from their cards the moment the page scrolls.
-  if (now() - lastBadge > BADGE_MS) {
+  if (gaze.getState().calibrating) {
+    badges.clear();               // the dots on screen are the calibration's
+  } else if (now() - lastBadge > BADGE_MS) {
     lastBadge = now();
     badges.update(render.x, render.y, gaze.getFocus()?.id ?? null);
   } else {
@@ -125,6 +127,7 @@ function paintChip() {
 }
 
 bus.on("STATE", (s) => {
+  if (s.calibrating !== undefined) badges.setEnabled(!s.calibrating);
   if (s.mode) { chip.mode = s.mode; paintChip(); }
   if (s.sttProvider) { chip.stt = s.sttProvider; paintChip(); }
   if (s.ptt !== undefined) ui.dot.classList.toggle("hot", s.ptt);

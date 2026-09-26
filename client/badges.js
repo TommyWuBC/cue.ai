@@ -52,8 +52,14 @@ export function setEnabled(on) {
   if (!on) clear();
 }
 
-function clear() {
-  if (root) root.textContent = "";
+export function clear() {
+  if (root) {
+    root.textContent = "";
+    // The signature must go too. update() short-circuits when the computed
+    // signature matches the last one, so leaving a stale sig here means the
+    // badges never come back after a clear — which is every recalibration.
+    delete root.dataset.sig;
+  }
   shown = [];
 }
 
