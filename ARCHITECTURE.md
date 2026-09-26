@@ -56,3 +56,5 @@ gaze-targetable. That is deliberate: it makes a 5cm gaze error harmless.
 ## Hard rule
 
 Gaze sets FOCUS. Voice commits. Gaze alone never triggers an action, ever.
+Scroll and resize refresh the focused target's rectangle or clear it when the
+element leaves the viewport.

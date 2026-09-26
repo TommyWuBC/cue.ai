@@ -48,11 +48,17 @@ def route(text: str):
         return result("Let's recalibrate your gaze.", [action("recalibrate")])
     if re.fullmatch(r"(?:please |can you |could you |i want to )?(?:check ?out|pay|place (?:the )?order)(?: now)?", t):
         return result(actions=[action("checkout")])
-    if re.fullmatch(r"(?:please )?(?:scroll|go|move) (?:down|up)", t):
-        direction = "up" if t.endswith("up") else "down"
+    if re.fullmatch(r"(?:please )?(?:scroll|go|move|page) (?:down|up|left|right)", t):
+        direction = t.split()[-1]
         return result(actions=[action("scroll", dir=direction)])
-    if re.fullmatch(r"(?:please )?(?:scroll|go) (?:back |to the )?top", t):
-        return result(actions=[action("scroll", dir="up")])
+    if re.fullmatch(r"(?:please )?(?:scroll|go) (?:back (?:to )?|to (?:the )?)?top", t):
+        return result(actions=[action("scroll", dir="top")])
+    if re.fullmatch(r"(?:please )?(?:scroll|go) (?:to (?:the )?)?bottom", t):
+        return result(actions=[action("scroll", dir="bottom")])
+    if t in {"go back", "back", "previous page"}:
+        return result(actions=[action("history", dir="back")])
+    if t in {"go forward", "forward", "next page"}:
+        return result(actions=[action("history", dir="forward")])
 
     # Do not turn a question about an item into a cart action.
     if re.match(r"^(?:is|are|should|would|what|why|how|do|does|will)\b", t):

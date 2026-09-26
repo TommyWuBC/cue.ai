@@ -215,6 +215,22 @@ export function setFocus(target, lockMs = 3500) {
   bus.emit("FOCUS", { target, prev });
 }
 
+// Keep the outline and action scope tied to the current viewport. Voice must
+// never act on an item that was visible before a scroll.
+export function refreshFocus() {
+  const focused = state.focus;
+  if (!focused) return;
+  if (!focused.el.isConnected) { setFocus(null, 0); return; }
+  const rect = focused.el.getBoundingClientRect();
+  if (!rect.width || !rect.height || rect.bottom <= 0 || rect.top >= innerHeight ||
+      rect.right <= 0 || rect.left >= innerWidth) {
+    setFocus(null, 0);
+    return;
+  }
+  state.focus = { ...focused, rect };
+  bus.emit("FOCUS", { target: state.focus, prev: focused });
+}
+
 export function hideCamera() { try { window.webgazer?.showVideoPreview(false); } catch {} }
 export const getFocus = () => state.focus;
 export const getState = () => ({ ...state, buf: undefined });

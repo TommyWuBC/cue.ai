@@ -20,6 +20,7 @@ test('actions on separate cards have distinct focus identities', () => {
   };
   const first = make('j1', 0), second = make('j2', 320);
   globalThis.innerHeight = 800;
+  globalThis.innerWidth = 1000;
   globalThis.document = { querySelectorAll: selector => selector === '[data-aura-product]' ? [first.card, second.card] : [first.button, second.button] };
   const actions = scan().filter(t => t.kind === 'action');
   assert.notEqual(actions[0].id, actions[1].id);

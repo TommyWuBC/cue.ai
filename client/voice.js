@@ -1,6 +1,6 @@
 import { bus } from "./bus.js";
 
-const WAKE = /\b(cue|q)\b/i;   // Wake word is short, so push-to-talk is more reliable in noisy rooms
+const WAKE = /\b(cue|queue|q)\b/i;   // Wake word is short, so push-to-talk is more reliable in noisy rooms
 const SELF_HEAR_GUARD_MS = 300;
 
 const state = { rec: null, listening: false, speaking: false, mutedUntil: 0, ptt: false, ttsMode: "browser" };

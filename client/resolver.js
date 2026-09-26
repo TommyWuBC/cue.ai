@@ -8,7 +8,7 @@ export function scan() {
   const out = [];
   for (const el of document.querySelectorAll("[data-aura-product]")) {
     const r = el.getBoundingClientRect();
-    if (r.width === 0 || r.bottom < 0 || r.top > innerHeight) continue;
+    if (r.width === 0 || r.bottom <= 0 || r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth) continue;
     let product;
     try { product = JSON.parse(el.dataset.auraProduct); }
     catch { console.warn("[aura] bad data-aura-product", el); continue; }
@@ -16,7 +16,7 @@ export function scan() {
   }
   for (const el of document.querySelectorAll("[data-aura-action]")) {
     const r = el.getBoundingClientRect();
-    if (r.width === 0 || r.bottom < 0 || r.top > innerHeight) continue;
+    if (r.width === 0 || r.bottom <= 0 || r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth) continue;
     const parent = el.closest("[data-aura-product]");
     let productId = "page";
     if (parent) {

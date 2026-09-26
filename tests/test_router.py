@@ -43,6 +43,12 @@ class RouterTests(unittest.TestCase):
         ])
         self.assertIsNone(router.route('Is this black?'))
 
+    def test_browser_navigation_is_explicit(self):
+        self.assertEqual(router.route('scroll to bottom')['do'], [{'verb': 'scroll', 'args': {'dir': 'bottom'}}])
+        self.assertEqual(router.route('page up')['do'], [{'verb': 'scroll', 'args': {'dir': 'up'}}])
+        self.assertEqual(router.route('go back')['do'], [{'verb': 'history', 'args': {'dir': 'back'}}])
+        self.assertEqual(router.route('click this')['do'], [{'verb': 'click_focused', 'args': {}}])
+
 
 if __name__ == '__main__':
     unittest.main()

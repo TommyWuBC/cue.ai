@@ -85,6 +85,11 @@ Say “Cue, the second one” to focus a product, then “Cue, medium, in black�
 to set options. “Cue, add the second one in medium, in black” combines those
 steps. A size is required before adding; no size is silently chosen.
 
+For page control, say “Cue, scroll down”, “Cue, scroll to top”, “Cue, go
+back”, or “Cue, click this” while looking at a button. Scrolling or resizing
+clears focus when its target leaves the viewport, so “add it” cannot reuse an
+off-screen item.
+
 This is a **single shopper, localhost demo**. It has no account enrollment or
 merchant login and must not be deployed to the public internet as-is. It records
 passkey-approved demo orders but does not charge a card. Stripe/Visa sandbox

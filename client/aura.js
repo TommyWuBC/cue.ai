@@ -37,6 +37,8 @@ function mountUI() {
 }
 
 bus.on("GAZE_QUALITY", ({ low }) => { ui.quality.hidden = !low; });
+addEventListener("scroll", () => gaze.refreshFocus(), { passive: true });
+addEventListener("resize", () => gaze.refreshFocus());
 
 bus.on("GAZE", ({ x, y, confidence }) => {
   ui.reticle.style.transform = `translate(${x}px, ${y}px)`;
@@ -118,7 +120,20 @@ function perform(verb, args) {
   }
   switch (verb) {
     case "scroll":
-      scrollBy({ top: (args.dir === "up" ? -1 : 1) * innerHeight * 0.75, behavior: "smooth" });
+      if (!["up", "down", "left", "right", "top", "bottom"].includes(args.dir)) return false;
+      if (args.dir === "top" || args.dir === "bottom") {
+        scrollTo({ top: args.dir === "top" ? 0 : document.documentElement.scrollHeight, behavior: "smooth" });
+      } else {
+        const horizontal = args.dir === "left" || args.dir === "right";
+        const step = args.dir === "up" || args.dir === "left" ? -1 : 1;
+        scrollBy({ [horizontal ? "left" : "top"]: step * (horizontal ? innerWidth : innerHeight) * 0.75,
+          behavior: "smooth" });
+      }
+      break;
+    case "history":
+      if (args.dir === "back") history.back();
+      else if (args.dir === "forward") history.forward();
+      else return false;
       break;
     case "focus_nth": {
       const t = nth(args.n);
