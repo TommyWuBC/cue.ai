@@ -178,6 +178,7 @@ class Checkout:
 
     def authentication_options(self, intent_id):
         with self.db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             intent = conn.execute("SELECT * FROM intents WHERE id=?", (intent_id,)).fetchone()
             if not intent or intent["status"] != "prepared" or intent["expires_at"] < time.time():
                 raise CheckoutError("Checkout expired. Please review your cart again.", 409)
@@ -188,12 +189,27 @@ class Checkout:
             challenge = secrets.token_bytes(32)
             conn.execute("INSERT INTO ceremonies VALUES (?, 'authenticate', ?, ?, ?)",
                          (ceremony_id, challenge, intent_id, int(time.time()) + 180))
+            conn.commit()
         options = generate_authentication_options(
             rp_id=self.rp_id, challenge=challenge,
             allow_credentials=[PublicKeyCredentialDescriptor(id=x) for x in credential_ids],
             user_verification=UserVerificationRequirement.REQUIRED,
         )
         return {"ceremony_id": ceremony_id, "options": json.loads(options_to_json(options))}
+
+    def cancel(self, intent_id):
+        """Revoke the intent and every approval challenge atomically."""
+        with self.db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            intent = conn.execute("SELECT status FROM intents WHERE id=?", (intent_id,)).fetchone()
+            if not intent:
+                raise CheckoutError("Checkout was not found.", 404)
+            if intent["status"] == "approved":
+                raise CheckoutError("This order was already recorded; it cannot be cancelled here.", 409)
+            conn.execute("UPDATE intents SET status='cancelled' WHERE id=?", (intent_id,))
+            conn.execute("DELETE FROM ceremonies WHERE intent_id=?", (intent_id,))
+            conn.commit()
+        return {"intent_id": intent_id, "status": "cancelled"}
 
     def approve(self, ceremony_id, credential):
         with self.db() as conn:
@@ -219,7 +235,8 @@ class Checkout:
             current = conn.execute("SELECT * FROM ceremonies WHERE id=? AND kind='authenticate'",
                                    (ceremony_id,)).fetchone()
             intent = conn.execute("SELECT * FROM intents WHERE id=?", (ceremony["intent_id"],)).fetchone()
-            if not current or not intent or intent["status"] != "prepared" or intent["expires_at"] < time.time():
+            if (not current or current["expires_at"] < time.time() or not intent or
+                    intent["status"] != "prepared" or intent["expires_at"] < time.time()):
                 raise CheckoutError("This checkout was already used or expired.", 409)
             remaining = self.monthly_limit - self._spent(conn)
             if intent["total_cents"] > self.order_limit or intent["total_cents"] > remaining:

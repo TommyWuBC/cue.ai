@@ -53,6 +53,47 @@ class CheckoutTests(unittest.TestCase):
                 self.shop.approve(second_auth['ceremony_id'], response)
         self.assertEqual(len(self.shop.orders()), 1)
 
+    def test_cancellation_revokes_all_challenges_and_is_idempotent(self):
+        quote = self.shop.prepare([{'id': 'j1', 'size': 'M', 'color': 'Black'}], 'Check out.')
+        with self.shop.db() as conn:
+            conn.execute('INSERT INTO credentials VALUES (?, ?, 0)', (b'key', b'public-key'))
+        auth = self.shop.authentication_options(quote['intent_id'])
+        self.shop.authentication_options(quote['intent_id'])
+        self.assertEqual(self.shop.cancel(quote['intent_id'])['status'], 'cancelled')
+        self.assertEqual(self.shop.cancel(quote['intent_id'])['status'], 'cancelled')
+        with self.assertRaises(module.CheckoutError):
+            self.shop.authentication_options(quote['intent_id'])
+        with self.assertRaises(module.CheckoutError):
+            self.shop.approve(auth['ceremony_id'], {'rawId': 'a2V5'})
+        with self.shop.db() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM ceremonies').fetchone()[0], 0)
+        self.assertEqual(self.shop.orders(), [])
+
+    def test_cancel_wins_if_it_arrives_during_passkey_verification(self):
+        quote = self.shop.prepare([{'id': 'j1', 'size': 'M', 'color': 'Black'}], 'Check out.')
+        with self.shop.db() as conn:
+            conn.execute('INSERT INTO credentials VALUES (?, ?, 0)', (b'key', b'public-key'))
+        auth = self.shop.authentication_options(quote['intent_id'])
+        def verify(**kwargs):
+            self.shop.cancel(quote['intent_id'])
+            return SimpleNamespace(new_sign_count=1)
+        with patch.object(module, 'verify_authentication_response', side_effect=verify):
+            with self.assertRaises(module.CheckoutError):
+                self.shop.approve(auth['ceremony_id'], {'rawId': 'a2V5'})
+        self.assertEqual(self.shop.orders(), [])
+
+    def test_recorded_orders_cannot_be_reported_as_cancelled(self):
+        quote = self.shop.prepare([{'id': 'j1', 'size': 'M', 'color': 'Black'}], 'Check out.')
+        with self.shop.db() as conn:
+            conn.execute('INSERT INTO credentials VALUES (?, ?, 0)', (b'key', b'public-key'))
+        auth = self.shop.authentication_options(quote['intent_id'])
+        with patch.object(module, 'verify_authentication_response', return_value=SimpleNamespace(new_sign_count=1)):
+            self.shop.approve(auth['ceremony_id'], {'rawId': 'a2V5'})
+        with self.assertRaises(module.CheckoutError) as error:
+            self.shop.cancel(quote['intent_id'])
+        self.assertEqual(error.exception.status, 409)
+        self.assertEqual(len(self.shop.orders()), 1)
+
     def test_unverified_passkey_never_creates_order(self):
         quote = self.shop.prepare([{'id': 'j2', 'size': 'M', 'color': 'Brown'}], 'Check out.')
         with self.assertRaises(module.CheckoutError):

@@ -55,23 +55,49 @@ export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
   refresh().catch(err => setMessage(err.message));
 
   let cancelled = false;
-  const cancel = () => {
+  let credentialAbort = null;
+  let revocation = null;
+  const revoke = intent => {
+    if (revocation) return revocation;
+    revocation = api(`/api/checkout/cancel/${encodeURIComponent(intent.intent_id)}`, {})
+      .then(() => {
+        if (pending?.intent_id === intent.intent_id) pending = null;
+        if (dialog.open) dialog.close();
+        window.cue?.bus.emit('SAY', { text: 'Checkout cancelled. No order was recorded.' });
+        return true;
+      }).catch(err => {
+        setMessage(err.message);
+        window.cue?.bus.emit('SAY', { text: `I couldn't confirm cancellation. ${err.message}` });
+        return false;
+      }).finally(() => { revocation = null; });
+    return revocation;
+  };
+  const cancel = async () => {
     // Deliberately NOT guarded by `busy`. prepare() holds busy for the whole
     // readback, and refusing to cancel during a payment readback is the one
     // moment it must always work. Stop the speech too, or Cue keeps reading
     // out an order that no longer exists.
     cancelled = true;
-    pending = null; ready = false;
+    ready = false;
+    credentialAbort?.abort();
     try { window.cue?.voice.stopSpeaking(); } catch {}
     approveButton.disabled = true; setupButton.disabled = true;
-    setMessage('');
+    setMessage('Cancelling checkout…');
+    if (pending) return revoke(pending);
+    // If prepare is still in flight, it will revoke the intent as soon as
+    // the server returns its ID. Do not announce success before that happens.
+    if (busy) return;
     if (dialog.open) dialog.close();
+    window.cue?.bus.emit('SAY', { text: "There's no order waiting to cancel." });
   };
   dialog.querySelector('.checkout-cancel').addEventListener('click', cancel);
   dialog.addEventListener('cancel', event => { event.preventDefault(); cancel(); });
 
   async function prepare() {
-    if (busy) return;
+    if (busy || revocation) return;
+    if (pending) {
+      if (!await cancel()) return;
+    }
     const cart = getCart();
     if (!cart.length) { window.cue?.bus.emit('SAY', { text: 'Your cart is empty.' }); return; }
     busy = true; ready = false; cancelled = false;
@@ -84,7 +110,9 @@ export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
       pending = await api('/api/checkout/prepare', {
         items: cart.map(item => ({ id: item.id, size: item.size, color: item.color })), customer_words: words.slice(0, 500),
       });
+      if (cancelled) { await revoke(pending); return; }
       const status = await refresh();
+      if (cancelled) return;
       onPrepared?.(pending, status);
       details.textContent = pending.items.map(item => `${item.title}, ${item.color}, size ${item.size}, ${money(item.unit_price_cents)}`).join('; ');
       const readback = `${details.textContent}. Total ${money(pending.total_cents)}. ` +
@@ -99,7 +127,11 @@ export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
       setMessage(status.passkey_registered ? 'Say “Cue, yes” or choose Approve with passkey.' :
         'Set up a passkey, then say “Cue, yes” or choose Approve.');
     } catch (err) {
-      pending = null;
+      if (cancelled) {
+        setMessage(`Checkout stopped. ${err.message}`);
+        window.cue?.bus.emit('SAY', { text: `Checkout stopped. ${err.message}` });
+        return;
+      }
       setMessage(err.message);
       window.cue?.bus.emit('SAY', { text: err.message });
     } finally { busy = false; }
@@ -108,19 +140,24 @@ export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
   async function register() {
     if (busy || !ready || !navigator.credentials?.create) return;
     busy = true; setupButton.disabled = true;
+    credentialAbort = new AbortController();
     setMessage('Create a passkey on this device or a nearby phone.');
     try {
       const ceremony = await api('/api/passkey/register/options', {});
-      const credential = await navigator.credentials.create({ publicKey: creationOptions(ceremony.options) });
+      if (cancelled) return;
+      const credential = await navigator.credentials.create({ publicKey: creationOptions(ceremony.options), signal: credentialAbort.signal });
+      if (cancelled) return;
       if (!credential) throw new Error('Passkey setup was cancelled.');
       await api('/api/passkey/register/verify', { ceremony_id: ceremony.ceremony_id, credential: credentialJSON(credential) });
       await refresh();
+      if (cancelled) return;
       setMessage('Passkey ready. Say “Cue, yes” or choose Approve.');
       window.cue?.bus.emit('SAY', { text: 'Passkey ready. Say yes to approve.' });
     } catch (err) {
+      if (cancelled) return;
       setupButton.disabled = false;
       setMessage(err.message);
-    } finally { busy = false; }
+    } finally { busy = false; credentialAbort = null; }
   }
 
   async function approve() {
@@ -136,10 +173,14 @@ export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
     }
     if (!navigator.credentials?.get) { setMessage('Passkeys are unavailable in this browser.'); return; }
     busy = true; approveButton.disabled = true;
+    const intent = pending;
+    credentialAbort = new AbortController();
     setMessage('Waiting for passkey approval…');
     try {
-      const ceremony = await api(`/api/passkey/authenticate/options/${encodeURIComponent(pending.intent_id)}`, {});
-      const credential = await navigator.credentials.get({ publicKey: requestOptions(ceremony.options) });
+      const ceremony = await api(`/api/passkey/authenticate/options/${encodeURIComponent(intent.intent_id)}`, {});
+      if (cancelled) return;
+      const credential = await navigator.credentials.get({ publicKey: requestOptions(ceremony.options), signal: credentialAbort.signal });
+      if (cancelled) return;
       if (!credential) throw new Error('Passkey approval was cancelled.');
       const order = await api('/api/checkout/approve', {
         ceremony_id: ceremony.ceremony_id, credential: credentialJSON(credential),
@@ -150,9 +191,10 @@ export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
       dialog.close();
       window.cue?.bus.emit('SAY', { text: `Demo order recorded. ${money(order.remaining_cents)} remains this month. No payment was charged.` });
     } catch (err) {
+      if (cancelled) return;
       approveButton.disabled = false;
       setMessage(err.message);
-    } finally { busy = false; }
+    } finally { busy = false; credentialAbort = null; }
   }
 
   setupButton.addEventListener('click', register);

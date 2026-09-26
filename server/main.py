@@ -101,6 +101,11 @@ def checkout_approve(body: PasskeyResponse):
     return checkout_call(checkout.approve, body.ceremony_id, body.credential)
 
 
+@app.post("/api/checkout/cancel/{intent_id}")
+def checkout_cancel(intent_id: str):
+    return checkout_call(checkout.cancel, intent_id)
+
+
 @app.get("/api/merchant/orders")
 def merchant_orders():
     return {"orders": checkout.orders()}
