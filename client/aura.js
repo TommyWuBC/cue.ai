@@ -302,8 +302,17 @@ function resolveConfirm(ok) {
   pendingConfirm = null;
   if (p.kind === "remove") {
     if (!ok) { bus.emit("SAY", { text: "Okay, left it in." }); return true; }
-    window.cueBag?.remove(p.idx);
-    bus.emit("SAY", { text: "Removed." });
+    // Re-find it by identity. If it is no longer there, say so rather than
+    // removing whatever now occupies that slot.
+    const now = window.cueBag?.items() ?? [];
+    const it = p.item;
+    const match = now.find((x) => x.title === it.title && x.size === it.size && x.color === it.color);
+    if (!match) {
+      bus.emit("SAY", { text: `The ${it.title} isn't in your bag any more.` });
+      return true;
+    }
+    window.cueBag.remove(match.idx);
+    bus.emit("SAY", { text: `Removed the ${it.title}.` });
     return true;
   }
   if (p.kind === "add") {
@@ -521,7 +530,12 @@ function perform(verb, args, opts = {}) {
       }
 
       if (!opts.confirmed) {
-        pendingConfirm = { kind: "remove", idx: target.idx };
+        // Hold an IDENTITY, not an array index. Between the question and the
+        // yes the bag can change — the agent adds something, the user hits a
+        // Remove button — and a stale index then deletes a different item.
+        // On a confirmation whose only job is preventing wrong actions, that
+        // is the worst possible bug.
+        pendingConfirm = { kind: "remove", item: target };
         bus.emit("SAY", { text: `Take the ${target.title}${target.size ? `, size ${target.size}` : ""} back out?` });
         break;
       }
