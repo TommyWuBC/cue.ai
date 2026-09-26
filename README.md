@@ -49,6 +49,11 @@ Markup contract and event shapes: see `ARCHITECTURE.md`.
 **Gaze never selects; voice commits.** Gaze sets focus, speech confirms. This is
 the accessibility story and it is also why ~5cm of WebGazer error does not matter.
 
+**AI answers cannot purchase.** Grok can answer questions and suggest reversible
+selection or scrolling. The server filters its action list; adding, clicking,
+checkout and approval are only reached through explicit command routes and the
+passkey step. Partial product data produces an honest “I can't see it” answer.
+
 **Only tagged elements are targetable.** `data-aura-product` / `data-aura-action`.
 Six big hit targets on a page beats pixel-accurate tracking.
 

@@ -58,3 +58,5 @@ gaze-targetable. That is deliberate: it makes a 5cm gaze error harmless.
 Gaze sets FOCUS. Voice commits. Gaze alone never triggers an action, ever.
 Scroll and resize refresh the focused target's rectangle or clear it when the
 element leaves the viewport.
+LLM output is filtered on the server to reversible actions only. Explicit
+voice commands and verified passkey approval gate cart and order mutations.

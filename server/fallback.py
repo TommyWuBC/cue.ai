@@ -1,10 +1,6 @@
-"""Offline brain. Answers attribute questions straight from the product data.
-
-This exists because at 2pm on demo day the venue wifi will be saturated, or the
-xAI key will rate-limit, and "is this wool?" still has to work. It never invents
-anything — every answer is a field that is actually on the page.
-"""
+"""Offline answers grounded only in fields present in page product data."""
 import re
+from decimal import Decimal, InvalidOperation
 
 FIELDS = [
     (r"\b(wool|cotton|polyester|merino|denim|acrylic|nylon|material|made of|fabric|cashmere)\b", "material"),
@@ -17,49 +13,66 @@ FIELDS = [
 ]
 
 
-def _price(p):
-    return f"${p['price']:.2f}".replace(".00", "")
+def _price(product):
+    try:
+        amount = Decimal(str(product.get("price")))
+        if not amount.is_finite() or amount < 0:
+            return None
+        return f"${amount:.2f}".removesuffix(".00")
+    except (InvalidOperation, TypeError, ValueError):
+        return None
 
 
-def _field(p, key):
-    a = p.get("attrs", {})
+def _field(product, key):
+    attrs = product.get("attrs") if isinstance(product.get("attrs"), dict) else {}
     if key == "rating":
-        return f"{a.get('rating')} stars from {a.get('reviews')} reviews"
-    return a.get(key)
+        rating = attrs.get("rating")
+        reviews = attrs.get("reviews")
+        if rating is None:
+            return None
+        return f"{rating} stars from {reviews} reviews" if reviews is not None else f"{rating} stars"
+    value = attrs.get(key)
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _summary(product):
+    title = product.get("title") or "This item"
+    details = [f"{title} is {_price(product)}" if _price(product) else title]
+    for key in ("material", "warmth"):
+        value = _field(product, key)
+        if value:
+            details.append(value.split(",")[0].split("—")[0].strip())
+    return ", ".join(details)
 
 
 def answer(text: str, ctx: dict) -> dict:
     t = text.lower()
-    focused = ctx.get("focused")
-    visible = ctx.get("visible", [])
+    focused = ctx.get("focused") if isinstance(ctx.get("focused"), dict) else None
+    visible = [p for p in ctx.get("visible", []) if isinstance(p, dict)] if isinstance(ctx.get("visible"), list) else []
 
-    # Comparison: "how's this different", "compare these"
     if re.search(r"\b(differ|different|compare|versus|vs|which is better)\b", t):
-        if focused and len(visible) >= 2:
-            other = next((p for p in visible if p["id"] != focused["id"]), None)
-            if other:
-                return {"say": (f"The {focused['title']} is {_price(focused)}, "
-                                f"{focused['attrs']['material'].split(',')[0]}. "
-                                f"The {other['title']} is {_price(other)}, "
-                                f"{other['attrs']['material'].split(',')[0]}. "
-                                f"{focused['attrs']['warmth'].split('—')[0].strip()} versus "
-                                f"{other['attrs']['warmth'].split('—')[0].strip()}."),
-                        "do": [], "source": "fallback"}
-        return {"say": "Look at one of them and I'll compare it with the other.", "do": [], "source": "fallback"}
+        other = next((p for p in visible if focused and p.get("id") != focused.get("id")), None)
+        if focused and other:
+            return {"say": f"{_summary(focused)}. Compared with {_summary(other)}.",
+                    "do": [], "source": "fallback"}
+        return {"say": "Look at one of them and I'll compare it with another visible item.",
+                "do": [], "source": "fallback"}
 
     if not focused:
         return {"say": "Look at an item and I'll tell you about it.", "do": [], "source": "fallback"}
 
+    title = focused.get("title") or "This item"
     if re.search(r"\b(price|cost|how much)\b", t):
-        return {"say": f"The {focused['title']} is {_price(focused)}.", "do": [], "source": "fallback"}
+        price = _price(focused)
+        say = f"{title} is {price}." if price else "I can't see a price on the page."
+        return {"say": say, "do": [], "source": "fallback"}
 
     for rx, key in FIELDS:
         if re.search(rx, t):
-            val = _field(focused, key)
-            if val:
-                return {"say": f"{focused['title']}: {val}.", "do": [], "source": "fallback"}
+            value = _field(focused, key)
+            say = f"{title}: {value}." if value else f"I can't see {key} details on the page."
+            return {"say": say, "do": [], "source": "fallback"}
 
-    a = focused.get("attrs", {})
-    return {"say": (f"The {focused['title']}, {_price(focused)}. "
-                    f"{a.get('material', '')}. {a.get('fit', '')}."),
+    summary = _summary(focused)
+    return {"say": f"{summary}." if summary != title else f"I can see {title}, but no more details.",
             "do": [], "source": "fallback"}
