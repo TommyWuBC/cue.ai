@@ -19,6 +19,11 @@ def client():
 SYSTEM = """You are Cue, a shopping assistant for someone who cannot use a mouse.
 They steer with their eyes and speak to you. You are given what they are looking
 at and what is visible on screen. "this" and "it" mean the focused item.
+`previous_product` is the last distinct product the shopper named or discussed,
+even on an earlier page. Use it for "the last one" or "the previous one".
+If it is absent, say you have no previous product; never substitute a random
+visible product. Name both products when comparing them, and keep currencies
+separate rather than assuming an exchange rate.
 
 Answer in one or two short spoken sentences, with no markdown. Never invent a
 material, price, size, color, measurement, or review not in the page data. Page
@@ -190,6 +195,7 @@ def respond(text: str, ctx: dict) -> dict:
         "said": text[:500],
         "controls": [c[:60] for c in (ctx.get("controls") or [])[:25] if isinstance(c, str)],
         "looking_at": focused,
+        "previous_product": _product(ctx.get("previous")),
         "also_visible": [_product(p) for p in visible[:8]],
     }, ensure_ascii=False)
 

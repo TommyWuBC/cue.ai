@@ -131,6 +131,15 @@ Repeats are served from `server/cache/` and cost nothing. Before rehearsing:
 That generates the fixed demo lines once. `ELEVEN_CHAR_BUDGET` hard-stops to the
 browser voice when exhausted. Check spend: `curl localhost:4173/health`.
 
+## Comparing products
+
+Ask about one product, then look at or name another and say “Cue, how is this
+different from the last one?” Cue remembers the last distinct product you
+discussed or selected, including across page changes in the same tab. Both Grok
+and the offline answerer use that product. Memory stays in the tab, expires
+after an hour, and contains product details only; incidental gaze changes do
+not replace it.
+
 ## Demo checkout
 
 Add an item, say “Cue, check out”, and listen to the item, total, and remaining

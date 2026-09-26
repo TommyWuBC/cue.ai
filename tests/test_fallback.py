@@ -16,6 +16,18 @@ class FallbackTests(unittest.TestCase):
         self.assertIn('Compared with', fallback.answer('Compare these', context)['say'])
         self.assertNotIn('None', fallback.answer('Compare these', context)['say'])
 
+    def test_comparison_uses_previous_product_even_when_off_screen(self):
+        ctx = {'focused': {'id': 'new', 'title': 'New coat', 'price': 90, 'currency': 'EUR'},
+               'previous': {'id': 'old', 'title': 'Previous coat', 'price': 120},
+               'visible': [{'id': 'random', 'title': 'Unrelated product', 'price': 1}]}
+        result = fallback.answer("How is this different from the last one?", ctx)
+        self.assertIn('Previous coat', result['say'])
+        self.assertIn('€90', result['say'])
+        self.assertNotIn('Unrelated', result['say'])
+        self.assertEqual(result['do'], [])
+        del ctx['previous']
+        self.assertIn("don't have a previous product", fallback.answer('Compare with the last one', ctx)['say'])
+
     def test_local_product_answer_remains_grounded(self):
         product = {'id': 'j1', 'title': 'Wool coat', 'price': 129,
                    'attrs': {'material': '62% wool, 38% polyester', 'warmth': 'Heavy'}}

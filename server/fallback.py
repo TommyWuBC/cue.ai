@@ -18,7 +18,10 @@ def _price(product):
         amount = Decimal(str(product.get("price")))
         if not amount.is_finite() or amount < 0:
             return None
-        return f"${amount:.2f}".removesuffix(".00")
+        value = f"{amount:.2f}".removesuffix(".00")
+        currency = product.get("currency") or "USD"
+        symbol = {"USD": "$", "EUR": "€", "GBP": "£"}.get(currency)
+        return f"{symbol}{value}" if symbol else f"{value} {str(currency)[:8]}"
     except (InvalidOperation, TypeError, ValueError):
         return None
 
@@ -51,7 +54,14 @@ def answer(text: str, ctx: dict) -> dict:
     visible = [p for p in ctx.get("visible", []) if isinstance(p, dict)] if isinstance(ctx.get("visible"), list) else []
 
     if re.search(r"\b(differ|different|compare|versus|vs|which is better)\b", t):
-        other = next((p for p in visible if focused and p.get("id") != focused.get("id")), None)
+        previous = ctx.get("previous") if isinstance(ctx.get("previous"), dict) else None
+        other = previous if previous and focused and previous.get("id") != focused.get("id") else None
+        wants_previous = bool(re.search(r"\b(last|previous|before|earlier)\b", t))
+        if not other and wants_previous:
+            return {"say": "I don't have a previous product to compare yet. Ask me about one, then look at another.",
+                    "do": [], "source": "fallback"}
+        if not other:
+            other = next((p for p in visible if focused and p.get("id") != focused.get("id")), None)
         if focused and other:
             return {"say": f"{_summary(focused)}. Compared with {_summary(other)}.",
                     "do": [], "source": "fallback"}

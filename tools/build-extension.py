@@ -9,7 +9,7 @@ FILES = [
     'extension/background.js', 'extension/content.js', 'extension/extract.js',
     'client/aura.js', 'client/avatar.js', 'client/badges.js', 'client/bus.js',
     'client/config.js', 'client/gaze.js', 'client/mic.js', 'client/overlay.css',
-    'client/resolver.js', 'client/voice.js', 'vendor/webgazer.js',
+    'client/resolver.js', 'client/voice.js', 'client/product-memory.js', 'vendor/webgazer.js',
 ]
 
 
