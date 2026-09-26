@@ -1,13 +1,14 @@
 """Generate the demo script's spoken lines once, into the disk cache.
 
-Run this ONCE before rehearsing:  TTS_PROVIDER=eleven python3 server/prewarm.py
-After that the demo speaks from disk and costs zero credits, however many times
-you run it. Add any new fixed line here rather than paying for it live.
+Run this ONCE before rehearsing:  .venv/bin/python server/prewarm.py
+Each line goes through the same chain as live speech (Grok, then ElevenLabs),
+so the cache holds whichever voice the demo will actually use. After that the
+demo speaks from disk and costs nothing, however many times you run it. Add
+any new fixed line here rather than paying for it live.
 """
 import os, pathlib, sys
 from dotenv import load_dotenv
 load_dotenv(pathlib.Path(__file__).parent.parent / ".env")
-os.environ["TTS_PROVIDER"] = "eleven"
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import tts
 
@@ -36,7 +37,7 @@ if __name__ == "__main__":
     total = 0
     for line in LINES:
         said = tts.spoken(line)
-        if tts.cached(said):
+        if tts.cached(said, force=True):
             print(f"  cached   {line[:54]}")
             continue
         audio, src, _ = tts.synth(line, force=True)

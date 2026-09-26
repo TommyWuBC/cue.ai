@@ -90,19 +90,29 @@ export async function start() {
   }
 
   let unavailable = false;
+  let verdict;
+  const decided = new Promise((resolve) => { verdict = resolve; });
   ws.onmessage = (ev) => {
     let m;
     try { m = JSON.parse(ev.data); } catch { return; }
     switch (m.type) {
+      case "cue.ready":
+        st.provider = m.provider || "grok";
+        verdict(true);
+        break;
       case "cue.unavailable":
         unavailable = true;
-        console.warn("[cue] grok stt unavailable:", m.reason);
+        console.warn("[cue] server stt unavailable:", m.reason);
         bus.emit("STATE", { sttProvider: "browser", sttError: m.reason });
+        verdict(false);
         break;
       case "transcript.created":
+        // The server falls back from Grok to ElevenLabs on its own and says so
+        // here; the stream is identical either way.
         st.ready = true;
-        bus.emit("STATE", { sttProvider: "grok" });
-        console.log("[cue] grok stt live");
+        st.provider = m.provider || "grok";
+        bus.emit("STATE", { sttProvider: st.provider });
+        console.log(`[cue] ${st.provider} stt live`);
         break;
       case "transcript.partial":
         if (!m.text) break;
@@ -122,6 +132,18 @@ export async function start() {
       setTimeout(() => { st.running = false; start(); }, 1200);
     }
   };
+
+  // The server tries Grok, then ElevenLabs, and only then says which one it
+  // got. Report failure rather than a live-looking mic that hears nothing, so
+  // voice.js falls back to the browser recogniser. A server too old to send a
+  // verdict is assumed live after the wait, as before.
+  const live = await Promise.race([decided, new Promise((r) => setTimeout(() => r(true), 10000))]);
+  if (!live) {
+    st.stream.getTracks().forEach((t) => t.stop());
+    st.stream = null;
+    try { ws.close(); } catch {}
+    return false;
+  }
 
   // Asking the context for 16 kHz makes the browser do the resampling for us.
   st.ctx = new AudioContext({ sampleRate: TARGET_RATE });
@@ -146,9 +168,12 @@ export async function start() {
   st.node.connect(sink).connect(st.ctx.destination);
 
   st.running = true;
-  bus.emit("STATE", { listening: true, sttProvider: "grok" });
+  bus.emit("STATE", { listening: true, sttProvider: st.provider || "grok" });
   return true;
 }
+
+/** Which upstream the server picked: "grok" or "eleven". */
+export const provider = () => st.provider || "grok";
 
 /** Release of push-to-talk: cut the utterance now, don't wait out the silence. */
 export function finalize() {

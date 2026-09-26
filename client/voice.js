@@ -139,17 +139,19 @@ export async function requestMic() {
 export async function startListening() {
   bindPushToTalk();
 
-  // Grok first. It is dramatically better in a loud room and it is the only
-  // one of the two with real push-to-talk finalisation.
+  // Server-side recognition first: Grok, or ElevenLabs if the server had to
+  // fall back. Both beat the browser in a loud room and both support
+  // push-to-talk finalisation. state.provider stays "grok" for either, since
+  // it means "the server stream", which is what finalize() depends on.
   let health = null;
   try { health = await (await fetch(url("/health"))).json(); } catch {}
   if (health?.stt?.ready) {
     if (await mic.start()) {
       state.listening = true; state.provider = "grok";
-      bus.emit("STATE", { listening: true, sttProvider: "grok" });
+      bus.emit("STATE", { listening: true, sttProvider: mic.provider() });
       return true;
     }
-    console.warn("[cue] grok stt failed to start — falling back to the browser");
+    console.warn("[cue] server stt failed to start — falling back to the browser");
   }
   return startBrowserStt();
 }

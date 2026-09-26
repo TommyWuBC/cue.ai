@@ -71,10 +71,10 @@ Same code path as speech — only the wake word and STT are bypassed.
     store/checkout.js   spoken order review + browser passkey ceremony
     server/checkout.py  server priced cart, limits, passkey verification, SQLite orders
     server/router.py    regex fast path; the demo's core commands never hit an LLM
-    server/stt.py       websocket proxy to Grok STT (the key never reaches the page)
     server/agent.py     Grok, one call, strict JSON out
     server/fallback.py  offline answerer over the product data (no key needed)
-    server/tts.py       ElevenLabs with spoken-form normalisation, disk cache, budget
+    server/tts.py       speech out: Grok, then ElevenLabs, then the browser voice (disk cache first)
+    server/stt.py       speech in: Grok, then ElevenLabs Scribe, then the browser recogniser
 
 Markup contract and event shapes: see `ARCHITECTURE.md`.
 
@@ -122,14 +122,16 @@ import `oneEuro` from the module — the harness is three dozen lines.
 estimate gets driven by the noise itself and `beta` re-opens the filter that was
 meant to close.
 
-## ElevenLabs credits
+## Voice credits
 
+Cue speaks with Grok, falls back to ElevenLabs, then to the browser voice.
 Repeats are served from `server/cache/` and cost nothing. Before rehearsing:
 
-    TTS_PROVIDER=eleven .venv/bin/python server/prewarm.py
+    .venv/bin/python server/prewarm.py
 
-That generates the fixed demo lines once. `ELEVEN_CHAR_BUDGET` hard-stops to the
-browser voice when exhausted. Check spend: `curl localhost:4173/health`.
+That generates the fixed demo lines once, with whichever voice is first in the
+chain. `XAI_TTS_CHAR_BUDGET` and `ELEVEN_CHAR_BUDGET` hard-stop each provider.
+Check spend and which provider is live: `curl localhost:4173/health`.
 
 ## Comparing products
 
