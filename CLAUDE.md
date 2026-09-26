@@ -437,9 +437,10 @@ Everything it touches (`render`, `ui.*`, `badges`) must exist before boot.
 - The HUD has no Shadow DOM, so host-page CSS will leak into it.
 - `window.cueStore` is provided only by the demo store, so checkout/confirm is
   dead on any other page.
-- No extension yet. A content script runs in the page's own frame, so the
-  warning in `ARCHITECTURE.md` about wrong coordinate frames applies to an
-  extension *page*, not a content script.
+- `extension/` now contains an experimental Chrome content script adapter.
+  It tags visible products and imports the same client modules in the page's
+  viewport. Build it with `python3 tools/build-extension.py`. Checkout remains
+  on the demo store. Reload the tab to stop an injected session.
 
 ## Things that are true and surprising
 
