@@ -30,9 +30,12 @@ store has not been run.
     ?sigma=110       how noisy sim mode is, in px (default 70)
     ?cal=0           skip calibration
 
-Calibration is nine points (look, press SPACE), then five more where you just
-look while Cue measures its own accuracy. About 45 seconds. The accuracy figure
-is printed to the console — under ~90px is good, over ~170px and Cue says so.
+Calibration is thirteen points: look at each dot, then press SPACE, tap the dot,
+or say “Cue, next”. Keep looking while the capture message is shown. Five more
+points then measure accuracy without any input. If the camera cannot capture
+your eyes, the current point shows a retry message. The accuracy figure is
+printed to the console; over 150px prompts a retry, and over 220px uses numbered
+items for voice selection. Say “Cue, recalibrate” to start again.
 
 ## Keys
 

@@ -14,6 +14,9 @@
   margin: 0; padding: 0; border: 0; background: transparent; overflow: visible; }
 body:has(.aura-cal) .aura-reticle, body:has(.aura-cal) .aura-outline,
 body:has(dialog:modal) .aura-outline { display: none; }
+/* The avatar promotes this root into the browser's top layer. Hide it during
+   calibration so the HUD cannot cover the lower-left training point. */
+body:has(.aura-cal) #aura-root { visibility: hidden; }
 
 /* ── Gaze ─────────────────────────────────────────────────────────────────── */
 .aura-reticle { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px;
@@ -90,11 +93,12 @@ body:has(dialog:modal) .aura-outline { display: none; }
 .aura-cal { position: fixed; inset: 0; z-index: 2147483600; pointer-events: auto;
   background: radial-gradient(120% 90% at 50% 40%, #ffffff 0%, #f3f4f7 100%); }
 .aura-cal-hint { position: absolute; left: 50%; bottom: 36px; transform: translateX(-50%);
-  padding: 10px 18px; border-radius: 999px; white-space: nowrap;
+  padding: 10px 18px; border-radius: 20px; width: max-content; max-width: calc(100% - 48px);
+  box-sizing: border-box; text-align: center;
   background: #fff; border: 1px solid rgba(0,0,0,.06); box-shadow: 0 8px 28px rgba(20,24,40,.1);
   color: #1d1d1f; font: 14px var(--cue-font); letter-spacing: -.005em; }
 .aura-cal-dot { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px;
-  border-radius: 50%; background: var(--cue);
+  padding: 0; border: 0; border-radius: 50%; background: var(--cue); cursor: pointer;
   box-shadow: 0 0 0 6px rgba(47,107,255,.16), 0 0 0 0 rgba(47,107,255,.35);
   transition: left .55s var(--cue-ease), top .55s var(--cue-ease), transform .2s var(--cue-ease);
   animation: cue-cal 1.6s ease-out infinite; }

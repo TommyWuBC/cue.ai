@@ -436,18 +436,26 @@ const GOOD_PX = 150;
 const POOR_PX = 220;
 
 function runCalibration(attempt) {
-  return new Promise((done) => {
+  return new Promise((done, reject) => {
     const cleanup = [];
     const ov = document.createElement("div");
     ov.className = "aura-cal";
-    ov.innerHTML = `<div class="aura-cal-hint"></div><div class="aura-cal-dot"></div>`;
+    ov.tabIndex = -1;
+    ov.setAttribute("role", "dialog");
+    ov.setAttribute("aria-label", "Eye tracking calibration");
+    ov.innerHTML = `<div class="aura-cal-hint" role="status" aria-live="polite"></div><button type="button" class="aura-cal-dot" aria-label="Capture this calibration point"></button>`;
     document.body.appendChild(ov);
+    ov.focus({ preventScroll: true });
     const dot  = ov.querySelector(".aura-cal-dot");
     const hint = ov.querySelector(".aura-cal-hint");
     let i = 0;
 
     // Space is push-to-talk everywhere else. Tell voice.js to stand down.
     state.calibrating = true;
+    state.calibrated = false;
+    state.accuracy = null;
+    state.cal = { ax: 1, bx: 0, ay: 1, by: 0 };
+    setFocus(null, 0);
     state.qualityLow = false; state.lowSince = 0;
     bus.emit("GAZE_QUALITY", { low: false });
     bus.emit("STATE", { calibrating: true });
@@ -457,49 +465,55 @@ function runCalibration(attempt) {
       // and space keeps re-triggering calibration points under the store page.
       removeEventListener("keydown", onKey, true);
       cleanup.forEach((fn) => fn());
+      dot.disabled = true;
       hint.textContent = "Now just look at each dot — no key, checking accuracy";
-      const obs = await sweep(dot);
+      try {
+        const obs = await sweep(dot);
 
-      if (obs.length >= 25) {
-        const fx = fit1d(obs.map((o) => o[0]), obs.map((o) => o[2]));
-        const fy = fit1d(obs.map((o) => o[1]), obs.map((o) => o[3]));
-        const before = rms(obs, 1, 0, 1, 0);
-        const after  = rms(obs, fx.a, fx.b, fy.a, fy.b);
-        // Only keep the correction if it actually helps.
-        if (after < before) {
-          state.cal = { ax: fx.a, bx: fx.b, ay: fy.a, by: fy.b };
+        if (obs.length >= 25) {
+          const fx = fit1d(obs.map((o) => o[0]), obs.map((o) => o[2]));
+          const fy = fit1d(obs.map((o) => o[1]), obs.map((o) => o[3]));
+          const before = rms(obs, 1, 0, 1, 0);
+          const after  = rms(obs, fx.a, fx.b, fy.a, fy.b);
+          // Only keep the correction if it actually helps.
+          if (after < before) {
+            state.cal = { ax: fx.a, bx: fx.b, ay: fy.a, by: fy.b };
+          }
+          state.accuracy = {
+            before_px: Math.round(before),
+            after_px: Math.round(Math.min(before, after)),
+            gain_x: +fx.a.toFixed(2), gain_y: +fy.a.toFixed(2),
+            samples: obs.length,
+          };
+          console.log("[cue] calibration", state.accuracy, state.cal);
         }
-        state.accuracy = {
-          before_px: Math.round(before),
-          after_px: Math.round(Math.min(before, after)),
-          gain_x: +fx.a.toFixed(2), gain_y: +fy.a.toFixed(2),
-          samples: obs.length,
-        };
-        console.log("[cue] calibration", state.accuracy, state.cal);
+
+        state.calibrated = !!state.accuracy;
+        // Whatever pose they calibrated in is the pose the mapping is valid for.
+        head.base = readHead();
+        head.samples = []; head.gain = null;
+
+        // Retune the filter to the signal we actually got.
+        if (state.accuracy && state.mode === "webgazer" && !state.tuneLocked) {
+          const t = tuningFor(state.accuracy.after_px);
+          state.tuning = t;
+          state.fx = oneEuro(t);
+          state.fy = oneEuro(t);
+          console.log("[cue] filter tuned for", state.accuracy.after_px + "px:", t);
+        }
+
+        recent.length = 0; pending = [];
+        state.fx.reset(innerWidth / 2, performance.now() / 1000);
+        state.fy.reset(innerHeight / 2, performance.now() / 1000);
+        // NOTE: calibrating stays true — the wrapper may still put a modal up,
+        // and space must not become push-to-talk underneath it.
+        bus.emit("STATE", { calibrated: state.calibrated, accuracy: state.accuracy });
+        done(state.accuracy);
+      } catch (error) {
+        reject(error);
+      } finally {
+        ov.remove();
       }
-
-      ov.remove();
-      state.calibrated = true;
-      // Whatever pose they calibrated in is the pose the mapping is valid for.
-      head.base = readHead();
-      head.samples = []; head.gain = null;
-
-      // Retune the filter to the signal we actually got.
-      if (state.accuracy && state.mode === "webgazer" && !state.tuneLocked) {
-        const t = tuningFor(state.accuracy.after_px);
-        state.tuning = t;
-        state.fx = oneEuro(t);
-        state.fy = oneEuro(t);
-        console.log("[cue] filter tuned for", state.accuracy.after_px + "px:", t);
-      }
-
-      recent.length = 0; pending = [];
-      state.fx.reset(innerWidth / 2, performance.now() / 1000);
-      state.fy.reset(innerHeight / 2, performance.now() / 1000);
-      // NOTE: calibrating stays true — the wrapper may still put a modal up,
-      // and space must not become push-to-talk underneath it.
-      bus.emit("STATE", { calibrated: true, accuracy: state.accuracy });
-      done(state.accuracy);
     };
 
     const show = () => {
@@ -509,7 +523,7 @@ function runCalibration(attempt) {
       dot.style.top  = fy * innerHeight + "px";
       dot.classList.remove("armed");
       const again = attempt > 1 ? `  ·  attempt ${attempt}` : "";
-      hint.textContent = `Look at the dot and press SPACE  ·  ${i + 1} / ${TRAIN.length}${again}`;
+      hint.textContent = `Look at the dot. Press SPACE, tap it, or say “Cue, next” · ${i + 1} / ${TRAIN.length}${again}`;
     };
 
     // Advancing must not require a key. Someone who cannot use a trackpad
@@ -522,16 +536,33 @@ function runCalibration(attempt) {
       const [fx, fy] = TRAIN[i];
       const px = fx * innerWidth, py = fy * innerHeight;
       dot.classList.add("armed");
+      hint.textContent = `Hold your gaze — capturing point ${i + 1} / ${TRAIN.length}`;
       // Feed several samples per point — one is far too few for the ridge fit.
       let n = 0;
       const tick = setInterval(() => {
-        window.webgazer?.recordScreenPosition(px, py, "click");
-        if (++n >= 14) { clearInterval(tick); i++; recording = false; show(); }
+        try {
+          const wg = window.webgazer;
+          // recordScreenPosition silently ignores samples before eye features
+          // are ready. Count actual training pairs, not timer ticks.
+          const regression = wg.getRegression()[0];
+          const before = regression.getData().slice();
+          wg.recordScreenPosition(px, py, "click");
+          if (!regression.getData().some((pair, index) => pair !== before[index])) {
+            throw new Error("No eye features available for calibration");
+          }
+          if (++n >= 14) { clearInterval(tick); i++; recording = false; show(); }
+        } catch (error) {
+          clearInterval(tick);
+          recording = false;
+          dot.classList.remove("armed");
+          hint.textContent = "Couldn't capture your eyes. Face the camera, then press SPACE or say “Cue, next” to retry.";
+          console.warn("[cue] calibration capture failed", error);
+        }
       }, 55);
     };
 
     const onKey = (e) => {
-      if (e.code !== "Space" || e.repeat) return;
+      if ((e.code !== "Space" && e.key !== " ") || e.repeat) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       capture();
@@ -544,8 +575,10 @@ function runCalibration(attempt) {
     });
     cleanup.push(stopVoice);
 
+    dot.addEventListener("click", capture);
+    cleanup.push(() => dot.removeEventListener("click", capture));
     addEventListener("keydown", onKey, true);
-    if (attempt === 1) bus.emit("SAY", { text: "Look at each dot and press space." });
+    if (attempt === 1) bus.emit("SAY", { text: "Look at each dot and press space, or say Cue, next." });
     show();
   });
 }
@@ -749,7 +782,22 @@ export async function experiment({ selections = 8 } = {}) {
   return result;
 }
 
-export async function calibrate({ allowRetry = true, maxAttempts = 2 } = {}) {
+let calibration = null;
+export function calibrate(options = {}) {
+  if (calibration) return calibration;
+  if (state.mode !== "webgazer" || !state.running) return Promise.resolve(false);
+  // Register the shared promise before mounting the overlay or emitting events.
+  // Two overlays compete for Space: the hidden one consumes the visible one's key.
+  calibration = Promise.resolve().then(() => calibrateOnce(options)).finally(() => {
+    calibration = null;
+    state.calibrating = false;
+    bus.emit("STATE", { calibrating: false });
+  });
+  return calibration;
+}
+
+async function calibrateOnce({ allowRetry = true, maxAttempts = 2 } = {}) {
+  window.webgazer.showVideoPreview(true);
   for (let attempt = 1; ; attempt++) {
     const acc = await runCalibration(attempt);
 
@@ -763,14 +811,18 @@ export async function calibrate({ allowRetry = true, maxAttempts = 2 } = {}) {
     bus.emit("STATE", { calibrating: false, accuracy: acc });
     const q = acc?.after_px;
     bus.emit("SAY", {
-      text: !q || q <= GOOD_PX
+      text: !acc
+        ? "I couldn't measure your gaze. Check the camera and say Cue, recalibrate. You can select items by saying their numbers."
+        : q <= GOOD_PX
         ? "Calibration done. I can see where you're looking."
         : "Alright. I'll show numbers on the items so you can just say which one.",
     });
     // Tell the rest of the app whether gaze is precise enough to be trusted as
     // a pointer. Below this bar, numbered badges lead the interaction.
-    state.precise = !q || q <= POOR_PX;
+    state.precise = !!acc && q <= POOR_PX;
     bus.emit("STATE", { precise: state.precise });
+    state.qualityLow = !acc;
+    bus.emit("GAZE_QUALITY", { low: !acc, reason: "signal" });
     return acc;
   }
 }
