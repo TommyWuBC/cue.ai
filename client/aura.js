@@ -300,6 +300,12 @@ function resolveConfirm(ok) {
   if (!pendingConfirm) return false;
   const p = pendingConfirm;
   pendingConfirm = null;
+  if (p.kind === "remove") {
+    if (!ok) { bus.emit("SAY", { text: "Okay, left it in." }); return true; }
+    window.cueBag?.remove(p.idx);
+    bus.emit("SAY", { text: "Removed." });
+    return true;
+  }
   if (p.kind === "add") {
     if (!ok) { bus.emit("SAY", { text: "Okay, left it." }); return true; }
     perform("add_to_cart", {}, { confirmed: true });
@@ -491,6 +497,47 @@ function perform(verb, args, opts = {}) {
       if (before !== undefined && window.CART().length === before) return false;
       break;
     }
+    // Taking something back out has to be as easy as putting it in, and is
+    // confirmed the same way — removing the wrong thing is its own mistake.
+    case "remove_item": {
+      const bag = window.cueBag;
+      if (!bag) { bus.emit("SAY", { text: "There's no bag on this page." }); return false; }
+      const list = bag.items();
+      if (!list.length) { bus.emit("SAY", { text: "Your bag is already empty." }); return false; }
+
+      let target = null;
+      if (args.name) {
+        const q = String(args.name).toLowerCase();
+        target = list.find((i) => i.title.toLowerCase().includes(q));
+        if (!target) {
+          bus.emit("SAY", { text: `I don't see ${args.name} in your bag.` });
+          return false;
+        }
+      } else if (typeof args.n === "number") {
+        target = list[args.n - 1];
+        if (!target) { bus.emit("SAY", { text: `There are only ${list.length} things in your bag.` }); return false; }
+      } else {
+        target = list[list.length - 1];      // "take that back out" = the last one
+      }
+
+      if (!opts.confirmed) {
+        pendingConfirm = { kind: "remove", idx: target.idx };
+        bus.emit("SAY", { text: `Take the ${target.title}${target.size ? `, size ${target.size}` : ""} back out?` });
+        break;
+      }
+      bag.remove(target.idx);
+      bus.emit("SAY", { text: `Removed the ${target.title}.` });
+      break;
+    }
+    case "read_bag": {
+      const list = window.cueBag?.items() ?? [];
+      if (!list.length) { bus.emit("SAY", { text: "Your bag is empty." }); break; }
+      const lines = list.map((i, k) => `${k + 1}, ${i.title}${i.size ? `, size ${i.size}` : ""}`);
+      const total = list.reduce((sum, i) => sum + (i.price ?? 0), 0);
+      bus.emit("SAY", { text: `${lines.join(". ")}. That's $${total.toFixed(2)}.` });
+      break;
+    }
+    case "open_bag": window.cueBag?.open?.(); break;
     case "checkout": stageCheckout(); break;
     case "confirm":
       if (checkoutOpen()) window.cueCheckout.approve();

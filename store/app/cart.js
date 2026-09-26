@@ -155,6 +155,15 @@ window.checkout = () => {
 window.cueCheckout = { ...flow, prepare: window.checkout };
 window.CART = () => cart;
 
+// Voice needs a way OUT of the bag, not just in. Gaze picks the wrong item
+// often enough at our measured error that an undo is not a nicety.
+window.cueBag = {
+  items: () => cart.map((i, idx) => ({ idx, title: i.title, size: i.size, color: i.color, price: i.price })),
+  remove,
+  clear() { while (cart.length) remove(cart.length - 1); },
+  open: openBag,
+};
+
 // The approval panel mirrors checkout.js's status line: waiting, or a problem.
 const approval = $("approval"), message = approval.querySelector(".checkout-message");
 new MutationObserver(() => {

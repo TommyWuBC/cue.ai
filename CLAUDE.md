@@ -381,6 +381,22 @@ someone who cannot see the screen "adding it to your bag" while doing nothing
 leaves them believing they bought something they did not — the worst failure
 this system has.
 
+## There has to be a way back out
+
+A system whose premise is that gaze is imprecise will put the wrong thing in
+the bag. `remove(index)` existed in `store/app/cart.js` but nothing could
+reach it, so a wrong item was permanent — the single worst gap for a judge
+trying it cold.
+
+`window.cueBag` exposes items/remove/clear/open, and the verbs are
+`remove_item` (by name, by number, or the last one), `read_bag` and
+`open_bag`. Removal is confirmed the same way an add is, because removing the
+wrong thing is its own mistake.
+
+"What's in my bag" sits above the question guard for the same reason
+"what can I click" does: a question by grammar, a command by intent. STT drops
+apostrophes constantly, so the patterns accept "whats" as well as "what's".
+
 ## Every add is confirmed too
 
 The bag is where a wrong item first gets in, and at 300px of gaze error that

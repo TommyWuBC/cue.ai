@@ -81,6 +81,11 @@ def route(text: str):
         if word in ORDINALS:
             return result(actions=[action("focus_number", n=ORDINALS[word])])
 
+    if re.fullmatch(r"(?:what(?:'s|s| is)?(?: in)? )?(?:my |the )?(?:bag|cart|basket)\??"
+                    r"|what(?:'s|s| is)? in (?:my |the )(?:bag|cart|basket)\??"
+                    r"|read (?:me )?(?:my |the )?(?:bag|cart)", t):
+        return result(actions=[action("read_bag")])
+
     # "What can I click" is phrased as a question but is really a request to
     # read the page aloud — the one thing a user who cannot see it needs most.
     if re.fullmatch(r"(?:what(?:'s| is| are)?(?: there)?(?: to)? (?:click|do|say|here)"
@@ -133,6 +138,28 @@ def route(text: str):
         stripped = re.sub(r"\b(size|in|please|the|color|colour|and|choose|select|make|it)\b", "", stripped).strip()
         if not stripped:
             return result(actions=parts)
+    # Getting something back OUT of the bag. Gaze picks the wrong item often
+    # enough at our error that undo is part of the core loop, not an extra.
+    if re.fullmatch(r"(?:please )?(?:open|show) (?:my |the )?(?:bag|cart|basket)", t):
+        return result(actions=[action("open_bag")])
+    m = re.fullmatch(r"(?:please )?(?:remove|delete|drop|take)"
+                     r"(?: (?:it|that|this))?"          # "take it out"
+                     r"(?: out| off| away)?"
+                     r"(?: the| that| it)?(?: (.{2,40}?))?"
+                     r"(?: from (?:my |the )?(?:bag|cart|basket))?\.?", t)
+    if m:
+        name = (m.group(1) or "").strip()
+        if name in {"", "one", "item", "thing"}:
+            return result(actions=[action("remove_item")])
+        name = re.sub(r"\s+(one|item|thing)$", "", name).strip()
+        if not name:
+            return result(actions=[action("remove_item")])
+        if name in ORDINALS:
+            return result(actions=[action("remove_item", n=ORDINALS[name])])
+        return result(actions=[action("remove_item", name=name)])
+    if re.fullmatch(r"(?:please )?(?:empty|clear) (?:my |the )?(?:bag|cart|basket)", t):
+        return result(actions=[action("remove_item")])
+
     if re.fullmatch(r"(?:please )?(?:click|open|press|select) (?:this|that|it|the focused button)", t):
         return result(actions=[action("click_focused")])
 
