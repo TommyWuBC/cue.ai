@@ -22,7 +22,10 @@ body:has(dialog:modal) .aura-outline, body:has(dialog:modal) .cue-badges { displ
    longer applies and everything in here paints over the page. Hide the whole
    root during calibration rather than listing pieces: the HUD would cover the
    lower-left training point and the number badges floated over the dots. */
-body:has(.aura-cal) #aura-root { visibility: hidden; }
+body:has(.aura-cal) #aura-root { display: none; }
+/* visibility:hidden was not enough: the dock's backdrop-filter still sampled
+   and composited the page behind it, leaving a soft blue rectangle over the
+   lower-left training point. */
 
 /* ── Gaze ─────────────────────────────────────────────────────────────────── */
 .aura-reticle { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px;

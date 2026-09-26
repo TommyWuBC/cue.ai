@@ -347,7 +347,18 @@ function checkQuality() {
   const p = state.point;
   const outside = p && (p.x < -40 || p.y < -40 || p.x > innerWidth + 40 || p.y > innerHeight + 40);
   const stale = !state.lastSampleAt || now - state.lastSampleAt > STALE_SAMPLE_MS;
-  const poor = stale || state.conf < 0.45 || outside;
+
+  // Gate on objective failures only: the feed has stopped, or the estimate is
+  // off-screen. NOT on confidence.
+  //
+  // Confidence is relative to sample spread, and at the 220-350px this
+  // hardware actually produces it sits near zero permanently — so a
+  // `conf < 0.45` test latched qualityLow a couple of seconds after every
+  // calibration, cleared focus, and the dwell loop then refused to commit
+  // anything ever again. Cue went silent right after calibrating and looked
+  // broken. Low confidence is what the badges and the drift nudge are for; it
+  // is not a reason to stop working.
+  const poor = stale || outside;
 
   if (poor) {
     state.lowSince ||= now;
@@ -634,11 +645,25 @@ function qualityModal(acc, attempt) {
           shown on them, and Cue gets more accurate the more you do.</p>
       </div>`;
     document.body.appendChild(ov);
+    // #aura-root is an open popover living in the browser's top layer, so
+    // anything in normal flow paints beneath it. Join the top layer or these
+    // buttons can be covered and unreachable.
+    try { ov.popover = "manual"; ov.showPopover(); } catch {}
 
-    const pick = (act) => { ov.remove(); choose(act); };
+    // On a product built for people who cannot use a trackpad, a modal with
+    // only click targets is the wrong shape. aura.js drops utterances while
+    // calibrating, so subscribe directly — exactly as the dots do for "next".
+    let stopVoice = null;
+    const pick = (act) => { stopVoice?.(); try { ov.hidePopover(); } catch {} ov.remove(); choose(act); };
     ov.addEventListener("click", (e) => {
       const b = e.target.closest("[data-act]");
       if (b) pick(b.dataset.act);
+    });
+    stopVoice = bus.on("UTTERANCE", ({ text, final }) => {
+      if (!final) return;
+      const t = text.trim().toLowerCase();
+      if (/\b(continue|carry on|keep going|proceed|skip|good enough|leave it|fine)\b/.test(t)) pick("continue");
+      else if (/\b(again|retry|redo|recalibrat)\b/.test(t)) pick("recal");
     });
     // Keyboard reachable — this is an accessibility tool.
     ov.querySelector(".cue-btn-primary").focus();
@@ -648,8 +673,8 @@ function qualityModal(acc, attempt) {
 
     bus.emit("SAY", {
       text: poor
-        ? "I can't see where you're looking well enough. Shall we try that again?"
-        : "That's a bit loose. You can try again, or continue.",
+        ? "I can't see where you're looking well enough. Say try again, or say continue anyway."
+        : "That's a bit loose. Say try again, or say continue anyway.",
     });
   });
 }

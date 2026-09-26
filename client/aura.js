@@ -248,6 +248,22 @@ function scope() {
 const checkoutOpen = () =>
   !!(document.getElementById("checkout-dialog")?.open && window.cueCheckout);
 
+// The nearest ancestor of the focused element that can actually scroll in the
+// requested axis. Returns null when that is just the page.
+function scrollableUnderGaze(horizontal) {
+  let el = gaze.getFocus()?.el ?? null;
+  while (el && el !== document.body && el !== document.documentElement) {
+    const st = getComputedStyle(el);
+    const flow = horizontal ? st.overflowX : st.overflowY;
+    const room = horizontal
+      ? el.scrollWidth - el.clientWidth
+      : el.scrollHeight - el.clientHeight;
+    if (/(auto|scroll)/.test(flow) && room > 8) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
 function perform(verb, args) {
   // While the passkey dialog is up, nothing else may act — but recalibrate
   // and confirm/cancel must still get through, or losing tracking mid-dialog
@@ -266,6 +282,15 @@ function perform(verb, args) {
       } else {
         const horizontal = args.dir === "left" || args.dir === "right";
         const step = args.dir === "up" || args.dir === "left" ? -1 : 1;
+        // Scroll whatever actually scrolls under the gaze — a drawer, a filter
+        // rail, a dialog — falling back to the window. Always scrolling the
+        // window looks like nothing happened when the content is in a panel.
+        const box = scrollableUnderGaze(horizontal);
+        if (box) {
+          box.scrollBy({ [horizontal ? "left" : "top"]:
+            step * (horizontal ? box.clientWidth : box.clientHeight) * 0.75, behavior: "smooth" });
+          break;
+        }
         scrollBy({ [horizontal ? "left" : "top"]: step * (horizontal ? innerWidth : innerHeight) * 0.75,
           behavior: "smooth" });
       }
