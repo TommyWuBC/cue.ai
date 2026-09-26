@@ -2,14 +2,16 @@
   "manifest_version": 3,
   "name": "Cue: eyes and voice shopping",
   "version": "0.1.0",
-  "description": "Read product details on the current store page with gaze and voice. Checkout stays in the Cue demo store.",
-  "permissions": ["activeTab", "scripting"],
+  "description": "Browse a shopping page with gaze and voice. Checkout stays in the Cue demo store.",
+  "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["http://localhost:4173/*"],
-  "action": {"default_title": "Start Cue on this page"},
-  "background": {"service_worker": "extension/background.js"},
+  "action": {
+    "default_title": "Cue shopping assistant",
+    "default_popup": "extension/popup.html"
+  },
+  "background": {"service_worker": "extension/background.js", "type": "module"},
   "web_accessible_resources": [{
     "resources": ["client/*.js", "vendor/models/*/*"],
-    "matches": ["http://*/*", "https://*/*"],
-    "use_dynamic_url": true
+    "matches": ["http://*/*", "https://*/*"]
   }]
 }

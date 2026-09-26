@@ -7,7 +7,7 @@ import { CONFIG, url } from "./config.js";
 import { productMemory } from "./product-memory.js";
 
 let memoryStorage;
-try { memoryStorage = sessionStorage; } catch {}
+try { memoryStorage = CONFIG.injected ? window.CUE_MEMORY_STORAGE : sessionStorage; } catch {}
 const comparisons = productMemory({ storage: memoryStorage });
 
 

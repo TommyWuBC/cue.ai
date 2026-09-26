@@ -1,0 +1,11 @@
+{
+  "name": "cue-extension-tests",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.mjs",
+    "test:browser": "node --test tests/extension-browser.test.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.12.0"
+  }
+}

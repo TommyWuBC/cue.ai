@@ -7,3 +7,4 @@ vendor/webgazer.orig.js
 graphify-out/
 server/data/
 dist/
+node_modules/

@@ -16,14 +16,17 @@ camera and mic). Use `localhost` exactly: the passkey origin is configured for i
 
 Run `python3 tools/build-extension.py`, then load `dist/cue-extension` as an
 unpacked extension in Chrome. Start the Cue server first. Open an H&M product
-page or Amazon search page and click the Cue toolbar icon. The adapter tags
+page or Amazon search page, click the Cue toolbar icon, and select **Start on
+this page**. The panel checks that the backend is reachable before starting.
+The adapter tags
 products from visible page markup and Product JSON-LD, then loads the existing
 gaze and voice client in that tab's viewport. Video stays on the device. Only
 product details and speech requests go to the local server. The intended scope
 is shopping questions, scrolling, and focus; checkout stays on Northfield.
 Reload the tab to stop the injected client. The extension is an experimental
 adapter: page layouts can change, and a full passkey browser test on a live
-store has not been run.
+store has not been run. The build also writes a Chrome Web Store upload ZIP;
+see [extension setup and deployment notes](docs/EXTENSION.md).
 
     ?gaze=mouse      drive with the mouse instead of the eyes (dev + demo fallback)
     ?gaze=sim        mouse as truth + synthetic gaze noise, through the real filter
