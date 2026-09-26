@@ -41,9 +41,40 @@ const pttArmed = () => now() < state.pttUntil;
 // ── One gate, both transports ───────────────────────────────────────────────
 // Grok and the browser recogniser both land here. Intent gating lives in
 // exactly one place so the two paths can never drift apart.
+//
+// Phrases the calibration screens tell the shopper to say. The prompts quote
+// these words, so the echo filter treats them as Cue talking to itself, and
+// push-to-talk is off for the whole calibration, so the wake word is required
+// too. Either one drops "next" and "continue anyway". Accepted here, before
+// both gates, and only while a calibration screen is up.
+const CAL_DOT = /^(?:next|ready|capture|ok|okay|go|done)\b/;
+const CAL_CHOICE = /\b(?:continue|carry on|keep going|proceed|skip|good enough|leave it|fine|try again|again|retry|redo|recalibrat\w*)\b/;
+
+export function calibrationCommand(text) {
+  const n = norm(text).replace(/^(?:cue|q|queue|kew|cu|coo|aura|ora|aurora)\s+/, "");
+  if (!n) return null;
+  return CAL_DOT.test(n) || CAL_CHOICE.test(n) ? n : null;
+}
+
 function handleTranscript(text, final, alternatives = null) {
   text = (text || "").trim();
   if (!text) return;
+
+  if (state.calibrating) {
+    if (!final) return;
+    const cands = alternatives?.length ? alternatives : [text];
+    let cmd = null;
+    for (const alt of cands) {
+      cmd = calibrationCommand(alt);
+      if (cmd) break;
+    }
+    if (!cmd) return;
+    // Retire the prompt before the verdict is spoken, or the two play together.
+    speakTicket++;
+    stopSpeaking();
+    bus.emit("UTTERANCE", { text: cmd, final: true });
+    return;
+  }
 
   let barged = false;
   if (state.speaking) {
