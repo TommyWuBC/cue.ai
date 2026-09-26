@@ -131,7 +131,10 @@ export function byNumber(n) {
 export const getShown = () => shown.map((b) => ({ n: b.n, id: b.target.id, label: b.target.label }));
 export const getTier = () => ({ ...tier });
 
-// Anything that changes layout invalidates positions.
-addEventListener("scroll", reposition, { passive: true });
-addEventListener("resize", reposition);
+// Anything that changes layout invalidates positions. Guarded so the module
+// can be imported outside a browser (tests, tooling).
+if (typeof addEventListener === "function") {
+  addEventListener("scroll", reposition, { passive: true });
+  addEventListener("resize", reposition);
+}
 bus.on("FOCUS", ({ target }) => setFocused(target?.id ?? null));

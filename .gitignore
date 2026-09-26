@@ -4,3 +4,5 @@ __pycache__/
 server/cache/*.mp3
 server/cache/_ledger.json
 vendor/webgazer.orig.js
+graphify-out/
+server/data/

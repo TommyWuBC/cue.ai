@@ -19,7 +19,11 @@ let cache = null;
 let cacheKey = "";
 
 function key() {
-  return `${scrollX}|${scrollY}|${innerWidth}|${innerHeight}|` +
+  // Read defensively: this module is imported outside a browser by the node
+  // test runner, and will be by the extension in contexts where some of these
+  // globals are absent.
+  const g = globalThis;
+  return `${g.scrollX ?? 0}|${g.scrollY ?? 0}|${g.innerWidth ?? 0}|${g.innerHeight ?? 0}|` +
          `${document.querySelectorAll(PRODUCT_SEL).length}|` +
          `${document.querySelectorAll(ACTION_SEL).length}`;
 }
@@ -31,7 +35,7 @@ export function scan() {
   const out = [];
   for (const el of document.querySelectorAll(PRODUCT_SEL)) {
     const r = el.getBoundingClientRect();
-    if (r.width === 0 || r.bottom < 0 || r.top > innerHeight) continue;
+    if (r.width === 0 || r.bottom < 0 || r.top > (globalThis.innerHeight ?? Infinity)) continue;
     let product;
     try { product = JSON.parse(productJson(el)); }
     catch { console.warn("[cue] bad product json", el); continue; }
@@ -39,13 +43,23 @@ export function scan() {
   }
   for (const el of document.querySelectorAll(ACTION_SEL)) {
     const r = el.getBoundingClientRect();
-    if (r.width === 0 || r.bottom < 0 || r.top > innerHeight) continue;
+    if (r.width === 0 || r.bottom < 0 || r.top > (globalThis.innerHeight ?? Infinity)) continue;
     const verb = actionVerb(el);
+    // Scope the id to the owning product, not to rect.top. Mine embedded the
+    // y position, so every id changed on scroll and focus could never be held
+    // across one. Theirs is right; this keeps it while still honouring the
+    // data-cue-* spelling.
+    const owner = el.closest(PRODUCT_SEL);
+    let productId = "page";
+    if (owner) {
+      try { productId = JSON.parse(productJson(owner)).id; }
+      catch { continue; }
+    }
     out.push({
       kind: "action",
-      id: "act:" + verb + ":" + (actionValue(el) ?? "") + ":" + Math.round(r.top),
+      id: "act:" + productId + ":" + verb + ":" + (actionValue(el) ?? ""),
       label: actionLabel(el) ?? el.textContent.trim(),
-      el, rect: r, verb, value: actionValue(el),
+      el, rect: r, verb, value: actionValue(el), productId,
     });
   }
   cache = out; cacheKey = k;
@@ -53,7 +67,8 @@ export function scan() {
 }
 
 export function invalidate() { cache = null; cacheKey = ""; }
-addEventListener("resize", invalidate);
+// Guarded: this module is imported by the node test runner, which has no DOM.
+if (typeof addEventListener === "function") addEventListener("resize", invalidate);
 
 // Distance from point to rect (0 if inside). Containment always beats proximity.
 function dist(x, y, r) {
@@ -66,6 +81,16 @@ function dist(x, y, r) {
 // compare like with like; mixing the two let a focused card be compared against
 // a 0.75x-discounted challenger and lose when it should not.
 export function resolve(x, y, targets) {
+  // A button nested in a product card otherwise ties the card at distance 0.
+  // Give the actual button a small forgiving hit area, but never prefer a
+  // nearby button when the gaze is clearly elsewhere in the card.
+  const onAction = targets.filter((t) => t.kind === "action" && dist(x, y, t.rect) <= 16);
+  if (onAction.length) {
+    const target = onAction.reduce((best, t) =>
+      dist(x, y, t.rect) < dist(x, y, best.rect) ? t : best);
+    const d = dist(x, y, target.rect);
+    return { target, dist: d, score: d };
+  }
   let best = null, bestScore = Infinity, bestDist = Infinity;
   for (const t of targets) {
     const d = dist(x, y, t.rect);

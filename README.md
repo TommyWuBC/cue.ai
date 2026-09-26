@@ -1,7 +1,7 @@
 # Cue — shop with your eyes and your voice
 
-Track 1 of the build: **gaze targeting + conversational AI**. Payments, passkey and
-the merchant console come later — see the plan.
+Gaze targeting, conversational answers, and a local demo checkout with server
+enforced limits and passkey approval. Demo orders do not charge a card.
 
 ## Run
 
@@ -10,7 +10,7 @@ the merchant console come later — see the plan.
     .venv/bin/uvicorn main:app --app-dir server --port 4173 --reload
 
 Open **http://localhost:4173** in Chrome (not the Claude preview pane — it blocks
-camera and mic).
+camera and mic). Use `localhost` exactly: the passkey origin is configured for it.
 
     ?gaze=mouse      drive with the mouse instead of the eyes (dev + demo fallback)
     ?gaze=sim        mouse as truth + synthetic gaze noise, through the real filter
@@ -50,6 +50,8 @@ Same code path as speech — only the wake word and STT are bypassed.
     client/resolver.js  gaze point -> nearest tagged element
     client/voice.js     wake word, push-to-talk, barge-in, echo rejection, TTS playback
     client/aura.js      orchestration: utterance -> server -> speech + page actions
+    store/checkout.js   spoken order review + browser passkey ceremony
+    server/checkout.py  server priced cart, limits, passkey verification, SQLite orders
     server/router.py    regex fast path; the demo's core commands never hit an LLM
     server/stt.py       websocket proxy to Grok STT (the key never reaches the page)
     server/agent.py     Grok, one call, strict JSON out
@@ -106,7 +108,16 @@ Repeats are served from `server/cache/` and cost nothing. Before rehearsing:
 That generates the fixed demo lines once. `ELEVEN_CHAR_BUDGET` hard-stops to the
 browser voice when exhausted. Check spend: `curl localhost:4173/health`.
 
-## Not done yet
+## Demo checkout
 
-Cart/checkout are local state only. No passkey, no Stripe, no signed agent
-requests, no merchant console, no H&M. Those are the Visa track.
+Add an item, say “Cue, check out”, and listen to the item, total, and remaining
+budget. Set up a passkey once, then say “Cue, yes” and approve in the browser's
+passkey prompt. A nearby phone may be offered by the browser. The merchant view
+is at `http://localhost:4173/merchant.html`. Orders and the monthly budget are
+stored in `server/data/cue.sqlite3` (ignored by git). The server sets prices from
+`store/products.json`; cart prices sent by the browser are never accepted.
+
+This is a **single shopper, localhost demo**. It has no account enrollment or
+merchant login and must not be deployed to the public internet as-is. It records
+passkey-approved demo orders but does not charge a card. Stripe/Visa sandbox
+payment and Visa Trusted Agent Protocol signing are still to be built.

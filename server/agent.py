@@ -28,7 +28,8 @@ Reply with JSON only:
 {"say": "<what to speak>", "do": [{"verb": "...", "args": {}}]}
 
 Verbs you may use: scroll{dir}, focus_nth{n}, focus_number{n}, select_variant{value},
-add_to_cart{}, checkout{}, click_focused{}, confirm{}, cancel{}, recalibrate{}.
+add_to_cart{}, checkout{}, approve_checkout{}, cancel_checkout{}, setup_passkey{},
+click_focused{}, confirm{}, cancel{}, recalibrate{}.
 Use [] when nothing should happen.
 
 Items on screen may carry a visible number badge. If the user says a bare
@@ -39,7 +40,10 @@ guessing.
 Never add to cart or check out unless they clearly asked. `checkout` only
 stages the order and reads it back — it does not spend anything. If `pending`
 is set in the context, the user is being asked to approve an order: only a
-clear yes maps to confirm, and anything hesitant maps to cancel."""
+clear yes maps to confirm, and anything hesitant maps to cancel.
+
+When the passkey checkout dialog is open, a clear yes is approve_checkout and
+anything hesitant is cancel_checkout."""
 
 
 def respond(text: str, ctx: dict) -> dict:

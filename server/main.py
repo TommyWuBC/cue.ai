@@ -2,21 +2,28 @@ import os, pathlib
 from dotenv import load_dotenv
 load_dotenv(pathlib.Path(__file__).parent.parent / ".env")
 
-from fastapi import FastAPI, Response, WebSocket, UploadFile, File
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Response, WebSocket, UploadFile, File, HTTPException
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import fallback, router, stt, tts
+from checkout import Checkout, CheckoutError
 
 ROOT = pathlib.Path(__file__).parent.parent
 app = FastAPI(title="Cue")
+checkout = Checkout()
 
 
 # Injected into a third-party page, every call to us is cross-origin. This is
 # a localhost dev server driven by its own extension, so the permissive policy
 # is the correct one — it is not reachable from anywhere but this machine.
+#
+# NOTE: allow_credentials stays False. The passkey routes below are
+# unauthenticated demo endpoints; if they ever gain a session cookie this must
+# become an explicit origin allowlist, because a wildcard with credentials is
+# exactly how a hostile page would drive someone else's checkout.
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=".*",
@@ -40,6 +47,62 @@ def _trace(text: str, out: dict):
     say = (out.get("say") or "")[:60]
     print(f'[turn] "{text}" -> {out.get("source", "?"):8} do={verbs:28} say="{say}"', flush=True)
     return out
+
+class CartItem(BaseModel):
+    id: str
+    size: str
+
+
+class PrepareCheckout(BaseModel):
+    items: list[CartItem]
+    customer_words: str
+
+
+class PasskeyResponse(BaseModel):
+    ceremony_id: str
+    credential: dict
+
+
+def checkout_call(fn, *args):
+    try:
+        return fn(*args)
+    except CheckoutError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+
+
+@app.get("/api/checkout/status")
+def checkout_status():
+    return checkout.status()
+
+
+@app.post("/api/checkout/prepare")
+def checkout_prepare(body: PrepareCheckout):
+    return checkout_call(checkout.prepare, [item.model_dump() for item in body.items], body.customer_words)
+
+
+@app.post("/api/passkey/register/options")
+def passkey_register_options():
+    return checkout_call(checkout.registration_options)
+
+
+@app.post("/api/passkey/register/verify")
+def passkey_register_verify(body: PasskeyResponse):
+    return checkout_call(checkout.register, body.ceremony_id, body.credential)
+
+
+@app.post("/api/passkey/authenticate/options/{intent_id}")
+def passkey_authenticate_options(intent_id: str):
+    return checkout_call(checkout.authentication_options, intent_id)
+
+
+@app.post("/api/checkout/approve")
+def checkout_approve(body: PasskeyResponse):
+    return checkout_call(checkout.approve, body.ceremony_id, body.credential)
+
+
+@app.get("/api/merchant/orders")
+def merchant_orders():
+    return {"orders": checkout.orders()}
 
 
 @app.post("/utterance")

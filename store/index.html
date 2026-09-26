@@ -37,29 +37,61 @@
   .checkout-bar button { background:#f7b600; border:0; border-radius:13px; padding:15px 26px;
                          font:inherit; font-weight:700; font-size:15px; cursor:pointer;
                          box-shadow:0 10px 28px rgba(0,0,0,.16); }
-  .receipt { position:fixed; right:24px; bottom:24px; background:#0e101c; color:#fff;
-             padding:18px 22px; border-radius:16px; box-shadow:0 14px 44px rgba(0,0,0,.3);
-             font-size:14px; display:none; }
-  .receipt.on { display:block; }
-  .receipt b { display:block; font-size:16px; margin-bottom:4px; }
+  .merchant-link { color:#1a1f71; font-size:13px; }
+  #checkout-dialog { width:min(92vw,520px); border:0; border-radius:18px; padding:28px;
+                     box-shadow:0 24px 80px rgba(0,0,0,.28); color:var(--ink); }
+  #checkout-dialog::backdrop { background:rgba(14,16,28,.65); }
+  #checkout-dialog h2 { margin:0 0 12px; color:var(--ink); font-size:21px; text-transform:none; }
+  #checkout-dialog p { margin:10px 0; }
+  .checkout-details { font-weight:600; }
+  .checkout-message { min-height:40px; color:#5b4210; }
+  .checkout-controls { display:flex; gap:9px; flex-wrap:wrap; margin-top:20px; }
+  .checkout-controls button { border:0; border-radius:9px; padding:11px 14px; font:inherit; font-weight:600; cursor:pointer; }
+  .checkout-approve { background:#1a1f71; color:#fff; }
+  .checkout-setup { background:#f7b600; color:#191919; }
+  .checkout-controls button:disabled { opacity:.45; cursor:not-allowed; }
 </style>
 </head>
 <body>
 <header>
   <h1>Northfield</h1><span>Outerwear · Autumn</span>
-  <div class="cart" id="cartbar">Cart <b id="count">0</b> · Budget left <b id="budget">$250.00</b></div>
+  <div class="cart" id="cartbar">Cart <b id="count">0</b> · Budget left <b id="budget">$250</b></div>
+  <a class="merchant-link" href="/merchant.html" target="_blank" rel="noopener">Merchant view</a>
 </header>
 <main><h2>Jackets &amp; Coats</h2><div class="grid" id="grid"></div></main>
 <div class="checkout-bar" id="checkoutbar">
-  <button data-cue-action="checkout" data-cue-label="Check out" onclick="window.cueStore.checkout()">Check out</button>
+  <button data-cue-action="checkout" data-cue-label="Check out" onclick="window.cue?.perform('checkout', {})">Check out</button>
 </div>
-<div class="receipt" id="receipt"></div>
+<dialog id="checkout-dialog" aria-labelledby="checkout-title">
+  <h2 id="checkout-title">Review demo order</h2>
+  <p class="checkout-details"></p>
+  <p class="checkout-message" role="status" aria-live="polite"></p>
+  <div class="checkout-controls">
+    <button class="checkout-setup" type="button" disabled>Set up passkey</button>
+    <button class="checkout-approve" type="button" disabled>Approve with passkey</button>
+    <button class="checkout-cancel" type="button">Cancel</button>
+  </div>
+</dialog>
 
 <script type="module">
-import { PRODUCTS } from "/products.js";
+import { setupCheckout } from "/checkout.js";
+const PRODUCTS = await fetch("/products.json").then(r => r.json());
 const grid = document.getElementById("grid");
-const BUDGET_START = 250;
-let cart = [], budget = BUDGET_START;
+let cart = [], remaining = 25000;
+const money = cents => "$" + (cents / 100).toFixed(2);
+function renderCart() {
+  const left = remaining - cart.reduce((sum, p) => sum + Math.round(p.price * 100), 0);
+  document.getElementById("count").textContent = cart.length;
+  document.getElementById("budget").textContent = money(left);
+  document.getElementById("cartbar").classList.toggle("over", left < 0);
+}
+const checkoutFlow = setupCheckout({
+  getCart: () => cart,
+  clearCart: () => { cart = []; renderCart(); },
+  onStatus: status => { remaining = status.remaining_cents; renderCart(); },
+});
+window.cueCheckout = checkoutFlow;
+window.checkout = checkoutFlow.prepare;
 
 grid.innerHTML = PRODUCTS.map(p => `
   <article class="card" data-cue-product='${JSON.stringify(p).replace(/'/g, "&#39;")}'>
@@ -78,12 +110,6 @@ grid.innerHTML = PRODUCTS.map(p => `
     </div>
   </article>`).join("");
 
-function paint() {
-  document.getElementById("count").textContent = cart.length;
-  document.getElementById("budget").textContent = "$" + budget.toFixed(2);
-  document.getElementById("cartbar").classList.toggle("over", budget < 0);
-}
-
 grid.addEventListener("click", (e) => {
   const v = e.target.closest('[data-cue-action="select_variant"]');
   if (v) {
@@ -93,64 +119,26 @@ grid.addEventListener("click", (e) => {
   const a = e.target.closest('[data-cue-action="add_to_cart"]');
   if (a) {
     const p = PRODUCTS.find(x => x.id === a.dataset.id);
-    // The budget is part of the trust story, so it has to actually hold. The
-    // previous version let it go negative without a word.
-    if (p.price > budget) {
+    // The page confirms, not the router: only here do we know the click landed.
+    // Saying "Added." optimistically up front meant a refused item was
+    // announced as added one breath later.
+    const spent = cart.reduce((sum, x) => sum + Math.round(x.price * 100), 0);
+    const left = remaining - spent;
+    if (Math.round(p.price * 100) > left) {
       window.cue?.bus.emit("SAY", {
-        text: `The ${p.title} is $${p.price.toFixed(2)} and you have $${budget.toFixed(2)} left. That would put you over your budget.` });
+        text: `The ${p.title} is $${p.price.toFixed(2)} and you have ${money(left)} left. That would put you over your budget.` });
       return;
     }
-    const size = a.closest(".card").querySelector('[aria-pressed="true"]')?.dataset.cueValue ?? "M";
-    cart.push({ ...p, size }); budget -= p.price;
-    paint();
-    // The page confirms, not the router: only here do we know the click landed
-    // and was affordable. Saying "Added." optimistically up front meant a
-    // refused item was announced as added one breath later.
+    const size = a.closest(".card").querySelector('[aria-pressed="true"]')?.dataset.auraValue
+              ?? a.closest(".card").querySelector('[aria-pressed="true"]')?.dataset.cueValue ?? "M";
+    // Keep the customer's own words with the item — the intent record on the
+    // order is the whole point of the trust story.
+    cart.push({ ...p, size, words: window.cue?.lastActionUtterance || "" });
+    renderCart();
     window.cue?.bus.emit("SAY", { text: "Added." });
   }
 });
-
-// The page owns the cart; Cue only ever asks it questions and asks permission.
-window.cueStore = {
-  get cart() { return cart; },
-  get budget() { return budget; },
-  summary() {
-    const total = cart.reduce((s, i) => s + i.price, 0);
-    const what = cart.length === 1
-      ? `the ${cart[0].title} in ${cart[0].size}`
-      : `${cart.length} items`;
-    return {
-      count: cart.length, total, remaining: budget,
-      readback: cart.length
-        ? `That's ${what}, $${total.toFixed(2)} total. You'd have $${budget.toFixed(2)} left this month. Say yes to approve.`
-        : "Your cart is empty.",
-    };
-  },
-  checkout() { window.cue?.perform("checkout", {}); },
-  approve() {
-    const s = this.summary();
-    const r = document.getElementById("receipt");
-    r.innerHTML = `<b>Order approved</b>${s.count} item${s.count > 1 ? "s" : ""} · $${s.total.toFixed(2)}<br>$${budget.toFixed(2)} left this month`;
-    r.classList.add("on");
-    document.getElementById("checkoutbar").style.display = "none";
-    return s;
-  },
-  reset() { cart = []; budget = BUDGET_START; paint();
-            document.getElementById("receipt").classList.remove("on");
-            document.getElementById("checkoutbar").style.display = ""; },
-};
-paint();
-</script>
-<script>
-  // Point webgazer at our own copy of the TF.js models. Must run BEFORE the
-  // bundle, which constructs its tracker (and starts fetching) at load time.
-  // Without this it pulls ~6MB from tfhub.dev on every cold start, so a
-  // saturated venue wifi means no gaze tracking at all.
-  globalThis.CUE_MODELS = {
-    blazeface: "/vendor/models/blazeface",
-    facemesh:  "/vendor/models/facemesh",
-    iris:      "/vendor/models/iris",
-  };
+window.CART = () => cart;
 </script>
 <script src="/vendor/webgazer.js"></script>
 <script type="module" src="/client/aura.js"></script>

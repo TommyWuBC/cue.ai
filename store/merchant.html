@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cue · Merchant view</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#f4f6fa; color:#181b27; font:15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",sans-serif; }
+  header { background:#1a1f71; color:white; padding:24px max(24px,calc((100vw - 1000px)/2)); }
+  h1 { margin:0; font-size:24px; }
+  header p { margin:5px 0 0; opacity:.75; }
+  main { max-width:1000px; padding:28px 24px; margin:auto; }
+  .summary { padding:16px 20px; background:#fff; border-radius:12px; border:1px solid #e0e3eb; }
+  .orders { display:grid; gap:16px; margin-top:20px; }
+  article { background:#fff; border:1px solid #e0e3eb; border-radius:14px; padding:20px; }
+  article h2 { margin:0 0 8px; font-size:17px; }
+  .meta { color:#5c6576; font-size:13px; }
+  .badge { display:inline-block; border-radius:999px; background:#dff6e7; color:#155c31; padding:4px 9px; font-size:12px; font-weight:700; }
+  .warning { background:#fff4d1; color:#614800; }
+  blockquote { margin:12px 0 0; padding:8px 12px; border-left:3px solid #1a1f71; background:#f7f8fc; }
+  .error { color:#9b2424; }
+</style>
+</head>
+<body>
+<header><h1>Cue merchant view</h1><p>Local demo orders · refreshes automatically</p></header>
+<main>
+  <div class="summary" role="status" aria-live="polite" id="summary">Loading orders…</div>
+  <div class="orders" id="orders"></div>
+</main>
+<script type="module">
+const summary = document.getElementById('summary');
+const list = document.getElementById('orders');
+const money = cents => `$${(cents / 100).toFixed(2)}`;
+let lastIds = '';
+async function refresh() {
+  try {
+    const response = await fetch('/api/merchant/orders');
+    if (!response.ok) throw new Error('Could not load orders.');
+    const { orders } = await response.json();
+    summary.textContent = `${orders.length} recent demo order${orders.length === 1 ? '' : 's'} · Passkey approved · No payment charged`;
+    const ids = orders.map(order => order.id).join(',');
+    if (ids === lastIds) return;
+    lastIds = ids;
+    list.replaceChildren();
+    for (const order of orders) {
+      const article = document.createElement('article');
+      const title = document.createElement('h2');
+      title.textContent = `${money(order.total_cents)} · ${order.items.length} item${order.items.length === 1 ? '' : 's'}`;
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = `${new Date(order.created_at).toLocaleString()} · Order ${order.id}`;
+      const items = document.createElement('p');
+      items.textContent = order.items.map(item => `${item.title}, ${item.size}, ${money(item.unit_price_cents)}`).join(' · ');
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = 'Passkey approved';
+      const unpaid = document.createElement('span');
+      unpaid.className = 'badge warning';
+      unpaid.style.marginLeft = '8px';
+      unpaid.textContent = 'Demo · no charge';
+      const words = document.createElement('blockquote');
+      words.textContent = `Customer words: ${order.customer_words}`;
+      article.append(title, meta, items, badge, unpaid, words);
+      list.appendChild(article);
+    }
+  } catch (error) { summary.textContent = error.message; summary.classList.add('error'); }
+}
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

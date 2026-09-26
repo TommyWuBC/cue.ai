@@ -159,6 +159,24 @@ compensation is worse than none. Inspect with `cue.head()`.
 against an already-compensated error feeds the correction into its own input
 and lets it run away.
 
+### Calibration can be advanced by voice
+
+"Cue, next" advances a calibration dot, as well as space. Someone who cannot
+use a trackpad cannot press space either, and calibration is the very first
+screen they meet. This is why `voice.startListening()` runs **before**
+`gaze.calibrate()` in boot — move it back after and the feature silently dies.
+`aura.js` declines to forward utterances to the server while calibrating, so
+the calibration's own listener is the only consumer.
+
+### Tracking quality, and dropping focus
+
+`checkQuality()` runs on the dwell loop. Bad tracking is not always noisy — a
+frozen feed or a face out of frame gives a rock-steady, completely wrong
+estimate that dispersion cannot detect. So it checks sample freshness and
+plausibility directly, and after `LOW_CONFIDENCE_MS` of that it **drops focus**
+and raises `GAZE_QUALITY`, which shows the panel with a Recalibrate button.
+Pointing confidently at the wrong thing is worse than pointing at nothing.
+
 ### Stray trackpad input
 
 - **The pointer goes stale after 3s.** In mouse and sim modes a brushed
@@ -302,6 +320,39 @@ refusal. The **router/agent** announces intent it is certain of.
 The router must never say "Added." optimistically. It did, and a refused item
 was announced as added one breath after the refusal.
 
+## Checkout: two paths, one set of words
+
+There are two checkout implementations and they are both live.
+
+- **`store/checkout.js` + `server/checkout.py`** is the real one: server-side
+  repricing, per-order and monthly caps rechecked *inside the SQLite write
+  transaction*, a WebAuthn challenge bound to a pending intent, and the
+  customer's own words stored on the order. `store/merchant.html` reads
+  `/api/merchant/orders`.
+- **`stageCheckout()` in `client/aura.js`** is the fallback for any page
+  without that flow — it stages, reads back and waits for `confirm`.
+
+`checkout` picks whichever exists. The subtlety worth knowing:
+
+**The router maps a bare "yes" to `approve_checkout`, not `confirm`**, because
+its anchored checkout rules are tried first. Only the page knows whether the
+passkey dialog is actually open, so `aura.js` reconciles: `approve_checkout`
+falls back to `confirm` when no dialog is up, and `confirm` drives the dialog
+when one is. Change one side and you must change the other, or "yes" silently
+does nothing in one of the two worlds.
+
+**`cancel` is never refused.** `prepare()` holds its `busy` flag for the whole
+spoken readback, and the original `cancel()` early-returned on `busy` — so
+while Cue read your order aloud you could not say no. On a payment
+confirmation that is the one moment cancel must work. It now stops the speech,
+clears the intent and closes the dialog regardless, and `prepare()` checks a
+`cancelled` flag after its await so it cannot re-arm a dismissed dialog.
+
+**The dialog is modal to Cue too.** While it is open, only
+approve/cancel/setup_passkey/confirm/cancel/recalibrate get through.
+Recalibrate is on that list deliberately: losing tracking mid-dialog would
+otherwise trap you in it.
+
 ## Nothing spends money on one utterance
 
 `checkout` **stages** an order and reads it back — item, total, remaining
@@ -344,6 +395,19 @@ Three places in `client/aura.js` bypass the resolver with literal selectors:
 charges for the wrong item.
 
 ---
+
+## Tests
+
+    .venv/bin/python -m pytest tests -q     # router, checkout, api
+    node --test tests/*.mjs                 # resolver targeting
+
+`node --test tests/` (with a bare directory) fails on Node 22 with
+MODULE_NOT_FOUND — it resolves the path as a module. Use the glob.
+
+`client/resolver.js` and `client/badges.js` are imported by the node runner,
+which has no DOM — that is why their top-level `addEventListener` calls are
+guarded and why `key()` reads viewport globals off `globalThis` with
+fallbacks. Keep new top-level DOM access out of those two files, or guard it.
 
 ## Known gaps
 

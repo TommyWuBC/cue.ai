@@ -54,6 +54,12 @@ const DWELL_MS      = 380;  // how long a candidate holds before FOCUS commits
 const SWITCH_MARGIN = 0.82; // new target must be this much closer to steal focus
 const EDGE          = 6;    // keep the reticle on screen at the extremes
 
+// Tracking can be bad without being noisy — a stale feed or a face out of
+// frame gives a perfectly steady, perfectly wrong estimate. These bound how
+// long that is tolerated before focus is dropped entirely.
+const LOW_CONFIDENCE_MS = 2200;
+const STALE_SAMPLE_MS   = 1200;
+
 const state = {
   running: false, calibrated: false, mode: "webgazer",
   point: null, focus: null, cand: null, candSince: 0, conf: 0, lockUntil: 0,
@@ -62,6 +68,7 @@ const state = {
   // Affine range correction, learned in the calibration validation pass.
   cal: { ax: 1, bx: 0, ay: 1, by: 0 },
   accuracy: null,
+  lastSampleAt: 0, lowSince: 0, qualityLow: false, calibrating: false,
 };
 
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
@@ -275,6 +282,10 @@ function confidence() {
 
 // ── Ingest ──────────────────────────────────────────────────────────────────
 function ingest(rawX, rawY) {
+  // webgazer occasionally emits NaN when the mesh drops out. One of those
+  // poisons the One Euro state permanently — every later value becomes NaN.
+  if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) return;
+  state.lastSampleAt = performance.now();
   const t = performance.now() / 1000;
 
   // Range correction first: webgazer's ridge fit compresses toward the screen
@@ -319,8 +330,39 @@ let dwellTimer = null;
 function startDwellLoop() {
   if (dwellTimer) return;
   dwellTimer = setInterval(() => {
-    if (state.point) commitDwell(state.point.x, state.point.y);
+    checkQuality();
+    if (state.point && !state.qualityLow && !state.calibrating) {
+      commitDwell(state.point.x, state.point.y);
+    }
   }, 60);
+}
+
+// Bad tracking is not always noisy. A frozen feed or a face out of frame
+// gives a rock-steady, completely wrong estimate — dispersion cannot see that,
+// so check freshness and plausibility directly. When it is clearly bad we drop
+// focus rather than keep pointing confidently at the wrong thing.
+function checkQuality() {
+  if (state.mode !== "webgazer" || !state.calibrated || state.calibrating) return;
+  const now = performance.now();
+  const p = state.point;
+  const outside = p && (p.x < -40 || p.y < -40 || p.x > innerWidth + 40 || p.y > innerHeight + 40);
+  const stale = !state.lastSampleAt || now - state.lastSampleAt > STALE_SAMPLE_MS;
+  const poor = stale || state.conf < 0.45 || outside;
+
+  if (poor) {
+    state.lowSince ||= now;
+    if (!state.qualityLow && now - state.lowSince >= LOW_CONFIDENCE_MS) {
+      state.qualityLow = true;
+      setFocus(null, 0);
+      bus.emit("GAZE_QUALITY", { low: true, reason: driftReason() });
+    }
+  } else {
+    state.lowSince = 0;
+    if (state.qualityLow) {
+      state.qualityLow = false;
+      bus.emit("GAZE_QUALITY", { low: false });
+    }
+  }
 }
 
 function commitDwell(x, y) {
@@ -395,6 +437,7 @@ const POOR_PX = 220;
 
 function runCalibration(attempt) {
   return new Promise((done) => {
+    const cleanup = [];
     const ov = document.createElement("div");
     ov.className = "cue-cal";
     ov.innerHTML = `<div class="cue-cal-hint"></div><div class="cue-cal-dot"></div>`;
@@ -404,12 +447,16 @@ function runCalibration(attempt) {
     let i = 0;
 
     // Space is push-to-talk everywhere else. Tell voice.js to stand down.
+    state.calibrating = true;
+    state.qualityLow = false; state.lowSince = 0;
+    bus.emit("GAZE_QUALITY", { low: false });
     bus.emit("STATE", { calibrating: true });
 
     const finish = async () => {
       // Must match the capture flag it was added with, or it is never removed
       // and space keeps re-triggering calibration points under the store page.
       removeEventListener("keydown", onKey, true);
+      cleanup.forEach((fn) => fn());
       hint.textContent = "Now just look at each dot — no key, checking accuracy";
       const obs = await sweep(dot);
 
@@ -465,10 +512,13 @@ function runCalibration(attempt) {
       hint.textContent = `Look at the dot and press SPACE  ·  ${i + 1} / ${TRAIN.length}${again}`;
     };
 
-    const onKey = (e) => {
-      if (e.code !== "Space") return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
+    // Advancing must not require a key. Someone who cannot use a trackpad
+    // cannot press space either, and calibration is the very first thing they
+    // meet — so "Cue, next" advances the same way.
+    let recording = false;
+    const capture = () => {
+      if (recording || i >= TRAIN.length) return;
+      recording = true;
       const [fx, fy] = TRAIN[i];
       const px = fx * innerWidth, py = fy * innerHeight;
       dot.classList.add("armed");
@@ -476,9 +526,23 @@ function runCalibration(attempt) {
       let n = 0;
       const tick = setInterval(() => {
         window.webgazer?.recordScreenPosition(px, py, "click");
-        if (++n >= 14) { clearInterval(tick); i++; show(); }
+        if (++n >= 14) { clearInterval(tick); i++; recording = false; show(); }
       }, 55);
     };
+
+    const onKey = (e) => {
+      if (e.code !== "Space" || e.repeat) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      capture();
+    };
+
+    // Utterances still reach us during calibration; aura.js declines to send
+    // them to the server while calibrating, so this is the only consumer.
+    const stopVoice = bus.on("UTTERANCE", ({ text, final }) => {
+      if (final && /^(next|ready|capture|ok|okay|go|done)\b/i.test(text.trim())) capture();
+    });
+    cleanup.push(stopVoice);
 
     addEventListener("keydown", onKey, true);
     if (attempt === 1) bus.emit("SAY", { text: "Look at each dot and press space." });
@@ -694,6 +758,8 @@ export async function calibrate({ allowRetry = true, maxAttempts = 2 } = {}) {
       if (await qualityModal(acc, attempt) === "recal") continue;
     }
 
+    state.calibrating = false;
+    state.lastSampleAt = performance.now();
     bus.emit("STATE", { calibrating: false, accuracy: acc });
     const q = acc?.after_px;
     bus.emit("SAY", {

@@ -20,6 +20,10 @@ function mountUI() {
       <div class="cue-hud-said"></div>
       <div class="cue-hud-drift">tracking has drifted · say &ldquo;recalibrate&rdquo;</div>
       <div class="cue-hud-foot">hold <kbd>space</kbd> to talk · say &ldquo;Cue, &hellip;&rdquo;</div>
+    </div>
+    <div class="cue-quality" role="status" aria-live="polite" hidden>
+      <span>Gaze seems uncertain. Say &ldquo;Cue, recalibrate&rdquo; or use the button.</span>
+      <button type="button">Recalibrate</button>
     </div>`;
   document.body.appendChild(root);
   ui.reticle = root.querySelector(".cue-reticle");
@@ -31,8 +35,13 @@ function mountUI() {
   ui.dot     = root.querySelector(".cue-dot");
   ui.drift   = root.querySelector(".cue-hud-drift");
   ui.foot    = root.querySelector(".cue-hud-foot");
+  ui.quality = root.querySelector(".cue-quality");
+  ui.quality.querySelector("button").addEventListener("click", () => recalibrate());
   badges.mount(root);
 }
+
+// Tracking has gone bad enough that focus was dropped. Offer the way out.
+bus.on("GAZE_QUALITY", ({ low }) => { if (ui.quality) ui.quality.hidden = !low; });
 
 // ── Render loop ─────────────────────────────────────────────────────────────
 // GAZE arrives at ~25Hz and in bursts. Writing transform straight from the
@@ -155,6 +164,7 @@ function context() {
 let inflight = false;
 bus.on("UTTERANCE", async ({ text, final }) => {
   ui.heard.textContent = (final ? "" : "… ") + text;
+  if (gaze.getState().calibrating) return;
   if (!final || inflight) return;
 
   // Naming an item and then talking about it must not let gaze quietly take
@@ -170,12 +180,14 @@ bus.on("UTTERANCE", async ({ text, final }) => {
       body: JSON.stringify({ text, context: context() }),
     });
     const out = await res.json();
+    window.cue.lastActionUtterance = text;
     for (const a of out.do ?? []) perform(a.verb, a.args ?? {});
+    window.cue.lastActionUtterance = null;
     if (out.say) bus.emit("SAY", { text: out.say });
   } catch (e) {
     bus.emit("SAY", { text: "Sorry, I lost my connection." });
     console.error(e);
-  } finally { inflight = false; }
+  } finally { window.cue.lastActionUtterance = null; inflight = false; }
 });
 
 // ── Confirmation ────────────────────────────────────────────────────────────
@@ -185,6 +197,10 @@ bus.on("UTTERANCE", async ({ text, final }) => {
 let pendingConfirm = null;
 
 function stageCheckout() {
+  // Their passkey flow is the real one where it exists: it reprices
+  // server-side, enforces the cap inside the write transaction and writes the
+  // intent record. Only fall back to the local staged readback without it.
+  if (window.cueCheckout?.prepare) { window.cueCheckout.prepare(); return; }
   const store = window.cueStore;
   if (!store) { bus.emit("SAY", { text: "There's no cart on this page." }); return; }
   const s = store.summary();
@@ -218,7 +234,19 @@ function scope() {
   return f.kind === "product" ? f.el : f.el.closest("[data-cue-product],[data-aura-product]");
 }
 
+const checkoutOpen = () =>
+  !!(document.getElementById("checkout-dialog")?.open && window.cueCheckout);
+
 function perform(verb, args) {
+  // While the passkey dialog is up, nothing else may act — but recalibrate
+  // and confirm/cancel must still get through, or losing tracking mid-dialog
+  // traps you in it with no way out.
+  if (checkoutOpen() &&
+      !["approve_checkout", "cancel_checkout", "setup_passkey",
+        "confirm", "cancel", "recalibrate"].includes(verb)) {
+    bus.emit("SAY", { text: "Finish or cancel this checkout first." });
+    return;
+  }
   switch (verb) {
     case "scroll":
       scrollBy({ top: (args.dir === "up" ? -1 : 1) * innerHeight * 0.75, behavior: "smooth" });
@@ -264,10 +292,34 @@ function perform(verb, args) {
     }
     case "checkout": stageCheckout(); break;
     case "confirm":
-      if (!resolveConfirm(true)) bus.emit("SAY", { text: "There's nothing waiting for approval." });
+      if (checkoutOpen()) window.cueCheckout.approve();
+      else if (!resolveConfirm(true)) bus.emit("SAY", { text: "There's nothing waiting for approval." });
       break;
     case "cancel":
-      if (!resolveConfirm(false)) bus.emit("SAY", { text: "Okay." });
+      if (checkoutOpen()) window.cueCheckout.cancel();
+      else if (!resolveConfirm(false)) bus.emit("SAY", { text: "Okay." });
+      break;
+    // The router maps a bare "yes" to approve_checkout, since its anchored
+    // checkout rules are tried first. But "yes" also has to work for the
+    // staged-order readback when no passkey dialog is open — and only the
+    // page knows which of those is true. Reconcile here.
+    case "approve_checkout":
+      if (checkoutOpen()) window.cueCheckout.approve();
+      else if (!resolveConfirm(true)) bus.emit("SAY", { text: "There's nothing waiting for approval." });
+      break;
+    case "cancel_checkout":
+      if (checkoutOpen()) window.cueCheckout.cancel();
+      else if (!resolveConfirm(false)) bus.emit("SAY", { text: "Okay." });
+      break;
+    case "setup_passkey":
+      if (window.cueCheckout?.register) window.cueCheckout.register();
+      else bus.emit("SAY", { text: "There's no passkey set-up on this page." });
+      break;
+    case "recalibrate":
+      gaze.calibrate().then(() => gaze.hideCamera()).catch(e => {
+        console.error("[cue] recalibration failed", e);
+        bus.emit("SAY", { text: "I couldn't recalibrate. Please check the camera." });
+      });
       break;
     case "navigate": location.href = args.url; break;
     default: console.warn("[cue] unknown verb", verb, args);
@@ -303,11 +355,15 @@ async function boot() {
   // for — no camera, or a browser blocking WebGL, degrades it to the mouse.
   const actual = await gaze.start({ mode: CONFIG.gazeMode, sigma: CONFIG.sigma,
                                     tune: CONFIG.tune, keepData: CONFIG.keepData });
+  // Listening starts BEFORE calibration on purpose: "Cue, next" advances the
+  // dots, and someone who cannot press space has no other way through the
+  // very first screen they meet.
+  await voice.startListening();
+
   if (actual === "webgazer" && CONFIG.autoCal) {
     await gaze.calibrate();
     gaze.hideCamera();
   }
-  await voice.startListening();
 
   if (CONFIG.gazeMode === "webgazer" && actual !== "webgazer") {
     bus.emit("SAY", { text: "I couldn't use the camera, so I'm following the mouse instead. Everything else works." });
@@ -368,4 +424,8 @@ window.cue = { bus, gaze, voice, badges, context, perform, boot, say, recalibrat
                head: () => gaze.getHead(),
                get pending() { return pendingConfirm; } };
 window.aura = window.cue;          // nothing that already says aura.* breaks
-addEventListener("DOMContentLoaded", boot);
+
+// DOMContentLoaded may already have fired — it will have, for anything
+// injected into a live page — so check rather than assume.
+if (document.readyState === "loading") addEventListener("DOMContentLoaded", boot, { once: true });
+else boot();

@@ -47,6 +47,16 @@ def _size(m, key="sz"):
 
 
 RULES = [
+    # ── Passkey checkout. Anchored and specific, so these are tried before
+    #    the looser confirmation rules below — otherwise a bare "yes" maps to
+    #    confirm and the passkey dialog never sees it. ────────────────────────
+    (r"^(set up|create|register) (a |my )?passkey$",
+     lambda m: {"say": None, "do": [{"verb": "setup_passkey", "args": {}}]}),
+    (r"^(yes|yes approve|approve|confirm)( the (order|checkout))?$",
+     lambda m: {"say": None, "do": [{"verb": "approve_checkout", "args": {}}]}),
+    (r"^(no|cancel checkout|cancel order)$",
+     lambda m: {"say": "Okay, checkout cancelled.", "do": [{"verb": "cancel_checkout", "args": {}}]}),
+    
     # ── Compound: pick, size and add in one breath ──────────────────────────
     (rf"\badd\s+(?:the\s+)?(?P<n>{ORD})\s+{NOUN}\s+in\s+(?P<sz>{SIZE})\b",
      lambda m: {"say": None, "do": [
