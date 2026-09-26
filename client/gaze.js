@@ -354,10 +354,15 @@ function commitDwell(x, y) {
 // Training points sit closer to the edges than before. Ridge regression does
 // not extrapolate: whatever box you train inside is the box you can reach, and
 // the old grid stopped at 10%/15% from each edge.
+// 13 points, not 9. Removing webgazer's implicit click-training was right —
+// it was training on a lie — but it left the ridge fit with only 9x8 = 72
+// samples, which is thin, and a thin fit is why gain_x came back at 0.60 with
+// a 260px offset. 13 points x 14 samples = 182, for four extra key presses.
 const TRAIN = [
-  [.06, .08], [.5, .08], [.94, .08],
-  [.06, .50], [.5, .50], [.94, .50],
-  [.06, .92], [.5, .92], [.94, .92],
+  [.06, .08], [.50, .08], [.94, .08],
+  [.06, .50], [.50, .50], [.94, .50],
+  [.06, .92], [.50, .92], [.94, .92],
+  [.28, .28], [.72, .28], [.28, .72], [.72, .72],
 ];
 
 // Then a short pass where we watch what webgazer ACTUALLY predicts while the
@@ -471,7 +476,7 @@ function runCalibration(attempt) {
       let n = 0;
       const tick = setInterval(() => {
         window.webgazer?.recordScreenPosition(px, py, "click");
-        if (++n >= 8) { clearInterval(tick); i++; show(); }
+        if (++n >= 14) { clearInterval(tick); i++; show(); }
       }, 55);
     };
 
@@ -535,22 +540,35 @@ function qualityModal(acc, attempt) {
 // Walk the validation points and collect (predicted, actual) pairs. Used both
 // at the end of calibration and, on its own, to answer "is it any better now?"
 // with a number instead of a feeling.
-async function sweep(dot) {
+async function sweep(dot, hint) {
   const obs = [];
-  for (const [fx, fy] of VALIDATE) {
+  let nulls = 0, errors = 0, noFace = 0;
+  for (let k = 0; k < VALIDATE.length; k++) {
+    const [fx, fy] = VALIDATE[k];
     const px = fx * innerWidth, py = fy * innerHeight;
     dot.style.left = px + "px"; dot.style.top = py + "px";
     dot.classList.remove("armed");
     await sleep(650);                       // let the eye land
     dot.classList.add("armed");
-    for (let n = 0; n < 14; n++) {
+    // Keep sampling until we have enough GOOD ones, not just enough attempts.
+    // A few dropped frames per point used to silently halve the sample count.
+    let good = 0;
+    for (let n = 0; n < 30 && good < 14; n++) {
       try {
         const p = await window.webgazer.getCurrentPrediction();
-        if (p && Number.isFinite(p.x)) obs.push([p.x, p.y, px, py]);
-      } catch { /* a dropped frame is not fatal */ }
+        if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+          obs.push([p.x, p.y, px, py]); good++;
+        } else {
+          nulls++;
+          if (!readHead()) noFace++;
+        }
+      } catch { errors++; }
       await sleep(45);
     }
+    if (hint) hint.textContent =
+      `Just look at each dot — ${k + 1} / ${VALIDATE.length}`;
   }
+  obs.stats = { nulls, errors, noFace };
   return obs;
 }
 
@@ -574,8 +592,18 @@ export async function measure() {
   document.body.appendChild(ov);
   bus.emit("STATE", { calibrating: true });
   try {
-    const obs = await sweep(ov.querySelector(".cue-cal-dot"));
-    if (obs.length < 25) { console.warn("[cue] not enough samples"); return null; }
+    const obs = await sweep(ov.querySelector(".cue-cal-dot"), ov.querySelector(".cue-cal-hint"));
+    if (obs.length < 25) {
+      const st = obs.stats || {};
+      const why = st.noFace > st.nulls / 2
+        ? "your face wasn't detected — check lighting and that you're in frame"
+        : st.errors
+          ? "webgazer threw on most frames — is the camera still live?"
+          : "the tracker returned no prediction for most frames";
+      console.warn(`[cue] measure failed: only ${obs.length} good samples. ${why}`, st);
+      bus.emit("SAY", { text: "I couldn't measure — I lost track of your face." });
+      return null;
+    }
     // Score against the correction currently in force — that is what the user
     // actually experiences, not what a fresh fit could achieve.
     const { ax, bx, ay, by } = state.cal;

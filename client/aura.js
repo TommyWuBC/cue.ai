@@ -118,7 +118,13 @@ bus.on("STATE", (s) => {
   if (s.ptt !== undefined) ui.dot.classList.toggle("hot", s.ptt);
   if (s.listening) ui.dot.classList.add("live");
   if (s.listening === false) ui.dot.classList.remove("live");
-  if (s.accuracy) console.log("[cue] gaze accuracy", s.accuracy);
+  if (s.accuracy) {
+    console.log("[cue] gaze accuracy", s.accuracy);
+    // How coarse the signal turned out to be decides how many items get
+    // numbered. At 341px, numbering only the nearest few can miss the one
+    // they want, which defeats the point.
+    badges.setPrecision(s.accuracy.after_px);
+  }
   if (s.precise !== undefined) {
     precise = s.precise;
     ui.outline.dataset.guess = String(!precise);

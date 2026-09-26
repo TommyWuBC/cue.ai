@@ -12,12 +12,30 @@
 import { bus } from "./bus.js";
 import { scan } from "./resolver.js";
 
-// How many candidates to number. More than this is visual noise and slows the
-// read; fewer and the right item is too often missing.
-const MAX_BADGES = 4;
-// Candidates must be within this of the gaze point to be worth numbering.
-// Generous on purpose: the whole premise is that gaze is coarse.
-const RADIUS_PX = 520;
+// How many candidates to number, and how far out to look for them. Both scale
+// with how accurate gaze actually turned out to be.
+//
+// At ~150px, gaze genuinely narrows the field and numbering the nearest four
+// is a precise, low-noise affordance. At the 341px we have measured, gaze
+// barely narrows anything — so numbering only four risks the wanted item not
+// being among them, which is the one failure the whole design exists to avoid.
+// Past that point we number everything on screen and let the voice do all the
+// work. Slightly busier, but it cannot miss.
+const TIERS = [
+  { upTo: 160,      max: 4, radius: 460 },
+  { upTo: 240,      max: 6, radius: 620 },
+  { upTo: Infinity, max: 9, radius: Infinity },   // number everything visible
+];
+let tier = TIERS[0];
+
+/** Called with the measured calibration error, in px. */
+export function setPrecision(px) {
+  tier = TIERS.find((t) => px <= t.upTo) ?? TIERS.at(-1);
+  console.log(`[cue] badges tuned for ${Math.round(px)}px:`,
+              `up to ${tier.max}`,
+              tier.radius === Infinity ? "(everything on screen)" : `within ${tier.radius}px`);
+  root && (root.dataset.sig = "");    // force a rebuild
+}
 
 let root = null;
 let shown = [];          // [{ target, n, el }]
@@ -61,9 +79,9 @@ export function update(x, y, focusedId) {
 
   const near = ordered
     .map((t) => ({ t, d: dist(x, y, t.rect) }))
-    .filter((o) => o.d <= RADIUS_PX)
+    .filter((o) => o.d <= tier.radius)
     .sort((a, b) => a.d - b.d)
-    .slice(0, MAX_BADGES)
+    .slice(0, tier.max)
     .map((o) => o.t);
 
   if (!near.length) { clear(); return; }
@@ -111,6 +129,7 @@ export function byNumber(n) {
 }
 
 export const getShown = () => shown.map((b) => ({ n: b.n, id: b.target.id, label: b.target.label }));
+export const getTier = () => ({ ...tier });
 
 // Anything that changes layout invalidates positions.
 addEventListener("scroll", reposition, { passive: true });

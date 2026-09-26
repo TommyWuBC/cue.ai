@@ -58,7 +58,8 @@ outside. These two lines tell them apart. `STT_LOG=0` silences the first.
 
 This is the single most important thing to understand about this codebase.
 
-**Measured gaze error on a real face is 220–250px.** WebGazer's own published
+**Measured gaze error on a real face is 220–350px**, varying run to run
+(observed: 242, then 150–220, then >220, then 341). WebGazer's own published
 figure is ~130px; we are worse, and it varies run to run. Amazon's product tiles
 are 249px wide. Measured through our own pipeline at σ=242:
 
@@ -69,8 +70,13 @@ are 249px wide. Measured through our own pipeline at σ=242:
 
 So **gaze is a region signal, not a pointer**, and everything follows from that:
 
-- `client/badges.js` stamps big numbers on the few products nearest your gaze.
-  You say "two". This is the primary selection mechanism, not a fallback.
+- `client/badges.js` stamps big numbers on products near your gaze. You say
+  "two". This is the primary selection mechanism, not a fallback.
+- **How many get numbered scales with the measured error** (`setPrecision()`).
+  At ~150px the nearest four is a precise, quiet affordance. Past ~240px gaze
+  barely narrows anything, so *everything on screen* gets a number and the
+  voice does all the work. Busier, but it cannot miss — verified 6/6 reachable
+  at 341px, where numbering only four would sometimes omit the wanted item.
 - Below the precision bar the focus outline goes dashed and semi-transparent.
   At 242px a confident outline is on the *wrong* card two times in three —
   showing certainty we do not have is worse than showing none.
