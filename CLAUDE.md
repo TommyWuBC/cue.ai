@@ -416,10 +416,40 @@ Anything inside `#aura-root` therefore paints above everything on the page,
 **z-index is ignored**. That is why the calibration screen appeared covered in
 stray dots: the numbered badges live in that root and floated over it.
 
-Anything Cue draws over the page must be listed in the
-`body:has(.aura-cal)` hide rule at the top of `overlay.css`, or it will sit on
-top of the dots the user is being asked to look at. Same for
-`body:has(dialog:modal)` and the passkey dialog.
+`overlay.css` therefore hides the whole root during calibration
+(`body:has(.aura-cal) #aura-root { visibility: hidden }`) rather than listing
+pieces — the dock covered the lower-left training point and the number badges
+floated over the dots. The badges are hidden behind a modal dialog too.
+
+**Nothing Cue draws or says may run during calibration.** The drift watch and
+the badge loop both have to check `gaze.getState().calibrating`, or Cue
+interrupts its own calibration to announce that tracking has drifted.
+
+## The demo store is one document on purpose
+
+`store/index.html` is a single-page app: home, listings, product pages,
+search, bag, account, journal, help, stores. Views live in `store/app/views/`
+and swap into `#view`; `store/app/router.js` gives each one a real URL with
+`history.pushState`.
+
+**Never turn a store link into a full page load.** Every load restarts
+WebGazer, which wipes and re-runs calibration. That is why internal `<a>`
+clicks are intercepted, and why dev flags (`?gaze=mouse&cal=0` etc.) are
+carried from view to view.
+
+- **Refreshing a deep link works** because `store/404.html` is a symlink to
+  `index.html`; Starlette's `StaticFiles(html=True)` serves it for unknown
+  paths (status 404, full page). Do not replace it with a copy.
+- **Every route change calls `invalidate()` from `client/resolver.js`**, and so
+  does every image load. The resolver's cache key cannot see a view swap, so
+  without it gaze and "the second one" point at elements from the old view.
+- **Product scope is `[data-aura-product]`**: cards and the product page's
+  `.pdp` section. `store/app/ui.js` owns size, color and add-to-bag for both,
+  and `store/app/cart.js` enforces size and limits at add time.
+- **Catalog:** 33 products in `store/products.json`. Photos are
+  `store/assets/products/<id>-<color>.jpg`; after adding any, regenerate the
+  `PHOTOS` map in `store/catalog.js` (it lists which colors have a photo).
+  `o8` is priced over the $200 per-order limit on purpose, to demo a refusal.
 
 ## Two things that will silently break the overlay
 
@@ -439,7 +469,8 @@ Everything it touches (`render`, `ui.*`, `badges`) must exist before boot.
 ## Known gaps
 
 - `client/resolver.js` cache key is scroll + viewport + element counts. It misses
-  lazy-loaded images resizing cards and SPA route changes. No `MutationObserver`
+  lazy-loaded images resizing cards and SPA route changes (the demo store
+  calls `invalidate()` for both; a real site has no such hook). No `MutationObserver`
   yet — fine on the tagged demo store, not fine on a real site.
 - Action ids embed `Math.round(rect.top)`, so they change on scroll.
 - `case "navigate"` in `aura.js` writes an **LLM-supplied URL straight to
@@ -449,9 +480,10 @@ Everything it touches (`render`, `ui.*`, `badges`) must exist before boot.
 - The HUD has no Shadow DOM, so host-page CSS will leak into it.
 - `window.cueStore` is provided only by the demo store, so checkout/confirm is
   dead on any other page.
-- No extension yet. A content script runs in the page's own frame, so the
-  warning in `ARCHITECTURE.md` about wrong coordinate frames applies to an
-  extension *page*, not a content script.
+- `extension/` now contains an experimental Chrome content script adapter.
+  It tags visible products and imports the same client modules in the page's
+  viewport. Build it with `python3 tools/build-extension.py`. Checkout remains
+  on the demo store. Reload the tab to stop an injected session.
 
 ## Things that are true and surprising
 

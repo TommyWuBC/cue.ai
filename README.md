@@ -12,14 +12,30 @@ enforced limits and passkey approval. Demo orders do not charge a card.
 Open **http://localhost:4173** in Chrome (not the Claude preview pane — it blocks
 camera and mic). Use `localhost` exactly: the passkey origin is configured for it.
 
+### Experimental live-page extension
+
+Run `python3 tools/build-extension.py`, then load `dist/cue-extension` as an
+unpacked extension in Chrome. Start the Cue server first. Open an H&M product
+page or Amazon search page and click the Cue toolbar icon. The adapter tags
+products from visible page markup and Product JSON-LD, then loads the existing
+gaze and voice client in that tab's viewport. Video stays on the device. Only
+product details and speech requests go to the local server. The intended scope
+is shopping questions, scrolling, and focus; checkout stays on Northfield.
+Reload the tab to stop the injected client. The extension is an experimental
+adapter: page layouts can change, and a full passkey browser test on a live
+store has not been run.
+
     ?gaze=mouse      drive with the mouse instead of the eyes (dev + demo fallback)
     ?gaze=sim        mouse as truth + synthetic gaze noise, through the real filter
     ?sigma=110       how noisy sim mode is, in px (default 70)
     ?cal=0           skip calibration
 
-Calibration is nine points (look, press SPACE), then five more where you just
-look while Cue measures its own accuracy. About 45 seconds. The accuracy figure
-is printed to the console — under ~90px is good, over ~170px and Cue says so.
+Calibration is thirteen points: look at each dot, then press SPACE, tap the dot,
+or say “Cue, next”. Keep looking while the capture message is shown. Five more
+points then measure accuracy without any input. If the camera cannot capture
+your eyes, the current point shows a retry message. The accuracy figure is
+printed to the console; over 150px prompts a retry, and over 220px uses numbered
+items for voice selection. Say “Cue, recalibrate” to start again.
 
 ## Keys
 
@@ -51,7 +67,7 @@ Same code path as speech — only the wake word and STT are bypassed.
     client/voice.js     wake word, push-to-talk, barge-in, echo rejection, TTS playback
     client/aura.js      orchestration: utterance -> server -> speech + page actions
     client/avatar.js    Cue's animated face; reacts to bus events, never emits any
-    store/index.html    the Northfield storefront (design notes: store/DESIGN.md)
+    store/index.html    the Northfield storefront shell; views in store/app/ (design notes: store/DESIGN.md)
     store/checkout.js   spoken order review + browser passkey ceremony
     server/checkout.py  server priced cart, limits, passkey verification, SQLite orders
     server/router.py    regex fast path; the demo's core commands never hit an LLM

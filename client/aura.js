@@ -169,8 +169,10 @@ function context() {
 
 let inflight = false;
 bus.on("UTTERANCE", async ({ text, final }) => {
-  ui.heard.textContent = (final ? "" : "… ") + text;
+  // Calibration owns the microphone for "Cue, next". Nothing said there is a
+  // shopping command, and echoing it into the HUD just looks like a bug.
   if (gaze.getState().calibrating) return;
+  ui.heard.textContent = (final ? "" : "… ") + text;
   if (!final || inflight) return;
 
   // Naming an item and then talking about it must not let gaze quietly take
@@ -437,7 +439,13 @@ const DRIFT_CONF = 0.25;
 let lowSince = null, nudgedAt = 0;
 
 bus.on("GAZE", ({ confidence }) => {
-  if (recalibrating || gaze.getState().mode !== "webgazer") { lowSince = null; return; }
+  const gs = gaze.getState();
+  // Low confidence during calibration is expected, not drift. Announcing it
+  // there interrupts the very thing that would fix it.
+  if (recalibrating || gs.calibrating || !gs.calibrated || gs.mode !== "webgazer") {
+    lowSince = null;
+    return;
+  }
   const t = now();
   if (confidence >= DRIFT_CONF) { lowSince = null; ui.drift?.classList.remove("on"); return; }
   if (lowSince === null) { lowSince = t; return; }

@@ -31,3 +31,10 @@ everything you click or scan. Sentence case everywhere, no all-caps labels.
 - Cue's avatar reacts to real events on `window.cue.bus`: it looks where you
   look, listens while you hold space, thinks while a request is in flight,
   talks while TTS plays, and is happy or concerned depending on the reply.
+
+## Site map
+
+Home, `/shop/<collection>` (women, men, new, bestsellers, and each category,
+with filters in the query string), `/product/<id>`, `/search`, `/bag`,
+`/account`, `/journal`, `/help/<topic>`, `/stores`, `/about`. Styles:
+`site.css` for the shell and shopping views, `pages.css` for content pages.

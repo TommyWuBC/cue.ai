@@ -11,24 +11,43 @@ const PHOTOS = {
   j4: ["oat", "black"],
   j5: ["sand", "black"],
   j6: ["plum", "black"],
-};
-
-export const MERCH = {
-  j1: { badge: "Bestseller", blurb: "Dropped shoulders, below-the-knee length." },
-  j2: { badge: "Recycled", blurb: "Light quilting that packs into its own pocket." },
-  j3: { badge: null, blurb: "Boxy and cropped, in rigid cotton denim." },
-  j4: { badge: "New", blurb: "Extra-fine merino in a close, clean crew neck." },
-  j5: { badge: null, blurb: "Water-repellent cotton with a relaxed drape." },
-  j6: { badge: null, blurb: "A soft rib that holds its shape wash after wash." },
+  o7: ["charcoal", "camel"],
+  o8: ["brown"],
+  o9: ["olive"],
+  o10: ["navy", "yellow"],
+  o11: ["black"],
+  o12: ["navy"],
+  k7: ["cream"],
+  k8: ["camel", "black"],
+  k9: ["navy", "grey"],
+  k10: ["ecru"],
+  k11: ["rose"],
+  s1: ["white", "blue"],
+  s2: ["red"],
+  s3: ["ivory"],
+  s4: ["white", "black"],
+  s5: ["navy"],
+  t1: ["indigo"],
+  t2: ["grey"],
+  t3: ["khaki"],
+  t4: ["brown"],
+  d1: ["black"],
+  d2: ["sand"],
+  a1: ["grey", "camel"],
+  a2: ["black", "oat"],
+  a3: ["cognac"],
+  a4: ["black"],
+  a5: ["olive"],
 };
 
 export function photo(id, color) {
   const have = PHOTOS[id] ?? [];
   const c = color && have.includes(slug(color)) ? slug(color) : have[0];
-  return c ? `/assets/products/${id}-${c}.jpg` : null;
+  return c ? `/assets/products/${id}-${c}.jpg` : "/assets/products/placeholder.svg";
 }
 
-export const altPhoto = id => `/assets/products/${id}-alt.jpg`;
+const ALTS = new Set(["a1", "a2", "a3", "a4", "a5", "d1", "d2", "j1", "j2", "j3", "j4", "j5", "j6", "k10", "k11", "k7", "k8", "k9", "o10", "o11", "o12", "o7", "o8", "o9", "s1", "s2", "s3", "s4", "s5", "t1", "t2", "t3", "t4"]);
+export const altPhoto = id => ALTS.has(id) ? `/assets/products/${id}-alt.jpg` : "";
 
 export const money = cents => "$" + (cents / 100).toLocaleString("en-US",
   { minimumFractionDigits: 2, maximumFractionDigits: 2 });

@@ -3,37 +3,91 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Coats &amp; jackets | Northfield</title>
+<title>Northfield</title>
 <meta name="theme-color" content="#ffffff">
 <link rel="preload" href="/assets/fonts/geist.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/assets/fonts/newsreader.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/base.css">
 <link rel="stylesheet" href="/store.css">
+<link rel="stylesheet" href="/site.css">
+<link rel="stylesheet" href="/pages.css">
 <link rel="stylesheet" href="/client/overlay.css">
 </head>
 <body>
+<a class="skip" href="#view">Skip to content</a>
 <div class="notice">
   <div class="notice-inner">
+    <a href="/stores" class="notice-side">Find a store</a>
     <span>Free shipping over $150 and free returns within 30 days</span>
-    <a href="/merchant.html" target="_blank" rel="noopener">Merchant view</a>
+    <a href="/merchant.html" class="notice-side" target="_blank" rel="noopener">Merchant view</a>
   </div>
 </div>
 
 <header class="site-header" id="site-header">
   <div class="header-inner">
     <a class="wordmark" href="/">Northfield</a>
-    <nav class="nav" aria-label="Main">
-      <a href="#collection">New in</a>
-      <a href="#collection" aria-current="page">Coats &amp; jackets</a>
-      <a href="#collection">Knitwear</a>
-      <a href="#stories">Journal</a>
+    <nav class="nav" id="main-nav" aria-label="Main">
+      <a href="/shop/new" data-nav="new">New in</a>
+      <div class="nav-item" data-mega>
+        <a href="/shop/women" data-nav="women" aria-haspopup="true">Women</a>
+        <div class="mega">
+          <div class="mega-inner">
+            <div><h3>Shop women</h3><ul>
+              <li><a href="/shop/women">All women</a></li>
+              <li><a href="/shop/women?category=outerwear">Coats &amp; jackets</a></li>
+              <li><a href="/shop/women?category=knitwear">Knitwear</a></li>
+              <li><a href="/shop/women?category=shirts">Shirts &amp; tops</a></li>
+              <li><a href="/shop/women?category=trousers">Trousers</a></li>
+              <li><a href="/shop/women?category=dresses">Dresses</a></li></ul></div>
+            <div><h3>Featured</h3><ul>
+              <li><a href="/shop/new">New this week</a></li>
+              <li><a href="/shop/bestsellers">Bestsellers</a></li>
+              <li><a href="/journal/the-long-coat">The long coat</a></li>
+              <li><a href="/help/size-guide">Size guide</a></li></ul></div>
+            <a class="mega-feature" href="/shop/women?category=outerwear">
+              <img src="/assets/editorial/home-women.jpg" alt="" loading="lazy">
+              <span>Coats for the first cold week</span></a>
+          </div>
+        </div>
+      </div>
+      <div class="nav-item" data-mega>
+        <a href="/shop/men" data-nav="men" aria-haspopup="true">Men</a>
+        <div class="mega">
+          <div class="mega-inner">
+            <div><h3>Shop men</h3><ul>
+              <li><a href="/shop/men">All men</a></li>
+              <li><a href="/shop/men?category=outerwear">Coats &amp; jackets</a></li>
+              <li><a href="/shop/men?category=knitwear">Knitwear</a></li>
+              <li><a href="/shop/men?category=shirts">Shirts &amp; tees</a></li>
+              <li><a href="/shop/men?category=trousers">Trousers &amp; denim</a></li></ul></div>
+            <div><h3>Featured</h3><ul>
+              <li><a href="/shop/new">New this week</a></li>
+              <li><a href="/shop/bestsellers">Bestsellers</a></li>
+              <li><a href="/journal/inside-the-mill">Inside the mill</a></li>
+              <li><a href="/help/repairs">Free repairs</a></li></ul></div>
+            <a class="mega-feature" href="/shop/men?category=outerwear">
+              <img src="/assets/editorial/home-men.jpg" alt="" loading="lazy">
+              <span>Overcoats and field jackets</span></a>
+          </div>
+        </div>
+      </div>
+      <a href="/shop/knitwear" data-nav="knitwear">Knitwear</a>
+      <a href="/shop/accessories" data-nav="accessories">Accessories</a>
+      <a href="/journal" data-nav="journal">Journal</a>
     </nav>
     <div class="tools">
-      <label class="search">
+      <button class="icon-btn menu-btn" id="menu-btn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="main-nav">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h16M4 16h16" stroke-linecap="round"/></svg>
+      </button>
+      <form class="search" id="search-form" role="search" action="/search">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="7" cy="7" r="5.2"/><path d="M11 11l3.5 3.5" stroke-linecap="round"/></svg>
-        <span class="visually-hidden">Search</span>
-        <input id="search" type="search" placeholder="Search" autocomplete="off">
-      </label>
+        <label class="visually-hidden" for="search">Search</label>
+        <input id="search" name="q" type="search" placeholder="Search" autocomplete="off" aria-controls="suggest">
+        <div class="suggest" id="suggest" role="listbox" hidden></div>
+      </form>
+      <a class="icon-btn" href="/account" aria-label="Account">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c1.2-3.6 4.1-5.4 7.5-5.4s6.3 1.8 7.5 5.4" stroke-linecap="round"/></svg>
+      </a>
       <button class="icon-btn" id="bag-open" type="button" aria-label="Bag, 0 items">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 8h14l-1 12.2a1 1 0 0 1-1 .8H7a1 1 0 0 1-1-.8L5 8z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8" stroke-linecap="round"/></svg>
         <span class="bag-count" id="count">0</span>
@@ -42,56 +96,28 @@
   </div>
 </header>
 
-<main>
-  <section class="hero">
-    <div class="hero-frame">
-      <img src="/assets/editorial/hero-2.jpg" alt="" fetchpriority="high">
-      <div class="hero-copy">
-        <h2>For the first cold morning</h2>
-        <p>Wool coats, quilted jackets and soft knits, cut to layer through autumn.</p>
-        <a class="btn" href="#collection">Shop the collection</a>
-      </div>
-    </div>
-  </section>
-
-  <section class="collection" id="collection">
-    <p class="crumbs"><a href="/">Home</a><span>/</span>Outerwear</p>
-    <div class="collection-head">
-      <h1>Coats &amp; jackets<small id="result-count"></small></h1>
-      <label class="sort">Sort by
-        <select id="sort">
-          <option value="featured">Featured</option>
-          <option value="price-asc">Price, low to high</option>
-          <option value="price-desc">Price, high to low</option>
-          <option value="rating">Top rated</option>
-        </select>
-      </label>
-    </div>
-    <div class="grid" id="grid"></div>
-    <p class="drawer-empty" id="no-results" hidden>No styles match that search.</p>
-  </section>
-
-  <section class="stories" id="stories">
-    <a class="story" href="#collection">
-      <img src="/assets/editorial/cat-coats.jpg" alt="" loading="lazy">
-      <div><h3>The long coat</h3><p>Four ways to wear it this season</p></div>
-    </a>
-    <a class="story" href="#collection">
-      <img src="/assets/editorial/cat-knitwear.jpg" alt="" loading="lazy">
-      <div><h3>Knitwear, explained</h3><p>Merino, rib and how to care for both</p></div>
-    </a>
-  </section>
-</main>
+<main id="view" tabindex="-1"></main>
 
 <footer class="site-footer">
   <div class="footer-inner">
     <div class="footer-brand">
       <span class="wordmark">Northfield</span>
-      <p>Outerwear made to be worn for years, and repaired when it needs to be.</p>
+      <p>Outerwear and knitwear made to be worn for years, and repaired when it needs to be.</p>
+      <form class="newsletter" id="newsletter">
+        <label for="nl-email">New arrivals and journal stories, once a month</label>
+        <div><input id="nl-email" type="email" placeholder="Email address" required><button class="btn btn-primary" type="submit">Sign up</button></div>
+        <p class="newsletter-done" hidden>Thanks. The next letter goes out on the first of the month.</p>
+      </form>
     </div>
-    <div><h4>Help</h4><ul><li><a href="#">Shipping</a></li><li><a href="#">Returns</a></li><li><a href="#">Size guide</a></li><li><a href="#">Contact us</a></li></ul></div>
-    <div><h4>About</h4><ul><li><a href="#">Materials</a></li><li><a href="#">Repairs</a></li><li><a href="#">Stores</a></li></ul></div>
-    <div><h4>Shopping with Cue</h4><ul><li><a href="/merchant.html" target="_blank" rel="noopener">Merchant view</a></li><li>Hold space to talk</li><li>Say “Cue, recalibrate”</li></ul></div>
+    <div><h4>Shop</h4><ul>
+      <li><a href="/shop/new">New in</a></li><li><a href="/shop/women">Women</a></li><li><a href="/shop/men">Men</a></li>
+      <li><a href="/shop/knitwear">Knitwear</a></li><li><a href="/shop/accessories">Accessories</a></li></ul></div>
+    <div><h4>Help</h4><ul>
+      <li><a href="/help/shipping">Shipping</a></li><li><a href="/help/returns">Returns</a></li><li><a href="/help/size-guide">Size guide</a></li>
+      <li><a href="/help/repairs">Repairs</a></li><li><a href="/help/contact">Contact us</a></li></ul></div>
+    <div><h4>Northfield</h4><ul>
+      <li><a href="/about">Our story</a></li><li><a href="/stores">Stores</a></li><li><a href="/journal">Journal</a></li>
+      <li><a href="/help/shopping-with-cue">Shopping with Cue</a></li><li><a href="/merchant.html" target="_blank" rel="noopener">Merchant view</a></li></ul></div>
     <div class="footer-legal">
       <span>© 2026 Northfield. A demo store built for HackGT.</span>
       <span>Orders are recorded and approved with a passkey. No card is charged.</span>
@@ -119,8 +145,19 @@
   <div class="drawer-foot" id="bag-foot">
     <div class="subtotal"><span>Subtotal</span><b class="tabular" id="bag-subtotal">$0.00</b></div>
     <div class="limits" id="bag-limits"></div>
-    <button class="btn btn-primary" type="button" id="bag-checkout">Check out</button>
+    <div class="drawer-actions">
+      <a class="btn btn-secondary" href="/bag">View bag</a>
+      <button class="btn btn-primary" type="button" id="bag-checkout">Check out</button>
+    </div>
   </div>
+</dialog>
+
+<dialog class="sheet" id="size-guide" aria-labelledby="sg-title">
+  <div class="sheet-head"><h2 id="sg-title">Size guide</h2>
+    <button class="icon-btn" type="button" data-close aria-label="Close size guide">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg>
+    </button></div>
+  <div class="sheet-body" id="sg-body"></div>
 </dialog>
 
 <dialog id="checkout-dialog" aria-labelledby="checkout-title">
@@ -148,265 +185,7 @@
   </div>
 </dialog>
 
-<script type="module">
-import { setupCheckout } from "/checkout.js";
-import { photo, altPhoto, MERCH, money } from "/catalog.js";
-
-const PRODUCTS = await fetch("/products.json").then(r => r.json());
-const $ = id => document.getElementById(id);
-const grid = $("grid");
-const cents = p => Math.round(p.price * 100);
-const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-
-let cart = [];
-let limits = { remaining: 25000, order: 20000, monthly: 25000 };
-
-// ── Catalog ─────────────────────────────────────────────────────────────────
-function card(p) {
-  const m = MERCH[p.id] ?? {};
-  const first = p.colors[0].name;
-  const fit = /true to size/i.test(p.attrs.sizing) ? "" : p.attrs.sizing;
-  return `
-  <article class="card" data-id="${p.id}" data-aura-product='${esc(JSON.stringify(p))}'>
-    <div class="media">
-      ${m.badge ? `<span class="tag">${esc(m.badge)}</span>` : ""}
-      <img class="main" src="${photo(p.id, first)}" alt="${esc(p.title)} in ${esc(first)}" loading="lazy">
-      <img class="alt" src="${altPhoto(p.id)}" alt="" loading="lazy">
-    </div>
-    <div class="info">
-      <div class="title-row"><h3 class="title">${esc(p.title)}</h3><span class="price">${money(cents(p))}</span></div>
-      <p class="blurb">${esc(m.blurb ?? p.attrs.material)}</p>
-      <div class="rating" aria-label="Rated ${p.attrs.rating} out of 5 from ${p.attrs.reviews} reviews">
-        <span class="stars"><i></i><i style="width:${(p.attrs.rating / 5) * 100}%"></i></span>
-        <span>${p.attrs.rating.toFixed(1)} (${p.attrs.reviews.toLocaleString()})</span>
-      </div>
-      <div class="option">
-        <div class="option-head"><span>Color <b class="color-name">${esc(first)}</b></span></div>
-        <div class="colors">${p.colors.map((c, i) => `
-          <button type="button" data-aura-action="select_color" data-aura-value="${esc(c.name)}"
-                  data-aura-label="Color ${esc(c.name)}" aria-label="${esc(c.name)}" aria-pressed="${i === 0}"
-                  style="--tone:${esc(c.tone)}"></button>`).join("")}</div>
-      </div>
-      <div class="option">
-        <div class="option-head"><span>Size</span></div>
-        <div class="variants">${p.variants.map(v => `
-          <button type="button" data-aura-action="select_variant" data-aura-value="${esc(v)}"
-                  data-aura-label="Size ${esc(v)}" aria-pressed="false">${esc(v)}</button>`).join("")}</div>
-        ${fit ? `<p class="fit">${esc(fit)}</p>` : ""}
-      </div>
-      <button class="btn btn-primary add" type="button" data-aura-action="add_to_cart"
-              data-aura-label="Add ${esc(p.title)} to bag" data-id="${p.id}">Add to bag</button>
-    </div>
-  </article>`;
-}
-grid.innerHTML = PRODUCTS.map(card).join("");
-grid.querySelectorAll(".media .alt").forEach(img => {
-  const ready = () => img.classList.add("ready");
-  img.complete && img.naturalWidth ? ready() : img.addEventListener("load", ready, { once: true });
-});
-
-function countVisible() {
-  const n = grid.querySelectorAll(".card:not([hidden])").length;
-  $("result-count").textContent = `${n} ${n === 1 ? "style" : "styles"}`;
-  $("no-results").hidden = n > 0;
-}
-countVisible();
-
-$("sort").addEventListener("change", e => {
-  const by = {
-    "featured": (a, b) => PRODUCTS.indexOf(a) - PRODUCTS.indexOf(b),
-    "price-asc": (a, b) => a.price - b.price,
-    "price-desc": (a, b) => b.price - a.price,
-    "rating": (a, b) => b.attrs.rating - a.attrs.rating,
-  }[e.target.value];
-  [...PRODUCTS].sort(by).forEach(p => grid.appendChild(grid.querySelector(`.card[data-id="${p.id}"]`)));
-});
-$("search").addEventListener("input", e => {
-  const q = e.target.value.trim().toLowerCase();
-  for (const p of PRODUCTS) {
-    const hay = `${p.title} ${p.attrs.material} ${p.colors.map(c => c.name).join(" ")}`.toLowerCase();
-    grid.querySelector(`.card[data-id="${p.id}"]`).hidden = q && !hay.includes(q);
-  }
-  countVisible();
-});
-
-// ── Card interactions (mouse, keyboard, and Cue's clicks all land here) ─────
-grid.addEventListener("click", (e) => {
-  const cardEl = e.target.closest(".card");
-  if (!cardEl) return;
-  const p = PRODUCTS.find(x => x.id === cardEl.dataset.id);
-
-  const v = e.target.closest('[data-aura-action="select_variant"]');
-  if (v) {
-    cardEl.querySelectorAll(".variants button").forEach(b => b.setAttribute("aria-pressed", "false"));
-    v.setAttribute("aria-pressed", "true");
-    cardEl.classList.remove("needs-size");
-  }
-
-  const color = e.target.closest('[data-aura-action="select_color"]');
-  if (color && color.getAttribute("aria-pressed") !== "true") {
-    cardEl.querySelectorAll(".colors button").forEach(b => b.setAttribute("aria-pressed", "false"));
-    color.setAttribute("aria-pressed", "true");
-    const name = color.dataset.auraValue;
-    cardEl.querySelector(".color-name").textContent = name;
-    const img = cardEl.querySelector(".media .main");
-    const next = photo(p.id, name);
-    if (!img.src.endsWith(next)) {
-      img.classList.add("swap");
-      const pre = new Image();
-      pre.onload = pre.onerror = () => {
-        img.src = next; img.alt = `${p.title} in ${name}`;
-        requestAnimationFrame(() => img.classList.remove("swap"));
-      };
-      pre.src = next;
-    }
-  }
-
-  const a = e.target.closest('[data-aura-action="add_to_cart"]');
-  if (a) {
-    const size = cardEl.querySelector('.variants [aria-pressed="true"]')?.dataset.auraValue;
-    const selectedColor = cardEl.querySelector('.colors [aria-pressed="true"]')?.dataset.auraValue;
-    if (!size) {
-      cardEl.classList.remove("needs-size"); void cardEl.offsetWidth; cardEl.classList.add("needs-size");
-      window.cue?.bus.emit("SAY", { text: `Choose a size for ${p.title} first.` });
-      return;
-    }
-    const nextTotal = total() + cents(p);
-    if (nextTotal > Math.min(limits.remaining, limits.order)) {
-      window.cue?.bus.emit("SAY", { text: "That would exceed your spending limit." });
-      return;
-    }
-    const item = { ...p, size, color: selectedColor, words: window.cue?.lastActionUtterance || "" };
-    cart.push(item);
-    renderCart(true);
-    showAdded(item);
-    a.classList.add("done"); a.textContent = "Added";
-    setTimeout(() => { a.classList.remove("done"); a.textContent = "Add to bag"; }, 1400);
-    window.cue?.bus.emit("SAY", { text: `Added ${p.title}, ${selectedColor}, size ${size}.` });
-  }
-});
-
-// ── Bag ─────────────────────────────────────────────────────────────────────
-const total = () => cart.reduce((sum, item) => sum + cents(item), 0);
-const plural = n => `${n} ${n === 1 ? "item" : "items"}`;
-
-function limitsHTML(thisOrder, heading) {
-  const spent = limits.monthly - limits.remaining;
-  const pct = v => `${Math.max(0, Math.min(100, (v / limits.monthly) * 100))}%`;
-  const after = limits.remaining - thisOrder;
-  return `
-    <div class="limits-row"><span>${heading}</span><b class="tabular">${money(Math.max(0, after))} left</b></div>
-    <div class="meter" aria-hidden="true"><span class="spent" style="width:${pct(spent)}"></span><span class="this" style="left:${pct(spent)};width:${pct(thisOrder)}"></span></div>
-    <div class="note">Monthly budget ${money(limits.monthly)}. Orders over ${money(limits.order)} are blocked.</div>`;
-}
-
-function renderCart(bump = false) {
-  const n = cart.length, t = total();
-  const count = $("count");
-  count.textContent = n;
-  count.classList.toggle("on", n > 0);
-  if (bump) { count.classList.remove("bump"); void count.offsetWidth; count.classList.add("bump"); }
-  $("bag-open").setAttribute("aria-label", `Bag, ${plural(n)}`);
-
-  $("bag-bar").classList.toggle("on", n > 0);
-  $("bag-items").textContent = plural(n);
-  $("bag-total").textContent = money(t);
-  $("bag-thumbs").innerHTML = cart.slice(-3).reverse()
-    .map(i => `<img src="${photo(i.id, i.color)}" alt="">`).join("");
-
-  $("bag-lines").innerHTML = n ? cart.map((i, idx) => `
-    <div class="line">
-      <img src="${photo(i.id, i.color)}" alt="">
-      <div>
-        <p class="line-title">${esc(i.title)}</p>
-        <p class="line-meta">${esc(i.color)}, size ${esc(i.size)}</p>
-        <button class="line-remove" type="button" data-remove="${idx}">Remove</button>
-      </div>
-      <span class="line-price">${money(cents(i))}</span>
-    </div>`).join("")
-    : `<div class="drawer-empty"><p>Your bag is empty.</p><button class="btn btn-secondary" type="button" data-close>Keep shopping</button></div>`;
-  $("bag-foot").hidden = !n;
-  $("bag-subtotal").textContent = money(t);
-  $("bag-limits").innerHTML = limitsHTML(t, "Budget after this bag");
-}
-
-const bag = $("bag");
-$("bag-open").addEventListener("click", () => { renderCart(); bag.showModal(); });
-bag.addEventListener("click", e => {
-  if (e.target === bag || e.target.closest("[data-close]")) bag.close();
-  const r = e.target.closest("[data-remove]");
-  if (r) { cart.splice(Number(r.dataset.remove), 1); renderCart(); }
-});
-$("bag-checkout").addEventListener("click", () => { bag.close(); checkout(); });
-
-let toastTimer;
-function showAdded(item, heading = "Added to bag") {
-  const t = $("toast");
-  t.innerHTML = `
-    ${item.id ? `<img src="${photo(item.id, item.color)}" alt="">` : `<span class="toast-seal" aria-hidden="true"></span>`}
-    <div>
-      <p class="toast-head"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 8.5l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>${heading}</p>
-      <p>${esc(item.title)}</p>
-      <p class="muted">${item.size ? `${esc(item.color)}, size ${esc(item.size)}` : esc(item.color)}</p>
-      ${item.size ? `<button class="btn btn-secondary" type="button">View bag</button>` : ""}
-    </div>`;
-  t.querySelector("button")?.addEventListener("click", () => { t.classList.remove("on"); renderCart(); bag.showModal(); });
-  t.classList.add("on");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove("on"), 3600);
-}
-
-// ── Checkout ────────────────────────────────────────────────────────────────
-function reviewLines(items) {
-  $("review-lines").innerHTML = items.map(i => `
-    <li><img src="${photo(i.id, i.color)}" alt="">
-      <div><p class="line-title">${esc(i.title)}</p><p class="line-meta">${esc(i.color)}, size ${esc(i.size)}</p></div>
-      <span class="line-price">${money(i.unit_price_cents ?? cents(i))}</span></li>`).join("");
-}
-
-const checkoutFlow = setupCheckout({
-  getCart: () => cart,
-  clearCart: () => {
-    const placed = cart.length;
-    cart = []; renderCart();
-    if (placed) showAdded({ id: "", title: "Approved with your passkey. No card was charged.", color: "" }, "Order placed");
-  },
-  onStatus: s => {
-    limits = { remaining: s.remaining_cents, order: s.order_limit_cents, monthly: s.monthly_limit_cents ?? limits.monthly };
-    renderCart();
-  },
-  onPrepared: (pending) => {
-    reviewLines(pending.items);
-    $("review-total").textContent = money(pending.total_cents);
-    $("review-limits").innerHTML = limitsHTML(pending.total_cents, "Budget after this order");
-  },
-});
-window.cueCheckout = checkoutFlow;
-window.checkout = () => {
-  if (bag.open) bag.close();
-  if (cart.length) {
-    reviewLines(cart);
-    $("review-total").textContent = money(total());
-    $("review-limits").innerHTML = limitsHTML(total(), "Budget after this order");
-  }
-  return checkoutFlow.prepare();
-};
-
-// The approval panel mirrors checkout.js's status line: waiting, or a problem.
-const approval = $("approval"), message = approval.querySelector(".checkout-message");
-new MutationObserver(() => {
-  const text = message.textContent;
-  approval.classList.toggle("waiting", /waiting|create a passkey|checking|reading back/i.test(text));
-  approval.classList.toggle("error", !!text && !/waiting|create|checking|reading|say|set up|passkey ready/i.test(text));
-}).observe(message, { childList: true, characterData: true, subtree: true });
-
-// ── Chrome ──────────────────────────────────────────────────────────────────
-const header = $("site-header");
-addEventListener("scroll", () => header.classList.toggle("scrolled", scrollY > 8), { passive: true });
-
-renderCart();
-window.CART = () => cart;
-</script>
+<script type="module" src="/app/main.js"></script>
 <script src="/vendor/webgazer.js"></script>
 <script type="module" src="/client/aura.js"></script>
 <script type="module" src="/client/avatar.js"></script>

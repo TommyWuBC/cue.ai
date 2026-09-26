@@ -20,7 +20,7 @@
       "sizing": "Runs one size large; size down if between sizes",
       "rating": 4.4,
       "reviews": 218,
-      "warmth": "Heavy \u2014 rated for 0 to 10\u00b0C"
+      "warmth": "Heavy — rated for 0 to 10°C"
     },
     "colors": [
       {
@@ -35,7 +35,9 @@
         "name": "Camel",
         "tone": "#8c765d"
       }
-    ]
+    ],
+    "department": "women",
+    "category": "outerwear"
   },
   {
     "id": "j2",
@@ -58,7 +60,7 @@
       "sizing": "True to size",
       "rating": 4.1,
       "reviews": 963,
-      "warmth": "Medium \u2014 rated for 5 to 15\u00b0C"
+      "warmth": "Medium — rated for 5 to 15°C"
     },
     "colors": [
       {
@@ -69,7 +71,9 @@
         "name": "Black",
         "tone": "#292a2a"
       }
-    ]
+    ],
+    "department": "women",
+    "category": "outerwear"
   },
   {
     "id": "j3",
@@ -91,7 +95,7 @@
       "sizing": "Runs small in the shoulders",
       "rating": 3.9,
       "reviews": 412,
-      "warmth": "Light \u2014 layering piece"
+      "warmth": "Light — layering piece"
     },
     "colors": [
       {
@@ -102,7 +106,9 @@
         "name": "Black",
         "tone": "#23242c"
       }
-    ]
+    ],
+    "department": "women",
+    "category": "outerwear"
   },
   {
     "id": "j4",
@@ -124,7 +130,7 @@
       "sizing": "True to size",
       "rating": 4.7,
       "reviews": 1504,
-      "warmth": "Medium \u2014 breathable"
+      "warmth": "Medium — breathable"
     },
     "colors": [
       {
@@ -135,7 +141,9 @@
         "name": "Black",
         "tone": "#202024"
       }
-    ]
+    ],
+    "department": "men",
+    "category": "knitwear"
   },
   {
     "id": "j5",
@@ -157,7 +165,7 @@
       "sizing": "True to size",
       "rating": 4.2,
       "reviews": 87,
-      "warmth": "Light \u2014 wind and rain resistant, not insulated"
+      "warmth": "Light — wind and rain resistant, not insulated"
     },
     "colors": [
       {
@@ -168,7 +176,9 @@
         "name": "Black",
         "tone": "#252525"
       }
-    ]
+    ],
+    "department": "women",
+    "category": "outerwear"
   },
   {
     "id": "j6",
@@ -201,6 +211,855 @@
       {
         "name": "Black",
         "tone": "#26232a"
+      }
+    ],
+    "department": "women",
+    "category": "knitwear"
+  },
+  {
+    "id": "o7",
+    "title": "Double-Faced Wool Overcoat",
+    "price": 189,
+    "currency": "USD",
+    "tone": "#3a3b3e",
+    "department": "men",
+    "category": "outerwear",
+    "variants": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "80% wool, 20% cashmere",
+      "fit": "Tailored fit, hits mid-thigh",
+      "care": "Dry clean only",
+      "origin": "Made in Portugal",
+      "sizing": "True to size",
+      "rating": 4.7,
+      "reviews": 312,
+      "warmth": "Heavy — rated for -5 to 8°C"
+    },
+    "colors": [
+      {
+        "name": "Charcoal",
+        "tone": "#3a3b3e"
+      },
+      {
+        "name": "Camel",
+        "tone": "#a47e57"
+      }
+    ]
+  },
+  {
+    "id": "o8",
+    "title": "Shearling Aviator Jacket",
+    "price": 260,
+    "currency": "USD",
+    "tone": "#5b3a26",
+    "department": "men",
+    "category": "outerwear",
+    "variants": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "Suede outer, 100% sheepskin shearling lining",
+      "fit": "Regular fit, hits at the hip",
+      "care": "Specialist leather clean",
+      "origin": "Made in Spain",
+      "sizing": "True to size",
+      "rating": 4.8,
+      "reviews": 96,
+      "warmth": "Very heavy — rated for -10 to 5°C"
+    },
+    "colors": [
+      {
+        "name": "Brown",
+        "tone": "#5b3a26"
+      }
+    ]
+  },
+  {
+    "id": "o9",
+    "title": "Waxed Cotton Field Jacket",
+    "price": 139,
+    "currency": "USD",
+    "tone": "#555a3a",
+    "department": "men",
+    "category": "outerwear",
+    "variants": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% waxed cotton, cotton check lining",
+      "fit": "Regular fit with four patch pockets",
+      "care": "Re-wax yearly, do not wash",
+      "origin": "Made in England",
+      "sizing": "Runs slightly large",
+      "rating": 4.5,
+      "reviews": 188,
+      "warmth": "Light — for 8 to 16°C"
+    },
+    "colors": [
+      {
+        "name": "Olive",
+        "tone": "#555a3a"
+      }
+    ]
+  },
+  {
+    "id": "o10",
+    "title": "Hooded Rain Parka",
+    "price": 119,
+    "currency": "USD",
+    "tone": "#1f2a44",
+    "department": "women",
+    "category": "outerwear",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% recycled nylon, taped seams, 10k waterproof rating",
+      "fit": "Relaxed fit, covers the hip",
+      "care": "Machine wash cold, hang dry",
+      "origin": "Made in Vietnam",
+      "sizing": "True to size",
+      "rating": 4.3,
+      "reviews": 527,
+      "warmth": "Shell only — layer underneath"
+    },
+    "colors": [
+      {
+        "name": "Navy",
+        "tone": "#1f2a44"
+      },
+      {
+        "name": "Yellow",
+        "tone": "#e2b32c"
+      }
+    ]
+  },
+  {
+    "id": "o11",
+    "title": "Leather Biker Jacket",
+    "price": 199,
+    "currency": "USD",
+    "tone": "#1b1b1d",
+    "department": "women",
+    "category": "outerwear",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% lambskin leather, viscose lining",
+      "fit": "Slim fit, cropped at the waist",
+      "care": "Specialist leather clean",
+      "origin": "Made in Turkey",
+      "sizing": "Runs small; size up for layering",
+      "rating": 4.6,
+      "reviews": 241
+    },
+    "colors": [
+      {
+        "name": "Black",
+        "tone": "#1b1b1d"
+      }
+    ]
+  },
+  {
+    "id": "o12",
+    "title": "Quilted Liner Vest",
+    "price": 59,
+    "currency": "USD",
+    "tone": "#23304a",
+    "department": "men",
+    "category": "outerwear",
+    "variants": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% recycled polyester, recycled fill",
+      "fit": "Regular fit, layers under coats",
+      "care": "Machine wash cold",
+      "origin": "Made in Vietnam",
+      "sizing": "True to size",
+      "rating": 4.2,
+      "reviews": 403,
+      "warmth": "Light — for 10 to 18°C"
+    },
+    "colors": [
+      {
+        "name": "Navy",
+        "tone": "#23304a"
+      }
+    ]
+  },
+  {
+    "id": "k7",
+    "title": "Chunky Cable-Knit Sweater",
+    "price": 79,
+    "currency": "USD",
+    "tone": "#ece5d6",
+    "department": "women",
+    "category": "knitwear",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "60% wool, 40% recycled nylon",
+      "fit": "Relaxed fit, dropped shoulders",
+      "care": "Hand wash cold, dry flat",
+      "origin": "Made in Portugal",
+      "sizing": "Runs large; size down for a closer fit",
+      "rating": 4.6,
+      "reviews": 684
+    },
+    "colors": [
+      {
+        "name": "Cream",
+        "tone": "#ece5d6"
+      }
+    ]
+  },
+  {
+    "id": "k8",
+    "title": "Cashmere Turtleneck",
+    "price": 129,
+    "currency": "USD",
+    "tone": "#b28a62",
+    "department": "women",
+    "category": "knitwear",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% Grade-A Mongolian cashmere",
+      "fit": "Regular fit, fold-over neck",
+      "care": "Hand wash cold, dry flat",
+      "origin": "Made in Mongolia",
+      "sizing": "True to size",
+      "rating": 4.8,
+      "reviews": 1120
+    },
+    "colors": [
+      {
+        "name": "Camel",
+        "tone": "#b28a62"
+      },
+      {
+        "name": "Black",
+        "tone": "#1d1d1f"
+      }
+    ]
+  },
+  {
+    "id": "k9",
+    "title": "Lambswool Crew Sweater",
+    "price": 69,
+    "currency": "USD",
+    "tone": "#26324d",
+    "department": "men",
+    "category": "knitwear",
+    "variants": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% lambswool",
+      "fit": "Regular fit",
+      "care": "Hand wash cold, dry flat",
+      "origin": "Made in Scotland",
+      "sizing": "True to size",
+      "rating": 4.5,
+      "reviews": 356
+    },
+    "colors": [
+      {
+        "name": "Navy",
+        "tone": "#26324d"
+      },
+      {
+        "name": "Grey",
+        "tone": "#8c8d8f"
+      }
+    ]
+  },
+  {
+    "id": "k10",
+    "title": "Fisherman Rollneck",
+    "price": 89,
+    "currency": "USD",
+    "tone": "#e6dfcd",
+    "department": "men",
+    "category": "knitwear",
+    "variants": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% British wool, oiled yarn",
+      "fit": "Relaxed fit, high rolled neck",
+      "care": "Hand wash cold, dry flat",
+      "origin": "Made in England",
+      "sizing": "Runs large",
+      "rating": 4.7,
+      "reviews": 219,
+      "warmth": "Heavy — wears like a light jacket"
+    },
+    "colors": [
+      {
+        "name": "Ecru",
+        "tone": "#e6dfcd"
+      }
+    ]
+  },
+  {
+    "id": "k11",
+    "title": "Mohair-Blend Cardigan",
+    "price": 95,
+    "currency": "USD",
+    "tone": "#d9a3a6",
+    "department": "women",
+    "category": "knitwear",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "45% mohair, 35% wool, 20% polyamide",
+      "fit": "Boxy fit, cropped",
+      "care": "Hand wash cold, dry flat",
+      "origin": "Made in Italy",
+      "sizing": "True to size",
+      "rating": 4.4,
+      "reviews": 142
+    },
+    "colors": [
+      {
+        "name": "Rose",
+        "tone": "#d9a3a6"
+      }
+    ]
+  },
+  {
+    "id": "s1",
+    "title": "Oxford Button-Down Shirt",
+    "price": 49,
+    "currency": "USD",
+    "tone": "#f4f4f2",
+    "department": "men",
+    "category": "shirts",
+    "variants": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% cotton oxford",
+      "fit": "Regular fit",
+      "care": "Machine wash warm",
+      "origin": "Made in India",
+      "sizing": "True to size",
+      "rating": 4.5,
+      "reviews": 1432
+    },
+    "colors": [
+      {
+        "name": "White",
+        "tone": "#f4f4f2"
+      },
+      {
+        "name": "Blue",
+        "tone": "#a9c1dd"
+      }
+    ]
+  },
+  {
+    "id": "s2",
+    "title": "Brushed Flannel Overshirt",
+    "price": 59,
+    "currency": "USD",
+    "tone": "#8e2f2b",
+    "department": "men",
+    "category": "shirts",
+    "variants": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% brushed cotton flannel",
+      "fit": "Relaxed fit, wear open as a layer",
+      "care": "Machine wash cold",
+      "origin": "Made in Portugal",
+      "sizing": "Runs large",
+      "rating": 4.6,
+      "reviews": 590
+    },
+    "colors": [
+      {
+        "name": "Red",
+        "tone": "#8e2f2b"
+      }
+    ]
+  },
+  {
+    "id": "s3",
+    "title": "Silk-Blend Blouse",
+    "price": 69,
+    "currency": "USD",
+    "tone": "#efe9dc",
+    "department": "women",
+    "category": "shirts",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "70% silk, 30% cotton",
+      "fit": "Relaxed fit, concealed placket",
+      "care": "Hand wash cold or dry clean",
+      "origin": "Made in China",
+      "sizing": "True to size",
+      "rating": 4.3,
+      "reviews": 201
+    },
+    "colors": [
+      {
+        "name": "Ivory",
+        "tone": "#efe9dc"
+      }
+    ]
+  },
+  {
+    "id": "s4",
+    "title": "Heavyweight Cotton Tee",
+    "price": 25,
+    "currency": "USD",
+    "tone": "#f7f7f5",
+    "department": "men",
+    "category": "shirts",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% organic cotton, 240gsm",
+      "fit": "Boxy fit",
+      "care": "Machine wash cold",
+      "origin": "Made in Portugal",
+      "sizing": "Runs large; size down for a regular fit",
+      "rating": 4.7,
+      "reviews": 2310
+    },
+    "colors": [
+      {
+        "name": "White",
+        "tone": "#f7f7f5"
+      },
+      {
+        "name": "Black",
+        "tone": "#1d1d1f"
+      }
+    ]
+  },
+  {
+    "id": "s5",
+    "title": "Striped Breton Top",
+    "price": 39,
+    "currency": "USD",
+    "tone": "#1f2a44",
+    "department": "women",
+    "category": "shirts",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% cotton jersey",
+      "fit": "Regular fit, boat neck",
+      "care": "Machine wash cold",
+      "origin": "Made in France",
+      "sizing": "True to size",
+      "rating": 4.6,
+      "reviews": 877
+    },
+    "colors": [
+      {
+        "name": "Navy",
+        "tone": "#1f2a44"
+      }
+    ]
+  },
+  {
+    "id": "t1",
+    "title": "Straight-Leg Selvedge Jeans",
+    "price": 89,
+    "currency": "USD",
+    "tone": "#27344f",
+    "department": "men",
+    "category": "trousers",
+    "variants": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% cotton selvedge denim, 13.5oz",
+      "fit": "Straight leg, mid rise",
+      "care": "Wash rarely, cold, inside out",
+      "origin": "Made in Japan",
+      "sizing": "True to size; relaxes slightly with wear",
+      "rating": 4.6,
+      "reviews": 764
+    },
+    "colors": [
+      {
+        "name": "Indigo",
+        "tone": "#27344f"
+      }
+    ]
+  },
+  {
+    "id": "t2",
+    "title": "Wide-Leg Wool Trousers",
+    "price": 89,
+    "currency": "USD",
+    "tone": "#8b8a88",
+    "department": "women",
+    "category": "trousers",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "70% wool, 30% polyester",
+      "fit": "Wide leg, high rise, front pleats",
+      "care": "Dry clean only",
+      "origin": "Made in Italy",
+      "sizing": "True to size",
+      "rating": 4.4,
+      "reviews": 265
+    },
+    "colors": [
+      {
+        "name": "Grey",
+        "tone": "#8b8a88"
+      }
+    ]
+  },
+  {
+    "id": "t3",
+    "title": "Pleated Cotton Chinos",
+    "price": 59,
+    "currency": "USD",
+    "tone": "#b3a27f",
+    "department": "men",
+    "category": "trousers",
+    "variants": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "98% cotton, 2% elastane twill",
+      "fit": "Relaxed tapered leg",
+      "care": "Machine wash cold",
+      "origin": "Made in Portugal",
+      "sizing": "True to size",
+      "rating": 4.3,
+      "reviews": 512
+    },
+    "colors": [
+      {
+        "name": "Khaki",
+        "tone": "#b3a27f"
+      }
+    ]
+  },
+  {
+    "id": "t4",
+    "title": "Corduroy Trousers",
+    "price": 65,
+    "currency": "USD",
+    "tone": "#6b4a33",
+    "department": "women",
+    "category": "trousers",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% cotton 8-wale corduroy",
+      "fit": "Straight leg, high rise",
+      "care": "Machine wash cold",
+      "origin": "Made in Portugal",
+      "sizing": "Runs small in the waist",
+      "rating": 4.2,
+      "reviews": 188
+    },
+    "colors": [
+      {
+        "name": "Brown",
+        "tone": "#6b4a33"
+      }
+    ]
+  },
+  {
+    "id": "d1",
+    "title": "Ribbed Knit Midi Dress",
+    "price": 89,
+    "currency": "USD",
+    "tone": "#1d1d1f",
+    "department": "women",
+    "category": "dresses",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "80% viscose, 20% polyester rib knit",
+      "fit": "Close fit, midi length",
+      "care": "Hand wash cold, dry flat",
+      "origin": "Made in Portugal",
+      "sizing": "True to size",
+      "rating": 4.5,
+      "reviews": 433
+    },
+    "colors": [
+      {
+        "name": "Black",
+        "tone": "#1d1d1f"
+      }
+    ]
+  },
+  {
+    "id": "d2",
+    "title": "Linen Shirt Dress",
+    "price": 79,
+    "currency": "USD",
+    "tone": "#cdb99a",
+    "department": "women",
+    "category": "dresses",
+    "variants": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "attrs": {
+      "material": "100% European linen",
+      "fit": "Relaxed fit with tie belt",
+      "care": "Machine wash cold",
+      "origin": "Made in Lithuania",
+      "sizing": "True to size",
+      "rating": 4.4,
+      "reviews": 309
+    },
+    "colors": [
+      {
+        "name": "Sand",
+        "tone": "#cdb99a"
+      }
+    ]
+  },
+  {
+    "id": "a1",
+    "title": "Lambswool Scarf",
+    "price": 45,
+    "currency": "USD",
+    "tone": "#8c8d8f",
+    "department": "accessories",
+    "category": "accessories",
+    "variants": [
+      "One size"
+    ],
+    "attrs": {
+      "material": "100% lambswool",
+      "fit": "190 × 30 cm",
+      "care": "Hand wash cold",
+      "origin": "Made in Scotland",
+      "sizing": "One size",
+      "rating": 4.8,
+      "reviews": 655
+    },
+    "colors": [
+      {
+        "name": "Grey",
+        "tone": "#8c8d8f"
+      },
+      {
+        "name": "Camel",
+        "tone": "#a47e57"
+      }
+    ]
+  },
+  {
+    "id": "a2",
+    "title": "Ribbed Beanie",
+    "price": 25,
+    "currency": "USD",
+    "tone": "#1d1d1f",
+    "department": "accessories",
+    "category": "accessories",
+    "variants": [
+      "One size"
+    ],
+    "attrs": {
+      "material": "100% merino wool",
+      "fit": "Fits most heads, fold-up cuff",
+      "care": "Hand wash cold",
+      "origin": "Made in Portugal",
+      "sizing": "One size",
+      "rating": 4.7,
+      "reviews": 1390
+    },
+    "colors": [
+      {
+        "name": "Black",
+        "tone": "#1d1d1f"
+      },
+      {
+        "name": "Oat",
+        "tone": "#d8cdb8"
+      }
+    ]
+  },
+  {
+    "id": "a3",
+    "title": "Leather Tote Bag",
+    "price": 149,
+    "currency": "USD",
+    "tone": "#8a4b25",
+    "department": "accessories",
+    "category": "accessories",
+    "variants": [
+      "One size"
+    ],
+    "attrs": {
+      "material": "Full-grain vegetable-tanned leather",
+      "fit": "38 × 32 × 14 cm, fits a 15 inch laptop",
+      "care": "Condition twice a year",
+      "origin": "Made in Italy",
+      "sizing": "One size",
+      "rating": 4.7,
+      "reviews": 248
+    },
+    "colors": [
+      {
+        "name": "Cognac",
+        "tone": "#8a4b25"
+      }
+    ]
+  },
+  {
+    "id": "a4",
+    "title": "Leather Gloves",
+    "price": 49,
+    "currency": "USD",
+    "tone": "#1d1d1f",
+    "department": "accessories",
+    "category": "accessories",
+    "variants": [
+      "S",
+      "M",
+      "L"
+    ],
+    "attrs": {
+      "material": "Lambskin leather, cashmere lining",
+      "fit": "Close fit",
+      "care": "Specialist leather clean",
+      "origin": "Made in Italy",
+      "sizing": "Runs small; size up if between sizes",
+      "rating": 4.5,
+      "reviews": 321
+    },
+    "colors": [
+      {
+        "name": "Black",
+        "tone": "#1d1d1f"
+      }
+    ]
+  },
+  {
+    "id": "a5",
+    "title": "Canvas Weekender Bag",
+    "price": 99,
+    "currency": "USD",
+    "tone": "#555a3a",
+    "department": "accessories",
+    "category": "accessories",
+    "variants": [
+      "One size"
+    ],
+    "attrs": {
+      "material": "Waxed cotton canvas, leather trims",
+      "fit": "52 × 28 × 26 cm, 40 litres",
+      "care": "Spot clean",
+      "origin": "Made in England",
+      "sizing": "One size",
+      "rating": 4.6,
+      "reviews": 174
+    },
+    "colors": [
+      {
+        "name": "Olive",
+        "tone": "#555a3a"
       }
     ]
   }
