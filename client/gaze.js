@@ -246,22 +246,7 @@ function runCalibration(attempt) {
       // and space keeps re-triggering calibration points under the store page.
       removeEventListener("keydown", onKey, true);
       hint.textContent = "Now just look at each dot — no key, checking accuracy";
-      const obs = [];
-      for (let k = 0; k < VALIDATE.length; k++) {
-        const [fx, fy] = VALIDATE[k];
-        const px = fx * innerWidth, py = fy * innerHeight;
-        dot.style.left = px + "px"; dot.style.top = py + "px";
-        dot.classList.remove("armed");
-        await sleep(650);                       // let the eye land
-        dot.classList.add("armed");
-        for (let n = 0; n < 14; n++) {
-          try {
-            const p = await window.webgazer.getCurrentPrediction();
-            if (p && Number.isFinite(p.x)) obs.push([p.x, p.y, px, py]);
-          } catch { /* a dropped frame is not fatal */ }
-          await sleep(45);
-        }
-      }
+      const obs = await sweep(dot);
 
       if (obs.length >= 25) {
         const fx = fit1d(obs.map((o) => o[0]), obs.map((o) => o[2]));
@@ -382,6 +367,67 @@ function qualityModal(acc, attempt) {
         : "That's a bit loose. You can try again, or continue.",
     });
   });
+}
+
+// Walk the validation points and collect (predicted, actual) pairs. Used both
+// at the end of calibration and, on its own, to answer "is it any better now?"
+// with a number instead of a feeling.
+async function sweep(dot) {
+  const obs = [];
+  for (const [fx, fy] of VALIDATE) {
+    const px = fx * innerWidth, py = fy * innerHeight;
+    dot.style.left = px + "px"; dot.style.top = py + "px";
+    dot.classList.remove("armed");
+    await sleep(650);                       // let the eye land
+    dot.classList.add("armed");
+    for (let n = 0; n < 14; n++) {
+      try {
+        const p = await window.webgazer.getCurrentPrediction();
+        if (p && Number.isFinite(p.x)) obs.push([p.x, p.y, px, py]);
+      } catch { /* a dropped frame is not fatal */ }
+      await sleep(45);
+    }
+  }
+  return obs;
+}
+
+/**
+ * Re-measure accuracy WITHOUT retraining or changing the correction.
+ *
+ * This is how you find out whether learning from spoken selections is actually
+ * working: measure, use Cue for a couple of minutes, measure again. Nothing is
+ * mutated, so the comparison is honest.
+ *
+ *   await cue.gaze.measure()
+ */
+export async function measure() {
+  if (state.mode !== "webgazer" || !window.webgazer) {
+    console.warn("[cue] measure() needs the camera");
+    return null;
+  }
+  const ov = document.createElement("div");
+  ov.className = "cue-cal";
+  ov.innerHTML = `<div class="cue-cal-hint">Just look at each dot — measuring, not changing anything</div><div class="cue-cal-dot"></div>`;
+  document.body.appendChild(ov);
+  bus.emit("STATE", { calibrating: true });
+  try {
+    const obs = await sweep(ov.querySelector(".cue-cal-dot"));
+    if (obs.length < 25) { console.warn("[cue] not enough samples"); return null; }
+    // Score against the correction currently in force — that is what the user
+    // actually experiences, not what a fresh fit could achieve.
+    const { ax, bx, ay, by } = state.cal;
+    const out = {
+      error_px: Math.round(rms(obs, ax, bx, ay, by)),
+      raw_px: Math.round(rms(obs, 1, 0, 1, 0)),
+      samples: obs.length,
+      learned_from: learned,
+    };
+    console.log("[cue] measured", out);
+    return out;
+  } finally {
+    ov.remove();
+    bus.emit("STATE", { calibrating: false });
+  }
 }
 
 export async function calibrate({ allowRetry = true, maxAttempts = 2 } = {}) {
