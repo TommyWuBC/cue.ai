@@ -1,0 +1,5 @@
+.venv/
+__pycache__/
+.env
+server/cache/*.mp3
+server/cache/_ledger.json
