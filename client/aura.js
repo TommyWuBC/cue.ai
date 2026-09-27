@@ -2,7 +2,7 @@ import { bus } from "./bus.js";
 import * as gaze from "./gaze.js";
 import * as voice from "./voice.js";
 import { scan, scanAll, nth, invalidate, controls, controlName, findControl, fields, findField, setText,
-  findText, COMMITS_MONEY, findOption, searchBox, submitField } from "./resolver.js";
+  findText, COMMITS_MONEY, findOption, searchBox, submitField, clickables } from "./resolver.js";
 import { correctUtterance, isWakeOnly, norm } from "./speech.js";
 import { CONFIG, url } from "./config.js";
 import { productMemory } from "./product-memory.js";
@@ -56,7 +56,7 @@ function learnPage() {
   knowledge.observe(items.map((t) => ({ product: t.product, el: t.el })));
 }
 // Bumped by hand when the client changes, so the server log shows which build is running.
-const CLIENT_BUILD = "2026-09-26 real-products";
+const CLIENT_BUILD = "2026-09-27 dismiss";
 
 const PRODUCT_VERBS = new Set(["add_to_cart", "select_variant", "select_color"]);
 
@@ -814,7 +814,17 @@ function stageCheckout() {
   // intent record. Only fall back to the local staged readback without it.
   if (window.cueCheckout?.prepare) { window.cueCheckout.prepare(); return; }
   const store = window.cueStore;
-  if (!store) { bus.emit("SAY", { text: "There's no cart on this page." }); return; }
+  if (!store) {
+    // Both globals above are the demo store's. On a real site this used to be
+    // the only branch left, so Cue said "There's no cart on this page" while
+    // the shopper was looking at seven items on Amazon's own cart. The shop's
+    // own control is the real rail; it goes through the money confirmation.
+    const money = clickables().find((c) => COMMITS_MONEY.test(c.name || ""))
+      || findControl("proceed to checkout") || findControl("checkout");
+    if (money) { confirmMoney(money.el, money.name); return; }
+    bus.emit("SAY", { text: "I don't see a checkout button on this page." });
+    return;
+  }
   const s = store.summary();
   if (!s.count) { bus.emit("SAY", { text: "Your cart is empty." }); return; }
   pendingConfirm = { kind: "checkout", at: Date.now() };
@@ -926,6 +936,48 @@ function productData(card) {
  * `.click()` stays, because that is what triggers native behaviour for a real
  * submit button.
  */
+// Phrases that mean "make this go away". Kept narrow on purpose: a loose
+// match on "close" or "skip" finds Amazon's hidden "Skip to main content" link
+// long before it finds the popup in front of you.
+const DECLINE = ["no thanks", "no thank you", "not now", "not interested",
+  "remind me later", "maybe later", "don't need it", "no warranty",
+  "don't need the warranty", "don't want the warranty", "skip this", "dismiss"];
+
+const OVERLAY_SEL = '[role=dialog],[role=alertdialog],.a-popover,[class*=modal i],[class*=overlay i]';
+
+/** The dialog, popover or sheet currently covering the page, if any. */
+function topOverlay() {
+  const seen = [...document.querySelectorAll(OVERLAY_SEL)].filter((el) => {
+    const r = el.getBoundingClientRect();
+    if (r.width < 80 || r.height < 60) return false;
+    const st = getComputedStyle(el);
+    return st.visibility !== "hidden" && st.display !== "none" && +st.opacity > .1;
+  });
+  return seen.sort((a, b) => (+getComputedStyle(b).zIndex || 0) - (+getComputedStyle(a).zIndex || 0))[0] ?? null;
+}
+
+/** Close the thing on top. Returns how it went, so the reply can be honest. */
+function dismissOverlay() {
+  const box = topOverlay();
+  if (box) {
+    const close = box.querySelector('[aria-label*="close" i],[title*="close" i],' +
+      '[data-action="a-popover-close"],[data-hook*="close" i],button[class*="close" i]');
+    if (close) { pressControl(close); return "closed"; }
+  }
+  for (const phrase of DECLINE) {
+    const c = findControl(phrase);
+    // Only accept a decline control inside the overlay, or anywhere when there
+    // is no overlay to scope to.
+    if (c?.el && (!box || box.contains(c.el))) { pressControl(c.el); return "declined"; }
+  }
+  for (const target of [document.activeElement, document.body]) {
+    for (const type of ["keydown", "keyup"]) {
+      target?.dispatchEvent(new KeyboardEvent(type, { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+    }
+  }
+  return box ? "escaped" : "nothing";
+}
+
 function pressControl(el) {
   if (!el) return false;
   const r = el.getBoundingClientRect();
@@ -1130,6 +1182,27 @@ function shortTitle(title) {
   return (space > 24 ? cut.slice(0, space) : cut).trim();
 }
 
+// Money is the one thing the page always says in its own words. The model's
+// sentence is not evidence, and "Place your order places the order on this
+// site" was the old template reading its own button name back at the shopper.
+function confirmMoney(el, name) {
+  const p = productData(scope()) ?? discussed;
+  const total = pageTotal();
+  const amount = total ?? (typeof p?.price === "number" ? `$${p.price.toFixed(2)}` : null);
+  pendingConfirm = { kind: "money", el, name };
+  bus.emit("SAY", { text: amount
+    ? `That's ${amount}, and it's the real one. Want me to press it?`
+    : `That one spends money for real. Want me to press it?` });
+}
+
+// The order total as the page itself prints it, so the amount read back is the
+// shop's number and not something inferred from a card.
+function pageTotal() {
+  const text = document.body?.innerText || "";
+  const m = text.match(/\b(?:order total|grand total|total)\b[^$\n]{0,40}(\$[\d,]+\.\d{2})/i);
+  return m ? m[1] : null;
+}
+
 function describeAdd(card) {
   const p = productData(card) || {};
   const title = shortTitle(p.title) || "this one";
@@ -1165,11 +1238,11 @@ function perform(verb, args, opts = {}) {
       if (!["up", "down"].includes(args.dir)) return false;
       const speed = args.speed === "fast" ? 3 : args.speed === "slow" ? 1 : autoScroll.dir ? autoScroll.speed : 2;
       startAutoScroll(args.dir === "down" ? 1 : -1, speed);
-      bus.emit("SAY", { text: `Scrolling ${args.dir}.` });
+      if (!opts.narrated) bus.emit("SAY", { text: `Scrolling ${args.dir}.` });
       break;
     }
     case "scroll_stop":
-      if (!stopAutoScroll(true)) return false;
+      if (!stopAutoScroll(!opts.narrated)) return false;
       break;
     case "scroll":
       stopAutoScroll(false);
@@ -1300,7 +1373,9 @@ function perform(verb, args, opts = {}) {
           return false;
         }
         pendingConfirm = { kind: "add", el, said: d.line };
-        bus.emit("SAY", { text: `${d.line} Add it?` });
+        // The reply has just said the item and the price better than this
+        // template can. Repeating it in full is the second voice.
+        bus.emit("SAY", { text: opts.narrated ? "Add it?" : `${d.line} Add it?` });
         break;
       }
       applyStated(card);
@@ -1388,9 +1463,20 @@ function perform(verb, args, opts = {}) {
         window.cueCheckout.cancel();
         bus.emit("SAY", { text: "Okay, checkout cancelled." });
       } else if (!resolveConfirm(false)) {
-        bus.emit("SAY", { text: "Okay." });
+        // Nothing was waiting, so "no" was almost certainly aimed at whatever
+        // popped up — the warranty upsell after an add. Saying "Okay." and
+        // leaving it on screen is the least useful thing Cue can do.
+        const how = dismissOverlay();
+        bus.emit("SAY", { text: how === "nothing" ? "Okay."
+          : how === "escaped" ? "Tried to close it — tell me if it's still there." : "Closed it." });
       }
       break;
+    case "dismiss": {
+      const how = dismissOverlay();
+      if (how === "nothing") { bus.emit("SAY", { text: "There's nothing open to close." }); return false; }
+      bus.emit("SAY", { text: how === "escaped" ? "Tried to close it — tell me if it's still there." : "Closed it." });
+      break;
+    }
     case "setup_passkey":
       if (window.cueCheckout?.register) window.cueCheckout.register();
       else bus.emit("SAY", { text: "There's no passkey set-up on this page." });
@@ -1499,12 +1585,7 @@ function perform(verb, args, opts = {}) {
       // them from the model and the dispatch loop refuses them from "grok"),
       // so the agent cannot approve its own purchase here.
       if (COMMITS_MONEY.test(c.name) && CONFIG.injected) {
-        const p = productData(scope()) ?? discussed;
-        const amount = typeof p?.price === "number" ? ` That's $${p.price.toFixed(2)}.` : "";
-        pendingConfirm = { kind: "money", el: c.el, name: c.name };
-        bus.emit("SAY", {
-          text: `${c.name} places the order on this site.${amount} Say yes to go ahead.`,
-        });
+        confirmMoney(c.el, c.name);
         break;
       }
       // Say what is about to happen before it happens — on a page the user

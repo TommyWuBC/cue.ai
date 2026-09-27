@@ -74,3 +74,11 @@ if __name__ == '__main__':
         for phrase in ('yes', 'yeah', 'yep', 'sure', 'go ahead', 'do it', 'okay', 'add it'):
             self.assertEqual(router.route(phrase)['do'], [{'verb': 'approve_checkout', 'args': {}}], phrase)
         self.assertIsNone(router.route('yeah but what about the other one'))
+
+    def test_declining_a_popup_dismisses_it_and_a_bare_no_still_cancels(self):
+        for phrase in ('no thanks', "i don't need the warranty", 'not interested',
+                       'close that popup', 'hey cue please get rid of that'):
+            self.assertEqual(router.route(phrase)['do'], [{'verb': 'dismiss', 'args': {}}], phrase)
+        # A plain no during a staged confirmation must stay a cancellation.
+        for phrase in ('no', 'cancel', 'cancel checkout'):
+            self.assertEqual(router.route(phrase)['do'], [{'verb': 'cancel_checkout', 'args': {}}], phrase)

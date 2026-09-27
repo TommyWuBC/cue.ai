@@ -731,12 +731,13 @@ Everything it touches (`render`, `ui.*`, `badges`) must exist before boot.
 - Push-to-talk captures Space globally, guarding only `INPUT`/`TEXTAREA` — not
   `contenteditable`, not shadow DOM.
 - The HUD has no Shadow DOM, so host-page CSS will leak into it.
-- `window.cueStore` (the pre-`checkout.py` local-only fallback) is provided
-  only by the demo store, so `stageCheckout()`'s fallback path is dead on any
-  page without it. In practice this rarely matters: the real flow is
-  `window.cueCheckout` (server-backed, see "Checkout: two paths" above), and
-  both the extension and the demo store redirect an actual purchase back to
-  the demo store's origin regardless.
+- `window.cueStore` and `window.cueCheckout` are both demo-store globals, so on
+  a real site `stageCheckout()` reaches neither. That fallback used to say
+  "There's no cart on this page", which a live session heard while sitting on
+  Amazon's own cart with seven items in it. It now finds the shop's own money
+  control and goes through the same readback-and-second-yes confirmation that
+  `click_named` uses, so "proceed to checkout" works on a real site. The demo
+  store's two branches are checked first and are unchanged.
 
 ## The toolbar icon opens a panel, and why
 

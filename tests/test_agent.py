@@ -119,3 +119,10 @@ def test_whole_page_reaches_the_model_including_items_below_the_fold():
     assert page["kind"] == "cart"
     assert [p["title"] for p in page["products"]] == ["Dawn dish soap", "Banana Boat Sport SPF 50"]
     assert page["products"][1]["onScreen"] is False
+
+
+def test_dismiss_is_allowed_and_takes_no_arguments():
+    out = agent.sanitize({"say": "Closed it.", "do": [{"verb": "dismiss", "args": {"el": "#x"}}]})
+    assert out["do"] == [{"verb": "dismiss", "args": {}}]
+    staged = agent.sanitize({"say": "Close it?", "ask": [{"verb": "dismiss", "args": {}}]})
+    assert staged["ask"] == [{"verb": "dismiss", "args": {}}]

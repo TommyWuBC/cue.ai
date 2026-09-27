@@ -73,6 +73,7 @@ def result(say=None, actions=None):
 
 def route(text: str):
     t = re.sub(r"[,.!?]+", " ", text.lower()).strip()
+    lead = r"(?:hey cue )?(?:(?:please|can you|could you|cue|keep|start|just) )*"
     t = re.sub(r"\s+", " ", t)
     if not t:
         return None
@@ -81,6 +82,15 @@ def route(text: str):
         return result("Paused.", [action("stop_cue")])
     if t in {"no", "cancel", "cancel checkout", "cancel order"}:
         return result(actions=[action("cancel_checkout")])
+    # Declining something that popped up. A bare "no" stays with cancel_checkout
+    # above, which now falls through to dismissing an overlay when nothing was
+    # actually waiting to be confirmed.
+    if re.fullmatch(lead + r"(?:no thanks|no thank you|not now|not interested|maybe later|"
+                    r"remind me later|close (?:that|it|this)(?: popup| dialog| window)?|"
+                    r"get rid of (?:that|it|this)|dismiss (?:that|it|this)|"
+                    r"(?:i )?don't (?:need|want) (?:it|that|the warranty|the protection plan)|"
+                    r"no warranty|skip (?:that|it|this))(?: please)?", t):
+        return result(actions=[action("dismiss")])
     # "yeah" is a yes. It used to fall through to the model, which re-narrated
     # "Adding it" and performed nothing, leaving a staged add hanging forever.
     if re.fullmatch(r"(?:yes|yeah|yep|yup|yes please|sure|okay|ok|go ahead|do it|please do|"
@@ -94,7 +104,6 @@ def route(text: str):
     if re.fullmatch(r"(?:please )?(?:recalibrate|calibrate again|calibrate my eyes|fix my gaze|fix gaze)", t):
         return result("Let's recalibrate your gaze.", [action("recalibrate")])
 
-    lead = r"(?:hey cue )?(?:(?:please|can you|could you|cue|keep|start|just) )*"
     # "a bit", "a little", "once", "one page" is a single step; everything else
     # keeps scrolling slowly until they say stop.
     step = re.fullmatch(lead + r"scroll (up|down) (?:a (?:bit|little)|once|one (?:page|screen)|a page|a screen)(?: please)?", t)

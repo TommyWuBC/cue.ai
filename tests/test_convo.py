@@ -17,6 +17,10 @@ import agent
 
 ROBOTIC = re.compile(r"\b(sure thing|certainly|absolutely|great question|as an ai|"
                      r"i'd be happy|let me know if|how can i (?:help|assist)|feel free)\b", re.I)
+# Words from inside Cue that a shopper has never heard. A live session produced
+# "I can stage it, but I need your spoken yes to actually place it."
+JARGON = re.compile(r"\b(stage|staged|staging|propose|proposed|verb|"
+                    r"page data|context|query|dispatch)\b", re.I)
 
 SOUNDCORE = {"id": "a", "title": "Soundcore by Anker Q20i Headphones", "price": 44.99,
              "currency": "USD", "attrs": {"rating": 4.5, "reviews": 75000}}
@@ -41,6 +45,7 @@ class ConversationTests(unittest.TestCase):
         self.assertTrue(say, "empty reply")
         self.assertLessEqual(len(sentences(say)), 2, say)
         self.assertNotRegex(say, ROBOTIC)
+        self.assertNotRegex(say, JARGON, "spoke Cue's own internals")
         return out, say
 
     def test_recommend_under_budget_names_one_and_why(self):
@@ -75,3 +80,10 @@ class ConversationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_an_action_is_offered_in_plain_words(self):
+        """Checking before spending must sound like a clerk, not a state machine."""
+        _, say = self.reply("add the soundcore to my cart and check out",
+                            page={"kind": "cart", "title": "Cart", "text": "Subtotal $44.99"})
+        self.assertNotRegex(say, r"\blet me\b|\bi'll go ahead\b|\bfor you\b", say)

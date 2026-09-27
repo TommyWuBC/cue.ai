@@ -9,7 +9,9 @@
 
 import { canonicalProductUrl } from './knowledge.js';
 
-const MAX_HTML = 1_500_000;
+// Measured on two live Amazon listings at 1.88 MB each: the old 1.5 MB cap
+// discarded the last ~380 KB of every one before parsing ever saw it.
+export const MAX_HTML = 4_000_000;
 const TIMEOUT_MS = 6000;
 const MAX_CACHE = 80;
 
@@ -75,7 +77,13 @@ export function factsFromHtml(html, doc = null) {
       .map((tr) => [...tr.querySelectorAll("th,td")].map((c) => clean(c.textContent, 60)).filter(Boolean).join(": "))
       .filter((s) => s.includes(":")).slice(0, 8);
     if (specs.length) facts.specs = specs;
-    const reviews = [...doc.querySelectorAll("[data-hook='review-body'] span, [data-hook='review-collapsed'] span")]
+    // Amazon ships more than one markup for reviews and varies it by listing:
+    // one session measured reviewText on two pages, another measured neither
+    // hook on two others. Accept them all rather than trading one miss for
+    // another. Many listings carry no review text in the HTML at all, which is
+    // not a failure — the agent is told to say the page does not say.
+    const reviews = [...doc.querySelectorAll("[data-hook='reviewText'] span, " +
+      "[data-hook='review-body'] span, [data-hook='review-collapsed'] span")]
       .map((n) => clean(n.textContent, 220)).filter((s) => s.length > 20).slice(0, 3);
     if (reviews.length) facts.reviews = reviews;
     const says = t("[data-hook='cr-insights-widget-summary'], #product-summary p", 300);

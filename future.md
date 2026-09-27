@@ -80,19 +80,20 @@ the reviews on this" because the prompt tells it `page.product` is the item.
 | Product page: title, price, reviews | works |
 | Add to cart | works — verified reaching Amazon checkout with the item |
 | Cart, delivery options | `click_named` changes delivery windows on checkout |
-| Place order | wired, **never executed end to end** |
+| Place order | **executed end to end on 2026-09-27** — a real Amazon order was placed by voice |
 
-The last row matters. Money controls no longer refuse: they stage, Cue reads the
-control back, and a separate spoken yes presses it. Nobody has watched that
-complete a real purchase.
+The last row has now happened. Money controls stage, Cue reads the control back,
+a separate spoken yes presses it, and that sequence placed a real order — items
+the shopper partly did not want. Treat this path as live, not theoretical.
 
-Two things about the checkout path. `checkout` as a verb calls `stageCheckout()`,
-which needs `window.cueCheckout` — demo store only, dead on a real site. The
-working path on a real site is `click_named` on the real control, which routes
-through the money confirmation. And the agent used to be told it could never
-press those controls; that prompt line was corrected, so if the model starts
-telling shoppers to place the order themselves again, that instruction has
-regressed.
+`stageCheckout()` used to answer "There's no cart on this page" on any real
+site, because both of the globals it checks are the demo store's. It now falls
+through to the shop's own money control and the same confirmation, so the
+`checkout` verb and `click_named` reach the same place. The agent was also told,
+in two different parts of one prompt, both that it may propose a money control
+and that the page refuses them; the contradictory line is gone. If the model
+starts telling shoppers to press the button themselves again, that instruction
+has regressed.
 
 ## Things that are true and easy to get wrong
 
