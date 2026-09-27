@@ -638,18 +638,23 @@ carried from view to view.
 
 ## Cue's face reacts to what it says
 
+Cue's face is the Cue mark on a charcoal tile. The two Cs hold still; the dot
+is the eye. It looks where the shopper looks (kept clear of the strokes by
+`confine()`), blinks by flattening, and droops and dims after 30s of nothing.
+
 `client/avatar.js` picks its reaction from the text of each `SAY`: a hop and
-sparkles for "Added…", "Order approved", "Removed the…"; a head tilt for
-anything ending in "?" (so every staged "…Add it?"); worried brows and a
-head shake for "couldn't", "isn't", "cancel…"; a nod for "Okay". The patterns
-are `HAPPY`, `CONCERN` and `ACK` at the top of the file. **Rewording a reply
-can change or drop its reaction**, so check them when you change what Cue says.
+sparkles for "Added…", "Order approved", "Removed the…"; a tilt and a raised
+eye for anything ending in "?" (so every staged "…Add it?"); a shake and a
+smaller, lower eye for "couldn't", "isn't", "cancel…"; a nod for "Okay". The
+patterns are `HAPPY`, `CONCERN` and `ACK` at the top of the file. **Rewording
+a reply can change or drop its reaction**, so check them when you change what
+Cue says.
 
 Everything else comes from real signals: gaze, clicks, `STATE` (`ptt`,
-`awake`), `STT`/`UTTERANCE` partials (antenna pings), in-flight requests
-(visor dots), and `voice.getVoiceState().speaking` (the mouth follows the
-reply's letters). It drifts off after 30s of nothing. The dock mirrors the
-avatar through `data-cue-state`. Try any reaction from the console:
+`awake`), `STT`/`UTTERANCE` partials (the eye turns blue and sends rings),
+in-flight requests (the eye scans), and `voice.getVoiceState().speaking` (the
+eye pulses with the reply's letters). The dock mirrors the avatar through
+`data-cue-state`. Try any reaction from the console:
 `cueAvatar.react("celebrate" | "concerned" | "ask" | "thinking" | "boop" | "perk" | "sleep")`.
 
 ## Two things that will silently break the overlay
