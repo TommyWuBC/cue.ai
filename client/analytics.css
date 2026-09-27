@@ -1,109 +1,217 @@
-/* A self-contained editorial page inside Cue's overlay, including on retail sites. */
-#aura-root .cue-analytics { position: fixed; inset: 0; z-index: 2147483645; overflow: auto;
-  pointer-events: auto; background: #f6f5f1; color: #292b28;
-  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
-  letter-spacing: normal; text-align: left; -webkit-font-smoothing: antialiased; }
-#aura-root .cue-analytics, #aura-root .cue-analytics * { box-sizing: border-box; }
-#aura-root .cue-analytics-shell { min-height: 100vh; }
-#aura-root .cue-analytics-top { height: 82px; padding: 0 clamp(24px,5vw,84px); display:flex;
-  align-items:center; justify-content:space-between; gap:20px; border-bottom:1px solid #deded7;
-  background:#f6f5f1; }
-#aura-root .cue-analytics-brand { display:flex; gap:15px; align-items:center; font-size:17px;
-  font-weight:620; letter-spacing:-.04em; white-space:nowrap; }
-#aura-root .cue-analytics-brand i { color:#b4b4ac; font-style:normal; padding:0 5px; font-weight:300; }
-#aura-root .cue-analytics-symbol { width:36px; height:36px; display:grid; place-items:center; border-radius:11px;
-  background:#303a32; color:#f6f5f1; font-size:24px; font-weight:300; line-height:1; }
-#aura-root .cue-analytics-symbol svg { width:29px; height:29px; }
-#aura-root .cue-analytics-top-actions { display:flex; gap:25px; align-items:center; }
-#aura-root .cue-analytics-local { color:#69716b; font-size:12px; white-space:nowrap; }
-#aura-root .cue-analytics-local i { display:inline-block; width:7px; height:7px; border-radius:50%; background:#75a58a; margin-right:7px; }
-#aura-root .cue-analytics-close { border:1px solid #d2d4cc; border-radius:100px; background:transparent;
-  color:#29302b; min-height:38px; padding:6px 11px 6px 17px; font:inherit; font-size:12px;
-  display:inline-flex; gap:16px; align-items:center; cursor:pointer; }
-#aura-root .cue-analytics-close span { font-size:22px; line-height:.8; font-weight:300; }
-#aura-root .cue-analytics-close:hover { background:#e9eae3; }
-#aura-root .cue-analytics-main { max-width:1500px; margin:auto; padding:0 clamp(24px,5vw,84px) 35px; }
-#aura-root .cue-analytics-intro { display:flex; justify-content:space-between; align-items:flex-end;
-  padding:clamp(48px,6vw,90px) 0 45px; gap:25px; }
-#aura-root .cue-analytics-eyebrow, #aura-root .cue-analytics-card-head p,
-#aura-root .cue-analytics-insight > p:first-child { margin:0 0 18px; color:#667e6d;
-  font-size:10px; line-height:1.2; font-weight:700; letter-spacing:.18em; }
-#aura-root .cue-analytics-intro h1 { font:400 clamp(54px,6.3vw,96px)/.98 Georgia,"Times New Roman",serif;
-  letter-spacing:-.065em; margin:0; }
-#aura-root .cue-analytics-intro h1 em { font-weight:400; color:#7c8e7d; }
-#aura-root .cue-analytics-intro p:last-child { color:#777b74; font-size:15px; margin:26px 0 0; }
-#aura-root .cue-analytics-index { color:#9b9d95; font-size:11px; white-space:nowrap; }
-#aura-root .cue-analytics-metrics { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid #dfe1d8;
-  border-radius:3px; background:#fffefa; margin-bottom:18px; }
-#aura-root .cue-analytics-metric { padding:25px clamp(18px,2.5vw,36px); display:flex; flex-direction:column; min-height:133px; }
-#aura-root .cue-analytics-metric + .cue-analytics-metric { border-left:1px solid #e7e9e1; }
-#aura-root .cue-analytics-metric span { font-size:12px; color:#777d75; }
-#aura-root .cue-analytics-metric strong { font:400 clamp(32px,3vw,48px)/1.05 Georgia,"Times New Roman",serif;
-  letter-spacing:-.05em; margin:14px 0 6px; }
-#aura-root .cue-analytics-metric small { color:#9a9e96; font-size:11px; }
-#aura-root .cue-analytics-grid { display:grid; grid-template-columns:1.15fr .85fr; gap:18px; }
-#aura-root .cue-analytics-card { position:relative; min-height:290px; padding:31px clamp(22px,2.5vw,36px);
-  border:1px solid #dfe1d8; border-radius:3px; background:#fffefa; }
-#aura-root .cue-analytics-card-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:35px; }
-#aura-root .cue-analytics-card-head p { margin:0 0 9px; }
-#aura-root .cue-analytics-card-head h2, #aura-root .cue-analytics-insight h2 { font:400 29px/1.15 Georgia,"Times New Roman",serif;
-  letter-spacing:-.04em; margin:0; }
-#aura-root .cue-analytics-card-head > span { font-size:11px; color:#9a9e96; white-space:nowrap; }
-#aura-root .cue-analytics-term { display:grid; grid-template-columns:26px minmax(90px,1fr) minmax(40px,35%) 26px;
-  align-items:center; gap:15px; min-height:39px; border-bottom:1px solid #eff0e9; font-size:13px; }
-#aura-root .cue-analytics-rank { color:#a6aca1; font-size:10px; }
-#aura-root .cue-analytics-term-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-#aura-root .cue-analytics-term-bar { display:block; height:4px; background:#e7ebe3; border-radius:5px; }
-#aura-root .cue-analytics-term-bar i { display:block; height:100%; background:#789783; border-radius:5px; }
-#aura-root .cue-analytics-term b { font-size:11px; font-weight:500; text-align:right; color:#68766b; }
-#aura-root .cue-analytics-bars { height:169px; display:grid; grid-template-columns:repeat(7,1fr); gap:13px; align-items:end; }
-#aura-root .cue-analytics-day { height:100%; display:flex; flex-direction:column; align-items:center; gap:12px; color:#9a9e96; font-size:10px; }
-#aura-root .cue-analytics-column { width:100%; flex:1; display:flex; align-items:end; background:linear-gradient(to top,#f1f4ed 1px,transparent 1px) 0 100%/100% 25%; }
-#aura-root .cue-analytics-column i { width:100%; display:block; background:#a8bcaa; border-radius:2px 2px 0 0; }
-#aura-root .cue-analytics-insight { background:#e8ede6; border-color:#d7e2d7; min-height:255px; overflow:hidden; }
-#aura-root .cue-analytics-insight > p:first-child { margin-bottom:46px; }
-#aura-root .cue-analytics-insight h2 { max-width:490px; font-size:clamp(28px,2.6vw,40px); }
-#aura-root .cue-analytics-insight > p:last-child { max-width:490px; color:#58665a; font-size:13px; margin:18px 0 0; line-height:1.6; }
-#aura-root .cue-analytics-spark { position:absolute; right:30px; top:47px; color:#97b29c; font-size:84px; line-height:1; font-weight:200; }
-#aura-root .cue-analytics-activity { min-height:255px; }
-#aura-root .cue-analytics-activity .cue-analytics-card-head { margin-bottom:15px; }
-#aura-root .cue-analytics-activity ol { list-style:none; margin:0; padding:0; max-height:250px; overflow:auto; }
-#aura-root .cue-analytics-activity li { display:flex; align-items:center; gap:13px; min-height:53px; border-bottom:1px solid #eff0e9; }
-#aura-root .cue-analytics-event-icon { width:28px; height:28px; flex:none; border-radius:50%; background:#edf2eb;
-  display:grid; place-items:center; color:#5d7d65; font-size:17px; }
-#aura-root .cue-analytics-activity li > div { min-width:0; flex:1; display:flex; gap:6px; align-items:baseline; }
-#aura-root .cue-analytics-activity li b { font-size:11px; font-weight:600; color:#6b7e6c; }
-#aura-root .cue-analytics-activity li span:not(.cue-analytics-event-icon) { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:12px; }
-#aura-root .cue-analytics-activity li small { display:none; }
-#aura-root .cue-analytics-activity time { color:#a0a59c; font-size:10px; white-space:nowrap; }
-#aura-root .cue-analytics-items { list-style:none; margin:0; padding:0; }
-#aura-root .cue-analytics-items li { border-bottom:1px solid #eff0e9; display:flex; justify-content:space-between;
-  gap:12px; min-height:43px; align-items:center; font-size:13px; }
-#aura-root .cue-analytics-items li span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-#aura-root .cue-analytics-items li b { flex:none; font-size:11px; color:#728775; font-weight:500; }
-#aura-root .cue-analytics-empty { color:#8b9388; font-size:13px; line-height:1.6; margin:22px 0; }
-#aura-root .cue-analytics-footer { padding:23px 0; display:flex; justify-content:space-between; gap:16px;
-  font-size:11px; color:#999e95; }
-#aura-root .cue-analytics-footer button { color:#526c59; background:none; border:0; padding:0;
-  cursor:pointer; font:inherit; font-weight:600; }
-#aura-root .cue-analytics-loading { min-height:100vh; display:grid; place-items:center; text-align:center;
-  color:#617064; font:400 25px/1.3 Georgia,"Times New Roman",serif; padding:40px; }
-#aura-root .cue-analytics-loading button { margin:15px; }
-@media(max-width:760px) {
-  #aura-root .cue-analytics-top { height:68px; }
-  #aura-root .cue-analytics-local, #aura-root .cue-analytics-index { display:none; }
-  #aura-root .cue-analytics-intro { padding:48px 0 35px; }
-  #aura-root .cue-analytics-metrics { grid-template-columns:repeat(2,1fr); }
-  #aura-root .cue-analytics-metric:nth-child(3) { border-left:0; border-top:1px solid #e7e9e1; }
-  #aura-root .cue-analytics-metric:nth-child(4) { border-top:1px solid #e7e9e1; }
-  #aura-root .cue-analytics-grid { grid-template-columns:1fr; }
-  #aura-root .cue-analytics-card { min-height:250px; }
+/* Cue's shopping journal: a single quiet column, not a dashboard. Same
+   design language as the live overlay (overlay.css) — system font, the
+   signature blue, frosted glass, dark charcoal for the mark. Variables are
+   redeclared here (not inherited from #aura-root) because store/analytics.html
+   opens this page standalone, without overlay.css ever loading. */
+#aura-root .cue-analytics {
+  --cue: #2f6bff; --cue-soft: rgba(47,107,255,.10); --cue-ring: rgba(47,107,255,.28);
+  --ink: #1d1d1f; --muted: #6e6e73; --faint: #96969c;
+  --bg: #f5f5f7; --surface: rgba(255,255,255,.78); --surface-solid: #ffffff;
+  --hairline: rgba(0,0,0,.08); --sheen: rgba(255,255,255,.65); --shadow: rgba(20,24,40,.08);
+  --good: #1f9d55;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+  --ease: cubic-bezier(.2,.8,.2,1); --pad: clamp(20px,5vw,40px); --measure: 660px;
+  position: fixed; inset: 0; z-index: 2147483645; overflow: auto; overscroll-behavior: contain;
+  pointer-events: auto; background: var(--bg); color: var(--ink);
+  font: 15px/1.5 var(--font); letter-spacing: normal; text-align: left;
+  -webkit-font-smoothing: antialiased;
 }
-@media(max-width:480px) {
-  #aura-root .cue-analytics-brand { font-size:15px; }
-  #aura-root .cue-analytics-intro h1 { font-size:54px; }
-  #aura-root .cue-analytics-metric { min-height:118px; padding:19px; }
-  #aura-root .cue-analytics-metric strong { font-size:34px; }
-  #aura-root .cue-analytics-term { grid-template-columns:20px minmax(70px,1fr) 50px 19px; gap:8px; }
-  #aura-root .cue-analytics-footer { flex-direction:column; }
+@media (prefers-color-scheme: dark) {
+  #aura-root .cue-analytics {
+    --cue: #5c8dff; --cue-soft: rgba(92,141,255,.16); --cue-ring: rgba(92,141,255,.35);
+    --ink: #f5f5f7; --muted: #98989d; --faint: #6b6b70;
+    --bg: #000000; --surface: rgba(28,28,30,.72); --surface-solid: #1c1c1e;
+    --hairline: rgba(255,255,255,.09); --sheen: rgba(255,255,255,.05); --shadow: rgba(0,0,0,.45);
+    --good: #34c759;
+  }
+}
+#aura-root .cue-analytics, #aura-root .cue-analytics * { box-sizing: border-box; }
+#aura-root .cue-analytics :focus-visible { outline: 2px solid var(--cue); outline-offset: 2px; }
+#aura-root .cue-analytics strong, #aura-root .cue-analytics b { font-variant-numeric: tabular-nums; }
+#aura-root .cue-analytics ol { list-style: none; margin: 0; padding: 0; }
+
+/* ── Header: sticky glass bar, the Cue mark as the wordmark's lockup ────────── */
+#aura-root .cue-analytics-top {
+  position: sticky; top: 0; z-index: 2; height: 64px;
+  background: var(--surface); backdrop-filter: blur(24px) saturate(1.7);
+  -webkit-backdrop-filter: blur(24px) saturate(1.7);
+  border-bottom: 1px solid var(--hairline);
+}
+#aura-root .cue-analytics-top-inner {
+  max-width: var(--measure); height: 100%; margin: auto; padding: 0 var(--pad);
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+#aura-root .cue-analytics-brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+#aura-root .cue-analytics-mark { flex: none; width: 28px; height: 28px; display: block;
+  border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px var(--shadow); }
+#aura-root .cue-analytics-mark svg { display: block; width: 100%; height: 100%; }
+#aura-root .cue-analytics-word { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+#aura-root .cue-analytics-word b { font-size: 15px; font-weight: 650; letter-spacing: -.02em; }
+#aura-root .cue-analytics-word span { font-size: 13px; color: var(--muted); font-weight: 450; }
+#aura-root .cue-analytics-top-actions { display: flex; align-items: center; gap: 18px; }
+#aura-root .cue-analytics-local { display: none; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+#aura-root .cue-analytics-local i { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--good); margin-right: 7px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 16%, transparent); }
+#aura-root .cue-analytics-close {
+  border: 0; background: none; color: var(--cue); font: inherit; font-size: 15px; font-weight: 590;
+  letter-spacing: -.01em; padding: 8px 4px; cursor: pointer; border-radius: 8px;
+}
+#aura-root .cue-analytics-close:hover { opacity: .7; }
+
+/* ── Body: one column, read like a report ─────────────────────────────────── */
+#aura-root .cue-analytics-main { max-width: var(--measure); margin: auto; padding: 0 var(--pad) 72px; }
+
+/* ── Hero: the one bold moment. Cue's own mark, and the thing it noticed ───── */
+#aura-root .cue-analytics-hero {
+  display: flex; align-items: flex-start; gap: 20px;
+  padding: clamp(40px,7vw,60px) 0 40px;
+}
+#aura-root .cue-analytics-hero-mark { flex: none; width: 60px; height: 60px; border-radius: 15px;
+  overflow: hidden; box-shadow: 0 8px 24px -8px var(--shadow), 0 1px 2px var(--shadow); }
+#aura-root .cue-analytics-hero-mark svg { display: block; width: 100%; height: 100%; }
+#aura-root .cue-analytics-hero-text { min-width: 0; padding-top: 4px; }
+#aura-root .cue-analytics-hero-tag {
+  margin: 0; color: var(--faint); font-size: 10px; font-weight: 650;
+  letter-spacing: .07em; text-transform: uppercase;
+}
+#aura-root .cue-analytics-hero-text h1 {
+  margin: 5px 0 0; font: 650 clamp(26px,4vw,36px)/1.18 var(--font); letter-spacing: -.025em;
+  max-width: 22ch;
+}
+#aura-root .cue-analytics-hero-body { margin: 12px 0 0; color: var(--muted); font-size: 15.5px;
+  line-height: 1.55; max-width: 46ch; }
+#aura-root .cue-analytics-stat { margin: 20px 0 0; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+#aura-root .cue-analytics-stat strong { color: var(--ink); font-weight: 650; }
+
+/* ── Sections: a label, then one grouped list — never a grid of cards ───────── */
+#aura-root .cue-analytics-sections { display: flex; flex-direction: column; gap: clamp(30px,4.5vw,44px); }
+#aura-root .cue-analytics-section-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 12px;
+}
+#aura-root .cue-analytics-section-head h2 { margin: 0; font: 620 16px/1.3 var(--font); letter-spacing: -.012em; }
+#aura-root .cue-analytics-section-head > span { font-size: 12.5px; color: var(--faint); white-space: nowrap; }
+#aura-root .cue-analytics-group {
+  background: var(--surface-solid); border: 1px solid var(--hairline); border-radius: 16px;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+#aura-root .cue-analytics-group:not(.cue-analytics-week) { overflow: hidden; }
+
+/* What you look for: a ranked reading list, not a bar chart. The share of
+   attention is a thin rule under the term itself, sized by --share. */
+#aura-root .cue-analytics-interests > li {
+  display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 14px;
+  padding: 13px 18px; font-size: 14.5px; border-top: 1px solid var(--hairline);
+}
+#aura-root .cue-analytics-interests > li:first-child { border-top: 0; }
+#aura-root .cue-analytics-interest-rank { color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+#aura-root .cue-analytics-interest-name {
+  position: relative; padding-bottom: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#aura-root .cue-analytics-interest-name::after {
+  content: ""; position: absolute; left: 0; bottom: 0; height: 2px; border-radius: 2px;
+  width: var(--share); background: var(--cue); opacity: .5;
+}
+#aura-root .cue-analytics-interest-count { font-size: 12.5px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Your rhythm this week: seven quiet ticks, not seven blocky bars. */
+#aura-root .cue-analytics-week {
+  display: grid; grid-template-columns: repeat(7,1fr); gap: 6px; padding: 24px 20px 18px;
+}
+#aura-root .cue-analytics-week-day { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+#aura-root .cue-analytics-week-track { width: 100%; height: 72px; display: flex; align-items: flex-end; justify-content: center; }
+#aura-root .cue-analytics-week-track i { width: 8px; border-radius: 4px; background: var(--cue); display: block; }
+#aura-root .cue-analytics-week-label { font-size: 11px; color: var(--faint); font-weight: 550; }
+
+/* Added to bag / Checked out */
+#aura-root .cue-analytics-items > li {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 13px 18px; font-size: 14.5px; border-top: 1px solid var(--hairline);
+}
+#aura-root .cue-analytics-items > li:first-child { border-top: 0; }
+#aura-root .cue-analytics-items > li > span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#aura-root .cue-analytics-items > li b { flex: none; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+
+/* Recent activity: a plain log. A coloured dot carries the same meaning the
+   dock's own status dot does — no icon badges invented for this page. */
+#aura-root .cue-analytics-activity { max-height: 300px; overflow: auto; }
+#aura-root .cue-analytics-activity > li {
+  display: flex; align-items: center; gap: 11px; padding: 12.5px 18px; font-size: 14px;
+  border-top: 1px solid var(--hairline);
+}
+#aura-root .cue-analytics-activity > li:first-child { border-top: 0; }
+#aura-root .cue-analytics-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+#aura-root .cue-analytics-dot-add { background: var(--cue); }
+#aura-root .cue-analytics-dot-purchase { background: var(--good); }
+#aura-root .cue-analytics-verb { flex: none; color: var(--muted); font-size: 12.5px; font-weight: 600; }
+#aura-root .cue-analytics-noun { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#aura-root .cue-analytics-activity time { flex: none; color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* An empty row must not inherit its list's grid/flex track — it is prose,
+   not a data row, or every word wraps into the rank column's 22px. */
+#aura-root .cue-analytics-interests > li.cue-analytics-empty,
+#aura-root .cue-analytics-items > li.cue-analytics-empty,
+#aura-root .cue-analytics-activity > li.cue-analytics-empty {
+  display: block;
+}
+#aura-root .cue-analytics-empty { padding: 15px 18px; color: var(--faint); font-size: 13.5px; line-height: 1.6; }
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+#aura-root .cue-analytics-footer {
+  margin-top: clamp(30px,4.5vw,44px); padding-top: 24px; border-top: 1px solid var(--hairline);
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  font-size: 12.5px; color: var(--faint);
+}
+#aura-root .cue-analytics-export {
+  flex: none; border: 0; border-radius: 999px; height: 36px; padding: 0 18px;
+  background: var(--cue); color: #fff; font: 590 13px var(--font); letter-spacing: -.005em;
+  cursor: pointer; box-shadow: 0 1px 2px var(--shadow); transition: opacity .15s;
+}
+#aura-root .cue-analytics-export:hover { opacity: .88; }
+
+/* ── Loading / error state ────────────────────────────────────────────────── */
+#aura-root .cue-analytics-loading {
+  min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; text-align: center; color: var(--muted); font: 500 15px/1.4 var(--font); padding: 40px;
+}
+#aura-root .cue-analytics-spinner {
+  width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid var(--hairline);
+  border-top-color: var(--cue); animation: cue-ia-spin .8s linear infinite;
+}
+@keyframes cue-ia-spin { to { transform: rotate(360deg); } }
+#aura-root .cue-analytics-loading button { margin-top: 4px; }
+
+/* ── Entrance: one orchestrated moment, not per-section fades ───────────────── */
+#aura-root .cue-analytics-shell { animation: cue-ia-in .32s var(--ease) both; }
+@keyframes cue-ia-in { from { opacity: 0; transform: translateY(6px); } }
+
+/* The hero mark gets a single glance once the page has settled — the same
+   "look, then rest" the live avatar does, quoted rather than fully rigged. */
+#aura-root .cue-analytics-hero-mark .cue-analytics-eye {
+  transform-box: fill-box; transform-origin: center;
+  animation: cue-ia-glance 1.7s var(--ease) .5s 1 both;
+}
+@keyframes cue-ia-glance {
+  0%, 100% { transform: translate(0,0) scaleY(1); }
+  35% { transform: translate(-1.6px,-1px) scaleY(1); }
+  50% { transform: translate(-1.6px,-1px) scaleY(.1); }
+  66% { transform: translate(1.1px,.4px) scaleY(1); }
+}
+
+@media (min-width: 561px) {
+  #aura-root .cue-analytics-local { display: inline-flex; align-items: center; }
+}
+@media (max-width: 560px) {
+  #aura-root .cue-analytics-hero { gap: 16px; }
+  #aura-root .cue-analytics-hero-mark { width: 48px; height: 48px; border-radius: 12px; }
+  #aura-root .cue-analytics-hero-text h1 { max-width: none; }
+  #aura-root .cue-analytics-interests > li { grid-template-columns: 18px 1fr auto; gap: 10px; }
+  #aura-root .cue-analytics-footer { flex-direction: column; align-items: flex-start; gap: 14px; }
+}
+@media (max-width: 420px) {
+  #aura-root .cue-analytics-week-track { height: 56px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #aura-root .cue-analytics-shell { animation: none; }
+  #aura-root .cue-analytics-spinner { animation: none; }
+  #aura-root .cue-analytics-hero-mark .cue-analytics-eye { animation: none; }
 }

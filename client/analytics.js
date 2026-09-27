@@ -11,6 +11,24 @@ export function analyticsCommand(text, isOpen) {
   return null;
 }
 
+// The Cue mark, static: same geometry as the live avatar in client/avatar.js,
+// at rest. Brand continuity — this is the one glyph a shopper already
+// associates with Cue, not a generic chart icon invented for this page. The
+// dot carries a class so the hero's larger mark can give it a single glance
+// on load (client/analytics.css); the small wordmark instance ignores it.
+const MARK = `<svg viewBox="0 0 120 120" role="img" aria-label="Cue">
+  <defs><linearGradient id="cue-ia-tile" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#2a2a2a"/><stop offset="1" stop-color="#1a1a1a"/>
+  </linearGradient></defs>
+  <rect x="6" y="6" width="108" height="108" rx="30" fill="url(#cue-ia-tile)"/>
+  <rect x="6.5" y="6.5" width="107" height="107" rx="29.5" fill="none" stroke="#fff" stroke-opacity=".07"/>
+  <path d="M88.37 37.83 A36 36 0 1 0 88.37 82.17" fill="none" stroke="#f4f3ef" stroke-width="6"/>
+  <path d="M60.32 47.14 A20 20 0 1 0 60.32 72.86" fill="none" stroke="#f4f3ef" stroke-width="5.4"/>
+  <circle class="cue-analytics-eye" cx="72" cy="60" r="6.8" fill="#5c8dff"/>
+</svg>`;
+
+const DOT_KIND = { search: "search", cart_add: "add", add_request: "add", purchase: "purchase" };
+
 export function dashboardHTML(data, { hasExport = false } = {}) {
   const totals = data.totals || {};
   const searches = data.top_searches || [];
@@ -18,35 +36,104 @@ export function dashboardHTML(data, { hasExport = false } = {}) {
   const purchased = data.top_purchased || [];
   const daily = data.daily || [];
   const recent = data.recent || [];
-  const peak = Math.max(1, ...daily.map(day => (day.searches || 0) + (day.adds || 0)));
+  const insight = data.insight || {};
+  const dayPeak = Math.max(1, ...daily.map(day => (day.searches || 0) + (day.adds || 0)));
   const searchPeak = Math.max(1, ...searches.map(row => row.count));
-  const row = (label, value, detail) => `<div class="cue-analytics-metric"><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong><small>${escapeHTML(detail)}</small></div>`;
-  const searchRows = searches.length ? searches.map((item, index) => `<div class="cue-analytics-term"><span class="cue-analytics-rank">${String(index + 1).padStart(2, "0")}</span><span class="cue-analytics-term-name">${escapeHTML(item.label)}</span><span class="cue-analytics-term-bar"><i style="width:${Math.max(6, item.count / searchPeak * 100)}%"></i></span><b>${number(item.count)}</b></div>`).join("")
-    : `<p class="cue-analytics-empty">Your search themes will appear here as you shop with Cue.</p>`;
-  const days = daily.map(day => {
+
+  const interestRows = searches.length
+    ? searches.map((item, index) => `<li class="cue-analytics-interest">
+        <span class="cue-analytics-interest-rank">${String(index + 1).padStart(2, "0")}</span>
+        <span class="cue-analytics-interest-name" style="--share:${Math.max(8, item.count / searchPeak * 100)}%">${escapeHTML(item.label)}</span>
+        <span class="cue-analytics-interest-count">${number(item.count)}</span>
+      </li>`).join("")
+    : `<li class="cue-analytics-empty">Your search themes will appear here as you shop with Cue.</li>`;
+
+  const weekCells = daily.map(day => {
     const total = (day.searches || 0) + (day.adds || 0);
-    const height = total ? Math.max(8, total / peak * 100) : 2;
-    return `<div class="cue-analytics-day" title="${escapeHTML(day.date)}: ${number(total)} actions"><div class="cue-analytics-column"><i style="height:${height}%"></i></div><span>${escapeHTML(new Date(`${day.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short" }))}</span></div>`;
+    const ratio = total / dayPeak;
+    const weekday = new Date(`${day.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "narrow" });
+    return `<div class="cue-analytics-week-day" title="${escapeHTML(day.date)}: ${number(total)} actions">
+      <span class="cue-analytics-week-track"><i style="height:${total ? Math.max(14, ratio * 100) : 4}%;opacity:${total ? Math.max(.4, ratio) : .18}"></i></span>
+      <span class="cue-analytics-week-label">${escapeHTML(weekday)}</span></div>`;
   }).join("");
-  const events = recent.length ? recent.map(item => {
-    const label = item.kind === "search" ? "Searched" : item.kind === "cart_add" ? "Added" : item.kind === "purchase" ? "Purchased" : "Requested add";
+
+  const recentRows = recent.length ? recent.map(item => {
+    const kind = DOT_KIND[item.kind] || "add";
+    const verb = item.kind === "search" ? "Searched" : item.kind === "purchase" ? "Purchased"
+      : item.kind === "cart_add" ? "Added" : "Asked to add";
     const time = new Date(item.at);
-    return `<li><span class="cue-analytics-event-icon" aria-hidden="true">${item.kind === "search" ? "⌕" : item.kind === "purchase" ? "✓" : "+"}</span><div><b>${escapeHTML(label)}</b><span>${escapeHTML(item.label || "Item")}</span><small>${escapeHTML(item.site || "")}</small></div><time>${escapeHTML(Number.isNaN(time.getTime()) ? "" : time.toLocaleDateString("en-US", { month: "short", day: "numeric" }))}</time></li>`;
+    const stamp = Number.isNaN(time.getTime()) ? "" : time.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return `<li><i class="cue-analytics-dot cue-analytics-dot-${kind}"></i>
+      <span class="cue-analytics-verb">${escapeHTML(verb)}</span>
+      <span class="cue-analytics-noun">${escapeHTML(item.label || "Item")}</span>
+      <time>${escapeHTML(stamp)}</time></li>`;
   }).join("") : `<li class="cue-analytics-empty">No activity yet. Ask Cue to find something you like.</li>`;
-  const itemList = (items, empty) => items.length ? `<ol class="cue-analytics-items">${items.map(item =>
-    `<li><span>${escapeHTML(item.label)}</span><b>× ${number(item.count)}</b></li>`).join("")}</ol>`
-    : `<p class="cue-analytics-empty">${escapeHTML(empty)}</p>`;
+
+  const itemRows = (items, empty) => items.length
+    ? items.map(item => `<li><span>${escapeHTML(item.label)}</span><b>&times;${number(item.count)}</b></li>`).join("")
+    : `<li class="cue-analytics-empty">${escapeHTML(empty)}</li>`;
+
+  const orderWord = totals.orders === 1 ? "order" : "orders";
+  const spendNote = totals.orders
+    ? ` ${money(totals.demo_spend_cents)} across ${number(totals.orders)} demo ${escapeHTML(orderWord)} — no real charges.`
+    : "";
+
   return `<div class="cue-analytics-shell">
-    <header class="cue-analytics-top"><div class="cue-analytics-brand"><span class="cue-analytics-symbol" aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><path d="M28.2 9.1A15 15 0 1 0 28.2 30.9M24.1 15.6A8 8 0 1 0 24.1 24.4" stroke="currentColor" stroke-width="2.8" stroke-linecap="square"/><circle cx="25" cy="20" r="2.5" fill="currentColor"/></svg></span><span>Cue <i>/</i> Insights</span></div><div class="cue-analytics-top-actions"><span class="cue-analytics-local"><i></i> Stored in your browser</span><button class="cue-analytics-close" type="button" aria-label="Close analytics">Close <span>×</span></button></div></header>
-    <main class="cue-analytics-main"><div class="cue-analytics-intro"><div><p class="cue-analytics-eyebrow">YOUR SHOPPING, IN FOCUS</p><h1>What catches<br><em>your eye.</em></h1><p>A quieter look at the things you return to, add, and choose.</p></div><span class="cue-analytics-index">01 — Personal insights</span></div>
-    <section class="cue-analytics-metrics" aria-label="Shopping totals">${row("Searches", number(totals.searches), "Ideas explored")}${row("Added to bag", number(totals.confirmed_adds), "Confirmed additions")}${row("Demo orders", number(totals.orders), "Approved checkouts")}${row("Demo spend", money(totals.demo_spend_cents), "No real charges")}</section>
-    <div class="cue-analytics-grid"><section class="cue-analytics-card cue-analytics-searches"><div class="cue-analytics-card-head"><div><p>01 / INTEREST</p><h2>What you look for</h2></div><span>Most searched</span></div>${searchRows}</section>
-    <section class="cue-analytics-card cue-analytics-week"><div class="cue-analytics-card-head"><div><p>02 / RHYTHM</p><h2>Last seven days</h2></div><span>Searches + adds</span></div><div class="cue-analytics-bars" role="img" aria-label="Shopping activity over the last seven days">${days}</div></section>
-    <section class="cue-analytics-card cue-analytics-insight"><p>03 / CUE NOTICED</p><span class="cue-analytics-spark" aria-hidden="true">✳</span><h2>${escapeHTML(data.insight?.title || "Your patterns will appear here")}</h2><p>${escapeHTML(data.insight?.body || "Search and shop with Cue to see your interests.")}</p></section>
-    <section class="cue-analytics-card cue-analytics-activity"><div class="cue-analytics-card-head"><div><p>04 / ACTIVITY</p><h2>Recent moments</h2></div><span>Latest first</span></div><ol>${events}</ol></section>
-    <section class="cue-analytics-card cue-analytics-items-card"><div class="cue-analytics-card-head"><div><p>05 / CONSIDERED</p><h2>Added to bag</h2></div><span>Confirmed · demo store</span></div>${itemList(added, "Items you add to the demo store bag will appear here.")}</section>
-    <section class="cue-analytics-card cue-analytics-items-card"><div class="cue-analytics-card-head"><div><p>06 / CHOSEN</p><h2>Checked out</h2></div><span>Approved demo orders</span></div>${itemList(purchased, "Items from approved demo checkouts will appear here.")}</section></div>
-    <footer class="cue-analytics-footer"><span>Your activity stays in this browser. Download a CSV whenever you want a file.</span>${hasExport ? `<button class="cue-analytics-export" type="button">Download CSV <span>↗</span></button>` : ""}</footer></main></div>`;
+    <header class="cue-analytics-top"><div class="cue-analytics-top-inner">
+      <div class="cue-analytics-brand"><span class="cue-analytics-mark" aria-hidden="true">${MARK}</span>
+        <div class="cue-analytics-word"><b>Cue</b><span>Insights</span></div></div>
+      <div class="cue-analytics-top-actions">
+        <span class="cue-analytics-local"><i></i>Stored in your browser</span>
+        <button class="cue-analytics-close" type="button" aria-label="Close analytics">Done</button>
+      </div>
+    </div></header>
+    <main class="cue-analytics-main">
+
+      <section class="cue-analytics-hero">
+        <span class="cue-analytics-hero-mark" aria-hidden="true">${MARK}</span>
+        <div class="cue-analytics-hero-text">
+          <p class="cue-analytics-hero-tag">Cue noticed</p>
+          <h1>${escapeHTML(insight.title || "Your patterns will appear here")}</h1>
+          <p class="cue-analytics-hero-body">${escapeHTML(insight.body || "Search and shop with Cue to see the interests you return to.")}</p>
+          <p class="cue-analytics-stat"><strong>${number(totals.searches)}</strong> searches,
+            <strong>${number(totals.confirmed_adds)}</strong> added to your bag, and
+            <strong>${number(totals.orders)}</strong> ${escapeHTML(orderWord)} placed.</p>
+        </div>
+      </section>
+
+      <div class="cue-analytics-sections">
+        <section class="cue-analytics-section">
+          <div class="cue-analytics-section-head"><h2>What you look for</h2><span>Most searched</span></div>
+          <ol class="cue-analytics-group cue-analytics-interests">${interestRows}</ol>
+        </section>
+
+        <section class="cue-analytics-section">
+          <div class="cue-analytics-section-head"><h2>Your rhythm this week</h2></div>
+          <div class="cue-analytics-group cue-analytics-week" role="img" aria-label="Shopping activity over the last seven days">${weekCells}</div>
+        </section>
+
+        <section class="cue-analytics-section">
+          <div class="cue-analytics-section-head"><h2>Added to bag</h2></div>
+          <ol class="cue-analytics-group cue-analytics-items">${itemRows(added, "Items you add to the demo store bag will appear here.")}</ol>
+        </section>
+
+        <section class="cue-analytics-section">
+          <div class="cue-analytics-section-head"><h2>Checked out</h2></div>
+          <ol class="cue-analytics-group cue-analytics-items">${itemRows(purchased, "Items from approved demo checkouts will appear here.")}</ol>
+        </section>
+
+        <section class="cue-analytics-section">
+          <div class="cue-analytics-section-head"><h2>Recent activity</h2><span>Latest first</span></div>
+          <ol class="cue-analytics-group cue-analytics-activity">${recentRows}</ol>
+        </section>
+      </div>
+
+      <footer class="cue-analytics-footer">
+        <span>Nothing here leaves your browser.${spendNote}</span>
+        ${hasExport ? `<button class="cue-analytics-export" type="button">Download CSV</button>` : ""}
+      </footer>
+    </main>
+  </div>`;
 }
 
 export function createAnalytics({ request, onExport }) {
@@ -71,7 +158,7 @@ export function createAnalytics({ request, onExport }) {
     panel.setAttribute("role", "dialog");
     panel.setAttribute("aria-modal", "true");
     panel.setAttribute("aria-label", "Cue shopping analytics");
-    panel.innerHTML = `<div class="cue-analytics-loading" role="status">Gathering your insights…</div>`;
+    panel.innerHTML = `<div class="cue-analytics-loading" role="status"><span class="cue-analytics-spinner" aria-hidden="true"></span>Gathering your insights&hellip;</div>`;
     root.append(panel);
     panel.addEventListener("click", event => {
       if (event.target.closest(".cue-analytics-close")) close();

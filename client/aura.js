@@ -251,7 +251,7 @@ function mountUI() {
     <div class="aura-hud">
       <div class="aura-hud-row"><b>Cue</b><span class="aura-status"><span class="aura-dot"></span><span class="aura-chip aura-mode"></span></span></div>
       <div class="aura-hud-heard"></div>
-      <div class="aura-hud-said"></div>
+      <div class="aura-hud-said" role="status" aria-live="polite" tabindex="0"></div>
       <div class="aura-hud-drift">tracking has drifted · say &ldquo;recalibrate&rdquo;</div>
       <div class="aura-hud-foot">hold <kbd>space</kbd> to talk · say &ldquo;Cue, &hellip;&rdquo;</div>
     </div>
@@ -372,7 +372,13 @@ bus.on("SAY", ({ text }) => { void sayAndWait(text); });
 // waits for this to resolve first.
 async function sayAndWait(text) {
   if (!text) return;
-  if (ui.said) ui.said.textContent = text;
+  if (ui.said) {
+    ui.said.textContent = text;
+    // The response area is intentionally compact. When an answer grows beyond
+    // it, keep the newest words in view instead of leaving the shopper looking
+    // at the beginning of a clipped answer.
+    requestAnimationFrame(() => { ui.said.scrollTop = ui.said.scrollHeight; });
+  }
   remember("assistant", text);
   try { await voice.speak(text); } catch { /* a failed line must not block the action */ }
 }
@@ -662,7 +668,9 @@ const HALT = /^(?:exit|quit|stop|go away|shut down|turn(?: yourself)? off|disabl
 
 // "scroll down" keeps going, slowly, until they say stop. Reading pace, not a
 // jump: someone who cannot scroll themselves needs to see the page pass by.
-const SCROLL_SPEEDS = [22, 38, 60, 95, 150];   // px per second
+// Each reading pace is 1.5x the original speed. The steps remain far enough
+// apart for "slower" and "faster" to make an obvious, predictable change.
+const SCROLL_SPEEDS = [33, 57, 90, 142.5, 225];   // px per second
 const STOP_SCROLL = /\b(?:stop|pause|wait|hold on|hold it|halt|freeze|enough|that's good|right there|okay stop)\b/i;
 const autoScroll = { dir: 0, speed: 2, raf: 0, last: 0, carry: 0, stuck: 0 };
 
