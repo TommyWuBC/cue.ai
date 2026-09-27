@@ -1,5 +1,6 @@
 import { bus } from "./bus.js";
 import * as gaze from "./gaze.js";
+import "./attention-hint.js";
 import * as voice from "./voice.js";
 import { scan, scanAll, nth, invalidate, controls, controlName, findControl, fields, findField, setText,
   findText, COMMITS_MONEY } from "./resolver.js";
@@ -523,6 +524,8 @@ function context(utterance = "") {
     fields: fields().slice(0, 8).map((f) => f.name).filter(Boolean),
     site: site ? { title: site.title, pages: (site.pages || []).slice(0, 6).map((p) => p.title).filter(Boolean) } : null,
     page: pageBrief(),
+    // Where the eyes have been, as probabilities (gaze.js / attention.js).
+    attention: gaze.getAttention?.() ?? null,
     nearby: asking ? nearby.map((p) => ({ title: p.title, text: (p.text || "").slice(0, 180) }))
       : nearby.map((p) => ({ title: p.title })),
     pending: pendingConfirm?.kind ?? null,

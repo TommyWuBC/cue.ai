@@ -20,7 +20,7 @@ FILES = [
     'client/resolver.js', 'client/search.js', 'client/shopper.js', 'client/site.js', 'client/splash.js',
     'client/voice.js', 'client/product-memory.js',
     'client/eyes.js', 'client/gaze-features.js', 'client/gaze-model.js', 'client/fixation.js',
-    'client/gaze-debug.js',
+    'client/gaze-debug.js', 'client/attention.js', 'client/attention-hint.js',
 ]
 
 

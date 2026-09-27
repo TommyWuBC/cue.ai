@@ -83,6 +83,33 @@ a few hundred samples, a fit in milliseconds.
 3. Five validation points the model never trained on. Their error is the
    number shown to the shopper and the one that sets confidence.
 
+## Attention, not a pointer
+
+Even done well, a webcam is off by 100-200px, about half a product card. So
+Cue does not treat gaze as a cursor. `client/attention.js` keeps an invisible
+attention map instead: every estimate is a Gaussian blob with the measured
+error as its spread, and each item's share is the probability that the true
+gaze is inside its box (much more under the centre, some for neighbours,
+nothing far away). Shares are integrated at three speeds: **fast** (~0.5 s,
+what holds the eyes now), **recent** (~4 s) and **studied** (~45 s), plus plain
+seconds per item for the visit.
+
+What it is used for:
+
+- **The highlight** follows attention, not the dot: an item takes it only when
+  it holds at least half the current attention for ~0.4 s and beats the
+  current one by 1.4x. Looking at empty space keeps the last highlight. There
+  is no floating gaze dot (`?gazedebug=1` shows one).
+- **"This"** is what held the eyes as the sentence began. A split between two
+  items is left for the agent, which asks "the wool coat or the puffer?".
+- **"These", "both", "compare them"** mean the two items the eyes have been
+  going between; **"the one I was looking at"** means the most studied one.
+- **Being torn** between two items for a few seconds brings a silent hint in
+  the dock: "Deciding between A and B? Say “compare them”." Once per pair per
+  minute, never while speaking.
+- **The agent** gets `attention` in its context (titles and shares only), and
+  the offline fallback uses it the same way, so this works with no API key.
+
 ## Speech and gaze together
 
 People look at a thing, then refer to it. By the time the sentence ends, the

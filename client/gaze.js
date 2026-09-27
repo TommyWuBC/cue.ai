@@ -3,6 +3,7 @@ import { scan, resolve } from "./resolver.js";
 import * as realEyes from "./eyes.js";
 import { fitGazeModel, loadGazeModel, bestPursuitLag } from "./gaze-model.js";
 import { fixationFilter } from "./fixation.js";
+import { createAttention } from "./attention.js";
 
 // The engine is swappable so tests can drive calibration with synthetic frames.
 let eyes = realEyes;
@@ -108,6 +109,17 @@ const state = {
 let model = null;
 let training = [];
 let fixer = fixationFilter();
+
+// Where the eyes have been, as probabilities over what is on screen
+// (attention.js). The highlight, "this" at speech onset and the agent's
+// context all read from this, never from a single raw point.
+const attention = createAttention();
+
+function attentionSigma() {
+  if (state.mode === "mouse") return 45;
+  if (state.mode === "sim") return Math.max(60, (state.sigma ?? 70) * 0.8);
+  return Math.max(70, 0.8 * (state.accuracy?.after_px ?? 180));
+}
 
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
 const mean   = (a) => a.reduce((s, v) => s + v, 0) / a.length;
@@ -367,6 +379,10 @@ function ingest(rawX, rawY) {
   state.point = { x, y };
   state.conf = confidence();
   bus.emit("GAZE", { x, y, confidence: state.conf });
+  if (!state.calibrating) {
+    attention.update(x, y, attentionSigma(), performance.now(), scan());
+    watchTorn();
+  }
 }
 
 // ── Dwell ───────────────────────────────────────────────────────────────────
@@ -440,7 +456,30 @@ function checkQuality() {
   }
 }
 
+// A new item takes the highlight only when it clearly holds attention, has held
+// it for DWELL_MS, and beats the current one by a margin. Looking at empty
+// space keeps the last highlight rather than dropping it: the highlight moves
+// when the eyes clearly move, and not otherwise.
+const LEAD_SHARE = 0.5;
+const LEAD_MARGIN = 1.4;
+
+function commitAttention() {
+  if (performance.now() < state.lockUntil) return;
+  const lead = attention.leader({ minShare: LEAD_SHARE });
+  const now = performance.now();
+  const target = lead?.target ?? null;
+  if (!target) { state.cand = null; return; }
+  if (target.id !== state.cand?.id) { state.cand = target; state.candSince = now; return; }
+  if (now - state.candSince < DWELL_MS || target.id === state.focus?.id) return;
+  if (state.focus && attention.shareOf(state.focus.id) * LEAD_MARGIN > lead.share) return;
+  if (!target.el?.isConnected) return;
+  const prev = state.focus;
+  state.focus = target;
+  bus.emit("FOCUS", { target, prev });
+}
+
 function commitDwell(x, y) {
+  if (state.mode !== "mouse") return commitAttention();
   // While a voice-set focus is locked, the eyes do not get to steal it back.
   // Without this, "the third one" is undone 60ms later, before you say "add it".
   if (performance.now() < state.lockUntil) return;
@@ -1091,6 +1130,7 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null,
   // ?gaze=sim — mouse as ground truth with synthetic webgazer noise on top,
   // run through the real filter chain. This is how you feel what the gaze
   // experience is actually like, and tune it, without a camera or a face.
+  state.sigma = sigma;
   if (mode === "sim") {
     // Size the filters for the noise being simulated, exactly as a real
     // calibration sizes them for the error it measured.
@@ -1136,7 +1176,7 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null,
   guardStrayClicks();
   state.running = true;
   const restored = await restoreCalibration(resume);
-  if (debugOn) import("./gaze-debug.js").then((m) => m.mount({ eyes, getState })).catch(() => {});
+  if (debugOn) import("./gaze-debug.js").then((m) => m.mount({ eyes, getState, getAttention })).catch(() => {});
   bus.emit("STATE", { mode: "webgazer", calibrated: restored });
   return "webgazer";
 }
@@ -1268,11 +1308,27 @@ function focusAt(t) {
 }
 
 let lastSpeechAt = 0;
+const offered = new Map();      // pair key -> when we last offered
+function watchTorn() {
+  const now = performance.now();
+  if (now - lastSpeechAt < 8000 || state.calibrating) return;
+  const pair = attention.torn();
+  if (!pair) return;
+  const key = pair.map((it) => it.id).sort().join("|");
+  if (now - (offered.get(key) ?? -Infinity) < 60000) return;
+  offered.set(key, now);
+  bus.emit("ATTENTION", { kind: "torn", items: pair.map((it) => ({ id: it.id, title: it.title })) });
+}
 function onSpeechStart() {
   if (state.mode === "mouse" || !state.calibrated || state.calibrating) return;
   if (performance.now() < state.lockUntil) return;          // voice already chose
-  const past = focusAt(performance.now() - SPEECH_LOOKBACK_MS);
-  if (past?.el?.isConnected && past.id !== state.focus?.id) setFocus(past, 6000);
+  // What held attention just before they started speaking. A clear leader is
+  // pinned; a split is left for the agent, which sees both and can ask.
+  const then = attention.at(performance.now() - SPEECH_LOOKBACK_MS) ?? [];
+  const lead = then[0]?.share >= 0.55 ? then[0].target : focusAt(performance.now() - SPEECH_LOOKBACK_MS);
+  state.onsetAttention = then.slice(0, 3).map(({ id, share, target }) =>
+    ({ id, share: Math.round(share * 100) / 100, title: target?.product?.title ?? target?.label ?? id }));
+  if (lead?.el?.isConnected && lead.id !== state.focus?.id) setFocus(lead, 6000);
   else holdFocus(6000);
 }
 bus.on("STATE", (s) => { if (s?.ptt === true) onSpeechStart(); });
@@ -1326,3 +1382,14 @@ export const isPrecise  = () => state.precise;
 export const getState = () => ({ ...state, fx: undefined, fy: undefined,
   model: model ? { kind: model.kind, cv_px: model.cv_px, samples: training.length } : null });
 export const getEngine = () => eyes.stats();
+
+/**
+ * Attention for the agent: what holds the eyes now, the last few seconds,
+ * this visit, and at the moment the current utterance began. Titles and
+ * shares only; nothing about pixels or the camera.
+ */
+export function getAttention() {
+  if (state.mode === "mouse" && !state.point) return null;
+  return { ...attention.snapshot(), at_speech: state.onsetAttention ?? null,
+    precision_px: Math.round(attentionSigma()) };
+}

@@ -48,10 +48,60 @@ def _summary(product):
     return ", ".join(details)
 
 
+def _attended(ctx, key, pool, n=2, min_share=0.0):
+    """Products from the attention map (client/attention.js), strongest first.
+
+    Webcam gaze is coarse, so these are probabilities, not a pointer: callers
+    use them to resolve "this", "these" and "the one I was looking at", and to
+    ask when two items are too close to call."""
+    att = ctx.get("attention") if isinstance(ctx.get("attention"), dict) else {}
+    out = []
+    for row in att.get(key) or []:
+        if not isinstance(row, dict):
+            continue
+        product = pool.get(row.get("id"))
+        share = row.get("share", 1) if isinstance(row.get("share", 1), (int, float)) else 0
+        if product and share >= min_share and product not in [p for p, _ in out]:
+            out.append((product, share))
+        if len(out) >= n:
+            break
+    return out
+
+
 def answer(text: str, ctx: dict) -> dict:
     t = text.lower()
     focused = ctx.get("focused") if isinstance(ctx.get("focused"), dict) else None
     visible = [p for p in ctx.get("visible", []) if isinstance(p, dict)] if isinstance(ctx.get("visible"), list) else []
+
+    pool = {p.get("id"): p for p in visible if p.get("id")}
+    if focused and focused.get("id"):
+        pool.setdefault(focused["id"], focused)
+
+    # "Compare them", "these two", "which is better": the two items the eyes have
+    # been going back and forth between, when nothing more specific was named.
+    wants_pair = re.search(r"\b(compare|differ|different|versus|vs|which is better|these|both|them)\b", t)
+    if wants_pair and not re.search(r"\b(last|previous|before|earlier)\b", t):
+        pair = _attended(ctx, "recent", pool, n=2, min_share=0.2)
+        if len(pair) == 2:
+            a, b = pair[0][0], pair[1][0]
+            return {"say": f"{_summary(a)}. Compared with {_summary(b)}.", "do": [], "source": "fallback"}
+
+    # "The one I was looking at": what this visit lingered on longest.
+    if re.search(r"\b(the one i (?:was|were) looking at|i was looking at|the one i looked at)\b", t):
+        studied = _attended(ctx, "studied", pool, n=1)
+        if studied:
+            focused = studied[0][0]
+
+    # "This" with two items too close to call when they started speaking: ask.
+    deictic = re.search(r"\b(this|that|it)\b", t)
+    discussed = ctx.get("discussed") if isinstance(ctx.get("discussed"), dict) else None
+    if deictic and not discussed:
+        onset = _attended(ctx, "at_speech", pool, n=2)
+        if len(onset) == 2 and abs(onset[0][1] - onset[1][1]) < 0.2:
+            return {"say": f"The {onset[0][0].get('title')} or the {onset[1][0].get('title')}?",
+                    "do": [], "source": "fallback"}
+        if onset and onset[0][1] >= 0.55 and not focused:
+            focused = onset[0][0]
 
     if re.search(r"\b(differ|different|compare|versus|vs|which is better)\b", t):
         previous = ctx.get("previous") if isinstance(ctx.get("previous"), dict) else None

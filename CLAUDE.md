@@ -42,7 +42,8 @@ Use Chrome or Brave, not the Claude preview pane (no camera/mic). URL flags:
 ## Where things are
 - `client/aura.js` verb dispatcher `perform()`; `resolver.js` control/field discovery;
   `voice.js` wake word; `gaze.js` tracking (focus, calibration, speech-onset gaze),
-  `eyes.js` camera + face landmarks, `gaze-model.js`, `gaze-features.js`, `fixation.js`.
+  `eyes.js` camera + face landmarks, `gaze-model.js`, `gaze-features.js`, `fixation.js`,
+  `attention.js` (gaze as probabilities over items; what "this"/"these" resolve to).
   `?gazedebug=1` shows the camera, landmarks, fps, latency and accuracy.
 - `server/agent.py` LLM + allowlist; `router.py` fast path; `checkout.py`, `trust.py`.
 - Tests: `.venv/bin/python -m pytest tests -q`, `node --test tests/*.mjs`

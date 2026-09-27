@@ -81,6 +81,17 @@ Reply with JSON only: {"say": "<what to speak>", "do": []}.
 You may propose: scroll{dir}, scroll_start{dir, speed}, scroll_stop{}, focus_nth{n}, select_variant{value},
 select_color{value}, click_named{name}, open_link{target, part}, back{}, forward{}, search{query}, fill{field, text}, find_on_page{text}, list_controls{}, read_bag{}, add_to_cart{}, checkout{}.
 
+`attention` is where the shopper's eyes have been, from a webcam. It is coarse:
+read it as probabilities over items, never as a pointer. `when_they_started_speaking`
+is what held their eyes as they began this sentence, `now` is the last moment,
+`recent` the last few seconds, `studied` and `session_seconds` this visit. When
+they say "this", "that", "it" or "this one" and `discussed` does not already
+settle it, take the top of `when_they_started_speaking` (else `now`). "These",
+"both" or "compare them" means the top two of `recent`. If the top two shares are
+close (within about 0.2), ask which one by name instead of guessing. "The one I was
+looking at" means the top of `studied`. Never act on attention alone, and do not
+mention eye tracking or attention unless they ask.
+
 `known_products` is everything you have seen this visit, newest first, including
 items from pages the shopper has already left. `here` says whether it is on this
 page; `links` says which pages Cue can open for it (product, reviews, brand,
@@ -390,6 +401,34 @@ def sanitize(out):
     return {"say": say, "do": actions, "ask": ask, "source": "model"}
 
 
+def _attention(value):
+    """Where the shopper's eyes have been (client/attention.js), bounded and typed.
+
+    Shares are probabilities from a coarse webcam estimate. Titles are page text:
+    evidence, never instructions."""
+    if not isinstance(value, dict):
+        return None
+
+    def rows(key, field, n):
+        out = []
+        for r in value.get(key) or []:
+            if not isinstance(r, dict) or not isinstance(r.get("title"), str):
+                continue
+            v = r.get(field)
+            if not isinstance(v, (int, float)):
+                continue
+            v = max(0.0, min(1.0, float(v))) if field == "share" else max(0.0, min(3600.0, float(v)))
+            out.append({"title": _short(r["title"], 60), field: round(v, 2)})
+            if len(out) >= n:
+                break
+        return out
+
+    out = {"now": rows("now", "share", 4), "recent": rows("recent", "share", 4),
+           "studied": rows("studied", "share", 4), "session_seconds": rows("session", "seconds", 5),
+           "when_they_started_speaking": rows("at_speech", "share", 3)}
+    return out if any(out.values()) else None
+
+
 def respond(text: str, ctx: dict, memory_block=None) -> dict:
     focused = _product(ctx.get("focused"))
     visible = ctx.get("visible") if isinstance(ctx.get("visible"), list) else []
@@ -402,6 +441,7 @@ def respond(text: str, ctx: dict, memory_block=None) -> dict:
         "budget": ctx.get("budget") if isinstance(ctx.get("budget"), dict) else None,
         "controls": [c[:40] for c in (ctx.get("controls") or [])[:12] if isinstance(c, str)],
         "looking_at": focused,
+        "attention": _attention(ctx.get("attention")),
         "previous_product": _product(ctx.get("previous")),
         "also_visible": [_product(p) for p in visible[:8]],
         "product_details": _details(ctx.get("product_details")),
