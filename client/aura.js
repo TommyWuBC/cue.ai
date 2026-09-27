@@ -9,6 +9,7 @@ import { CONFIG, url } from "./config.js";
 import { productMemory } from "./product-memory.js";
 import { playSplash } from "./splash.js";
 import { matchCandidates, matchOptions, missingChoices, optionPrompt } from "./intent.js";
+import { resolveReferent, answerWhich, whichQuestion } from "./referent.js";
 import { shopperStore } from "./shopper.js";
 import { crawlNear, matchPage, pageText } from "./site.js";
 import { createDetails } from "./details.js";
@@ -95,8 +96,13 @@ const remembered = shopper.load();
 // The product the shopper is talking about. Looking somewhere else does not
 // change it, and size or add questions are about this card, not the gaze card.
 let discussed = remembered.discussed;
-let voiceNamed = false;
-let lookedThisTurn = null;
+// What this turn is about and how Cue knows (client/referent.js): "named",
+// "named+gaze", "conversation", "page" or "gaze". Sent to the agent so a
+// reply resolved by the eyes names the item it picked.
+let turnReferent = null;
+// How `discussed` was last chosen. An add picked by the eyes always reads the
+// item back in full, whatever the agent already said.
+let discussedHow = remembered.discussed ? "conversation" : null;
 // Size and color count only when the shopper says them. The card's default
 // color is pressed already, and that is not a choice.
 let stated = { id: remembered.discussed?.id ?? null, size: remembered.size, color: remembered.color };
@@ -538,9 +544,7 @@ function budgetBrief() {
 
 async function withDetails(text) {
   if (CONFIG.injected) {
-    const f = gaze.getFocus();
-    const focused = f?.kind === "product" ? f.product : null;
-    await details.ensure(detailUrls(focused).slice(0, 3).map((p) => p.url));
+    await details.ensure(detailUrls(subjectProduct()).slice(0, 3).map((p) => p.url));
   }
   const ctx = context(text);
   try {
@@ -556,7 +560,7 @@ async function withDetails(text) {
 
 function detailUrls(focused) {
   const seen = new Set();
-  const list = [focused, comparisons.remember(focused), discussed,
+  const list = [focused, comparisons.remember(focused), discussed, ...attendedProducts(2),
     ...scan().filter((t) => t.kind === "product").slice(0, 5).map((t) => t.product),
     ...knowledge.recent(8)];
   const known = (p) => knowledge.get(p?.id)?.url || p?.url;
@@ -568,7 +572,7 @@ function detailsBrief(focused) {
     .filter((d) => d.facts).slice(0, 6);
 }
 
-// What page the shopper is actually on. `looking_at` is a 250px guess; this is
+// What page the shopper is actually on. Gaze is a 250px guess; this is
 // not, and it is what "this product" and "this page" mean.
 function pageBrief() {
   const products = scanAll();
@@ -607,17 +611,36 @@ function pageBrief() {
   return brief;
 }
 
+// The product this turn is about, as the full page object: the resolved
+// referent, else the conversation, else the page's own product. Never the raw
+// gaze focus — that is a 250px guess, and only referent.js may act on it.
+function subjectProduct() {
+  const id = turnReferent?.id ?? discussed?.id ?? null;
+  if (id != null) return productTarget(id)?.product ?? knowledge.get?.(id) ?? discussed ?? null;
+  return pageProduct()?.product ?? null;
+}
+
+// Products the eyes have favoured lately, for prefetching their facts: if they
+// ask about "this", the answer is already here. Prefetch only; never a decision.
+function attendedProducts(n) {
+  const att = gaze.getAttention?.();
+  if (!att) return [];
+  const ids = [...(att.at_speech || []), ...(att.recent || [])]
+    .filter((r) => r?.kind == null || r.kind === "product").map((r) => r.id);
+  return [...new Set(ids)].slice(0, n).map((id) => productTarget(id)?.product).filter(Boolean);
+}
+
 function context(utterance = "") {
-  const f = gaze.getFocus();
-  const focused = f?.kind === "product" ? f.product : null;
+  const focused = subjectProduct();
   const asking = /^(?:what|why|how|is|are|do|does|can|tell|describe|compare|which)\b/i.test(utterance);
   const nearby = (site?.nearby || []).slice(0, 4);
   return {
     focused,
     previous: comparisons.remember(focused),
-    focusedAction: f?.kind === "action" ? { verb: f.verb, label: f.label } : null,
     visible: scan().filter((t) => t.kind === "product").slice(0, 6).map((t) => t.product),
     discussed: discussed ? { id: discussed.id, title: discussed.title } : null,
+    referent: turnReferent ? { title: turnReferent.title, how: turnReferent.how,
+      ...(turnReferent.pair ? { pair: turnReferent.pair } : {}) } : null,
     known: knowledge.brief(10),
     convo: convo.slice(-14),
     chosen: stated.size || stated.color ? { size: stated.size, color: stated.color } : null,
@@ -774,7 +797,7 @@ bus.on("UTTERANCE", ({ text, final }) => {
   }, 900);
 });
 
-async function beginTurn(text) {
+async function beginTurn(text, { referent: forced = null, replay = false } = {}) {
   if (voice.isPrivateMode?.()) return;
   // Calibration owns the microphone for "Cue, next". Nothing said there is a
   // shopping command, and echoing it into the HUD just looks like a bug.
@@ -797,34 +820,54 @@ async function beginTurn(text) {
     else { void analytics.open(); bus.emit("SAY", { text: "Opening your analytics." }); }
     return;
   }
-  remember("user", text);
-  // Naming an item and then talking about it must not let gaze quietly take
-  // the focus back. The lock used to expire on a 3.5s timer, so "two" ... two
-  // questions ... "add it" added whatever the eyes had drifted onto — and at
-  // 242px of error that is effectively random. While the conversation
-  // continues, what you named stays what you meant.
-  gaze.holdFocus();
-  voiceNamed = false;
-  lookedThisTurn = gazedProduct();
-  const aboutGaze = /\bthis one\b|\bthe one i(?:'?m|m| am) looking at\b/i.test(text);
-  let hits = aboutGaze ? [] : matchCandidates(text, visibleProducts());
-  // "tell me more about it" after naming something is about that thing, not a
-  // fresh question of which of several cards they meant.
-  if (hits.length > 1 && discussed && /\b(?:it|its|that one|that|them)\b/i.test(text)) hits = [];
-  if (hits.length > 1) {
-    const line = hits.slice(0, 3).map((p) => String(p.title || p.product?.title || "").slice(0, 60))
-      .filter(Boolean).join(", or the ");
-    bus.emit("SAY", { text: `Which one — the ${line}?` });
+  if (!replay) remember("user", text);
+  turnReferent = null;
+  const products = visibleProducts();
+  // Everything on the page, for what the eyes studied and has since scrolled away.
+  const pageProducts = scanAll().filter((t) => t.kind === "product").map((t) => t.product);
+  const attention = gaze.getAttention?.() ?? null;
+
+  // Answering "the Wool Coat or the Puffer Jacket?": take the pick, then run
+  // the request they actually made about it. Anything else is a new request.
+  if (pendingConfirm?.kind === "which") {
+    const { options, text: original } = pendingConfirm;
+    pendingConfirm = null;
+    const chosen = answerWhich(text, options, attention, matchCandidates);
+    if (chosen) return beginTurn(original, { referent: { item: chosen, how: "named" }, replay: true });
+    if (/^(?:never ?mind|cancel|stop|neither|forget it)\b/i.test(text.trim())) {
+      bus.emit("SAY", { text: "Okay." });
+      return;
+    }
+  }
+
+  const page = pageProduct();
+  // Which item this is about: the words, then the conversation, then the page,
+  // and the eyes only where those leave it open (client/referent.js). This is
+  // what keeps gaze from ever doing worse than talking alone.
+  const ref = forced ?? resolveReferent({
+    text, hits: matchCandidates(text, products), discussed,
+    pageItem: briefProduct(page?.product), pageVisible: Boolean(page && productTarget(page.id)),
+    attention, products: pageProducts,
+  });
+  if (ref.ask?.length > 1) {
+    pendingConfirm = { kind: "which", text, options: ref.ask.map(briefProduct).filter(Boolean) };
+    bus.emit("SAY", { text: whichQuestion(pendingConfirm.options) });
     return;
   }
-  const named = hits[0];
-  if (aboutGaze && lookedThisTurn) {
-    discussed = lookedThisTurn;
-  } else if (named?.id || named?.product?.id) {
-    discussed = briefProduct(named.product || named);
-    voiceNamed = true;
-    const target = productTarget(discussed.id);
-    if (target) { gaze.setFocus(target); gaze.holdFocus(); }
+  if (ref.pair) {
+    // Not the subject for "it" afterwards: they asked about two things.
+    turnReferent = { id: null, title: ref.pair.map((p) => p.title).join(" and "), how: ref.how,
+      pair: ref.pair.map((p) => p.title) };
+  }
+  if (ref.item) {
+    const brief = briefProduct(ref.item) ?? ref.item;
+    turnReferent = { id: brief.id, title: brief.title, how: ref.how };
+    if (ref.how !== "conversation" && brief?.id) {
+      discussed = brief;
+      discussedHow = ref.how;
+      const target = productTarget(discussed.id);
+      if (target) { gaze.setFocus(target); gaze.holdFocus(); }
+    }
   }
   persistShopper();
   rememberSpokenOptions(text);
@@ -858,6 +901,7 @@ async function beginTurn(text) {
     const staged = Array.isArray(out.ask) ? out.ask : (out.ask?.verb ? [out.ask] : null);
     const plan = (out.do?.length ? out.do : staged) ?? [];
     const namesItem = plan.some((a) => a.verb === "focus_nth");
+    adoptAbout(out.about);
     const touchesProduct = plan.some((a) => PRODUCT_VERBS.has(a.verb));
     if (completed && !namesItem && touchesProduct && discussed && !pinDiscussed()) {
       bus.emit("SAY", { text: `I can't see the ${discussed.title} on screen any more.` });
@@ -886,13 +930,6 @@ async function beginTurn(text) {
     // commits on its own, it states exactly what it will do and waits.
     if (completed && staged?.length) {
       pendingConfirm = { kind: "action", actions: staged, said: out.say ?? "" };
-    }
-    // Adopt the gazed card only when nothing has been named yet. A later look
-    // does not replace the item the words already picked.
-    if (!voiceNamed && !discussed && lookedThisTurn
-        && (out.source !== "router" || touchesProduct)) {
-      discussed = lookedThisTurn;
-      rememberSpokenOptions(text);
     }
     window.cue.lastActionUtterance = null;
   } catch (e) {
@@ -991,14 +1028,15 @@ function resolveConfirm(ok) {
 
 // ── Actions the page can perform ────────────────────────────────────────────
 
-// Size and add use the item that was said. Gaze fills in only when nothing
-// has been discussed, or that card is no longer on screen.
+// Size and add use the item that was said, else the page's own product.
 function scope() {
-  const pinned = discussed && productTarget(discussed.id);
+  const page = pageProduct();
+  const pinned = discussed && (productTarget(discussed.id) ?? (page?.id === discussed.id ? page : null));
   if (pinned) return pinned.el;
-  const f = gaze.getFocus();
-  if (!f) return null;
-  return f.kind === "product" ? f.el : f.el.closest("[data-cue-product],[data-aura-product]");
+  // Not a raw glance: the eyes already had their say in referent.js, which set
+  // `discussed` when they clearly picked something. Falling back to the gaze
+  // focus here is what made "add it" on a product page add a carousel tile.
+  return page?.el ?? null;
 }
 
 function productOn(card) {
@@ -1139,12 +1177,41 @@ function visibleProducts() {
   return scan().filter((t) => t.kind === "product").map((t) => t.product);
 }
 
-// What the eyes are on, read before scope() pins the spoken item.
-function gazedProduct() {
-  const f = gaze.getFocus();
-  if (!f?.el) return null;
-  const el = f.kind === "product" ? f.el : f.el.closest?.("[data-cue-product],[data-aura-product]");
-  return productOn(el);
+// The product a product page is about: the one that owns the page's add
+// control, else the one that fills the page. Null on a results page, where
+// several cards own one and the shopper has to say (or look at) which.
+// Called several times a turn and it walks every card's buttons, so a big
+// results page is read once per moment, not once per call.
+let pageCache = { at: -1e9, href: "", value: null };
+function pageProduct() {
+  const t = performance.now();
+  if (t - pageCache.at < 250 && pageCache.href === location.href && (!pageCache.value || pageCache.value.el.isConnected)) {
+    return pageCache.value;
+  }
+  // The whole page, not just the viewport: scrolled down to "You may also
+  // like", the page is still about its own product.
+  const products = scanAll().filter((t) => t.kind === "product");
+  const owning = products.filter((t) => addButtonIn(t.el));
+  const wide = products.filter((t) => t.rect.width >= innerWidth * 0.5);
+  const value = owning.length === 1 ? owning[0] : wide.length === 1 ? wide[0] : null;
+  pageCache = { at: t, href: location.href, value };
+  return value;
+}
+
+// The agent names the item its reply was about ("The Denim Jacket is the
+// cheapest"). That becomes what "it" means next, exactly as if they had said
+// it — without this, "add it" fell back on wherever the eyes happened to be.
+function adoptAbout(title) {
+  if (typeof title !== "string" || !title.trim()) return;
+  const want = norm(title);
+  const all = scanAll().filter((t) => t.kind === "product").map((t) => t.product);
+  const hit = all.find((p) => norm(p.title || "") === want)
+    ?? (() => { const m = matchCandidates(title, all); return m.length === 1 ? m[0] : null; })();
+  const brief = briefProduct(hit);
+  if (!brief || brief.id === discussed?.id) return;
+  discussed = brief;
+  discussedHow = "conversation";
+  persistShopper();
 }
 
 function rememberSpokenOptions(text) {
@@ -1190,7 +1257,8 @@ function finishOptions() {
 // Move focus onto the item being discussed, so a size or add that follows
 // cannot land on whatever the eyes have drifted onto.
 function pinDiscussed() {
-  const target = productTarget(discussed?.id);
+  const page = pageProduct();
+  const target = productTarget(discussed?.id) ?? (page && page.id === discussed?.id ? page : null);
   if (!target) return false;
   gaze.setFocus(target);
   gaze.holdFocus();
@@ -1389,9 +1457,9 @@ function perform(verb, args, opts = {}) {
       // truth, and it is free.
       if (gaze.learnFromSelection(t)) persistCalibration();
       gaze.setFocus(t);
-      voiceNamed = true;
       if (t.kind === "product") {
         discussed = briefProduct(t.product);
+        discussedHow = "named";
         comparisons.remember(t.product);
         persistShopper();
       }
@@ -1400,15 +1468,11 @@ function perform(verb, args, opts = {}) {
     case "stop_cue":
       stopCue();
       break;
-    case "click_focused": {
-      const target = gaze.getFocus();
-      if (target?.kind !== "action") {
-        bus.emit("SAY", { text: "Tell me which button and I'll press it." });
-        return false;
-      }
-      target.el.click();
-      break;
-    }
+    case "click_focused":
+      // Pressing whatever button the eyes are on is exactly the guess gaze may
+      // never act on (server/agent.py strips this verb too). Ask for its name.
+      bus.emit("SAY", { text: "Tell me which button and I'll press it." });
+      return false;
     case "select_variant": {
       const el = scope()?.querySelector(
         `[data-cue-action="select_variant"][data-cue-value="${CSS.escape(String(args.value).toUpperCase())}"],` +
@@ -1474,7 +1538,8 @@ function perform(verb, args, opts = {}) {
         pendingConfirm = { kind: "add", el, said: d.line };
         // The reply has just said the item and the price better than this
         // template can. Repeating it in full is the second voice.
-        bus.emit("SAY", { text: opts.narrated ? "Add it?" : `${d.line} Add it?` });
+        const byEye = discussedHow === "gaze" || discussedHow === "named+gaze";
+        bus.emit("SAY", { text: opts.narrated && !byEye ? "Add it?" : `${d.line} Add it?` });
         break;
       }
       applyStated(card);
@@ -1954,9 +2019,11 @@ bus.on("GAZE", ({ confidence }) => {
     signal:["My tracking has drifted", "Say recalibrate whenever you want to fix it."],
   }[reason ?? "signal"];
 
+  // Shown, not spoken. Gaze is a hint now, so drifting makes Cue ask a little
+  // more often; it is not worth talking over the shopper's conversation.
   ui.drift.textContent = `${msg[0]} · say “recalibrate”`;
+  ui.drift.title = msg[1];
   ui.drift.classList.add("on");
-  bus.emit("SAY", { text: `${msg[0]}. ${msg[1]}` });
 });
 
 // say() is how you drive Cue with no mic: from the console, from a test, or
@@ -1969,6 +2036,9 @@ function stopCue() {
 bus.on("STOP", stopCue);
 
 window.cue = { bus, gaze, voice, context, perform, boot, say, recalibrate, exit: exitCue, CONFIG,
+               debugState: () => ({ discussed: discussed?.id ?? null, how: discussedHow,
+                 referent: turnReferent, pending: pendingConfirm?.kind ?? null,
+                 options: pendingConfirm?.options?.map((o) => o.id) ?? null }),
                measure: (...a) => gaze.measure(...a),
                experiment: (...a) => gaze.experiment(...a),
                head: () => gaze.getHead(),

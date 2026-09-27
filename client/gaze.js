@@ -1119,6 +1119,14 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null,
   state.fx = oneEuro(tuning);
   state.fy = oneEuro(tuning);
 
+  // ?gaze=off — conversation only. No tracking, no focus, no attention: the
+  // baseline gaze has to match or beat (tools/gaze-parity.py).
+  if (mode === "off") {
+    state.calibrated = true; state.running = false;
+    bus.emit("STATE", { calibrated: true, mode: "off" });
+    return "off";
+  }
+
   if (mode === "mouse") {                     // dev + demo fallback, no camera
     startMouseInput();
     startDwellLoop();
@@ -1289,23 +1297,9 @@ export function driftReason() {
 
 // ── Speech and gaze together ────────────────────────────────────────────────
 // People look at a thing, then refer to it, and by the end of the sentence the
-// eyes have often moved on. So remember what was being looked at over the last
-// few seconds, and when speech starts, pin whatever was under the eyes just
-// before it (docs/GAZE.md).
+// eyes have often moved on. So when speech starts, record what held attention
+// just before it; client/referent.js decides whether to use it (docs/GAZE.md).
 const SPEECH_LOOKBACK_MS = 250;
-const focusHistory = [];         // [{ t, target }] oldest first
-
-function noteFocus(target) {
-  const t = performance.now();
-  focusHistory.push({ t, target });
-  while (focusHistory.length && t - focusHistory[0].t > 4000) focusHistory.shift();
-}
-
-function focusAt(t) {
-  let hit = null;
-  for (const h of focusHistory) { if (h.t <= t) hit = h.target; else break; }
-  return hit;
-}
 
 let lastSpeechAt = 0;
 const offered = new Map();      // pair key -> when we last offered
@@ -1322,14 +1316,14 @@ function watchTorn() {
 function onSpeechStart() {
   if (state.mode === "mouse" || !state.calibrated || state.calibrating) return;
   if (performance.now() < state.lockUntil) return;          // voice already chose
-  // What held attention just before they started speaking. A clear leader is
-  // pinned; a split is left for the agent, which sees both and can ask.
+  // What held attention just before they started speaking.
   const then = attention.at(performance.now() - SPEECH_LOOKBACK_MS) ?? [];
-  const lead = then[0]?.share >= 0.55 ? then[0].target : focusAt(performance.now() - SPEECH_LOOKBACK_MS);
+  // Recorded, not acted on: client/referent.js decides whether the words and
+  // the conversation leave room for the eyes. Moving the focus here used to
+  // make a passing glance the subject of whatever was said next.
   state.onsetAttention = then.slice(0, 3).map(({ id, share, target }) =>
-    ({ id, share: Math.round(share * 100) / 100, title: target?.product?.title ?? target?.label ?? id }));
-  if (lead?.el?.isConnected && lead.id !== state.focus?.id) setFocus(lead, 6000);
-  else holdFocus(6000);
+    ({ id, kind: target?.kind ?? null, share: Math.round(share * 100) / 100,
+       title: target?.product?.title ?? target?.label ?? id }));
 }
 bus.on("STATE", (s) => { if (s?.ptt === true) onSpeechStart(); });
 bus.on("UTTERANCE", ({ final }) => {
@@ -1337,7 +1331,6 @@ bus.on("UTTERANCE", ({ final }) => {
   if (!final && now - lastSpeechAt > 1500) onSpeechStart();
   lastSpeechAt = now;
 });
-bus.on("FOCUS", ({ target }) => noteFocus(target));
 
 // Voice-driven selection ("the second one"). Locks out dwell briefly so the
 // follow-up command acts on what was just named.
@@ -1389,7 +1382,7 @@ export const getEngine = () => eyes.stats();
  * shares only; nothing about pixels or the camera.
  */
 export function getAttention() {
-  if (state.mode === "mouse" && !state.point) return null;
+  if (state.mode === "off" || !state.point) return null;
   return { ...attention.snapshot(), at_speech: state.onsetAttention ?? null,
     precision_px: Math.round(attentionSigma()) };
 }

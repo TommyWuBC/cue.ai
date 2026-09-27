@@ -37,6 +37,9 @@ Use Chrome or Brave, not the Claude preview pane (no camera/mic). URL flags:
   -> features -> per-user model (`gaze-model.js`) -> fixation stage. The mode is still
   named "webgazer" (it means "camera"). The model must run in the page's coordinate
   frame; only feature extraction may ever move to an offscreen document.
+- Gaze never outranks the words or the conversation. Which item a sentence is about
+  is decided only in `client/referent.js` (words -> conversation -> page product ->
+  gaze); nothing else may act on `gaze.getFocus()`. `tools/gaze-parity.py` checks it.
 - `#aura-root` lives in the top layer; the demo store is one document on purpose.
 - Keep `TTS_PROVIDER=browser` in dev; ElevenLabs credits are limited.
 - The agent is Claude (`CUE_MODEL`, default `claude-haiku-4-5-20251001`) via
@@ -48,7 +51,7 @@ Use Chrome or Brave, not the Claude preview pane (no camera/mic). URL flags:
   `voice.js` wake word; `speech.js` misheard-speech correction; `gaze.js` tracking
   (focus, calibration, speech-onset gaze), `eyes.js` camera + face landmarks,
   `gaze-model.js`, `gaze-features.js`, `fixation.js`, `attention.js` (gaze as
-  probabilities over items; what "this"/"these" resolve to).
+  probabilities over items), `referent.js` (what "it"/"this" mean; gaze ranked last).
   `?gazedebug=1` shows the camera, landmarks, fps, latency and accuracy.
 - `server/agent.py` LLM + allowlist; `router.py` fast path; `checkout.py`, `trust.py`.
 - Tests: `.venv/bin/python -m pytest tests -q`, `node --test tests/*.mjs`

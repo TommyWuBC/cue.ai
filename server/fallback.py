@@ -95,7 +95,9 @@ def answer(text: str, ctx: dict) -> dict:
     # "This" with two items too close to call when they started speaking: ask.
     deictic = re.search(r"\b(this|that|it)\b", t)
     discussed = ctx.get("discussed") if isinstance(ctx.get("discussed"), dict) else None
-    if deictic and not discussed:
+    # The page already resolved "this" (client/referent.js) when it sends a
+    # referent; the eyes only get a say here when it could not.
+    if deictic and not discussed and not ctx.get("referent"):
         onset = _attended(ctx, "at_speech", pool, n=2)
         if len(onset) == 2 and abs(onset[0][1] - onset[1][1]) < 0.2:
             return {"say": f"The {onset[0][0].get('title')} or the {onset[1][0].get('title')}?",
@@ -119,20 +121,20 @@ def answer(text: str, ctx: dict) -> dict:
                 "do": [], "source": "fallback"}
 
     if not focused:
-        return {"say": "Say an item's number and I'll tell you about it.", "do": [], "source": "fallback"}
+        return {"say": "Which one? Say its name and I'll tell you about it.", "do": [], "source": "fallback"}
 
     title = focused.get("title") or "This item"
     if re.search(r"\b(price|cost|how much)\b", t):
         price = _price(focused)
         say = f"{title} is {price}." if price else "I can't see a price on the page."
-        return {"say": say, "do": [], "source": "fallback"}
+        return {"say": say, "do": [], "about": title, "source": "fallback"}
 
     for rx, key in FIELDS:
         if re.search(rx, t):
             value = _field(focused, key)
             say = f"{title}: {value}." if value else f"I can't see {key} details on the page."
-            return {"say": say, "do": [], "source": "fallback"}
+            return {"say": say, "do": [], "about": title, "source": "fallback"}
 
     summary = _summary(focused)
     return {"say": f"{summary}." if summary != title else f"I can see {title}, but no more details.",
-            "do": [], "source": "fallback"}
+            "do": [], "about": title, "source": "fallback"}

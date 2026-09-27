@@ -100,24 +100,65 @@ What it is used for:
   it holds at least half the current attention for ~0.4 s and beats the
   current one by 1.4x. Looking at empty space keeps the last highlight. There
   is no floating gaze dot (`?gazedebug=1` shows one).
-- **"This"** is what held the eyes as the sentence began. A split between two
-  items is left for the agent, which asks "the wool coat or the puffer?".
+- **Choosing between items the words allow.** "Add the quilted one" when two
+  items are quilted picks the one the eyes favour, or asks with that one first.
+- **"This"** with nothing on the page or in the conversation to settle it is a
+  clear gaze leader as the sentence began. A split between two items asks
+  "the wool coat or the puffer?", and the answer runs the original request.
 - **"These", "both", "compare them"** mean the two items the eyes have been
   going between; **"the one I was looking at"** means the most studied one.
 - **Being torn** between two items for a few seconds brings a silent hint in
   the dock: "Deciding between A and B? Say “compare them”." Once per pair per
   minute, never while speaking.
-- **The agent** gets `attention` in its context (titles and shares only), and
-  the offline fallback uses it the same way, so this works with no API key.
+- **Prefetching.** The facts for the items the eyes favour are fetched before
+  they ask, so "is this wool?" is answered from data already in hand.
+- **The agent** gets `attention` in its context (titles and shares only) for
+  "these" and suggestions, and the offline fallback uses it the same way.
 
 ## Speech and gaze together
 
 People look at a thing, then refer to it. By the time the sentence ends, the
-eyes have often moved on (to the dock, to the next item). So Cue pins what
-you were looking at **when you started speaking**, using a short fixation
-history, and holds it while the conversation continues. "Is this wool?"
-means what you looked at as you said "this", not wherever your eyes wandered
-while Cue was answering.
+eyes have often moved on. So Cue records what held attention **when you
+started speaking** (`at_speech`) and `referent.js` reads "this" from that, not
+from wherever the eyes wandered while Cue was answering. Recording it does not
+move the highlight or the subject by itself.
+
+## Gaze never does worse than talking alone
+
+Gaze used to be the default answer to "which item?": when the words did not
+name one, whatever card the eyes were on became the subject. At 150-300px of
+error that is often the wrong card, and it silently beat the better answers
+talking alone would have used. So "add it" on a product page added a carousel
+tile, a glance after "the cheapest one is the denim jacket" made "add it" mean
+the glanced card, and gaze could only make Cue worse.
+
+`client/referent.js` now decides what each sentence is about, and gaze is
+ranked last. In order:
+
+1. **The words.** One item named: that item. Two or three named ("the quilted
+   one"): the one the eyes clearly favour, else ask with the likelier first.
+2. **"The one I was looking at"**: the most studied item this visit.
+3. **"This", "this one", "here"** (pointing): the product this page is about;
+   on a results page, or scrolled away from the page's product, a clear gaze
+   leader; else the conversation. A split asks by name.
+4. **"It", "that", or no pointing word**: the conversation, then the page's
+   product, then a clear gaze leader.
+
+Navigation ("scroll down", "search for boots") never picks an item up from the
+eyes, and neither does choosing across the page ("which is the cheapest one
+here?"): that is the agent's to answer from the whole page. "This page" and
+"these results" mean the page, not an item. "These", "both" and "compare them"
+with nothing named mean the two items the eyes went between. Whenever gaze decided, the reply names the item ("The Puffer Jacket is
+$79.99", and an add always reads the item back in full), so a wrong guess
+costs one "no, the other one" rather than a wrong action.
+
+The agent returns `about`, the title its reply was about, and that becomes
+what "it" means next: "which is cheapest?" then "add it" adds the answer,
+wherever the eyes went. The drift warning is shown, not spoken.
+
+`tools/gaze-parity.py` holds this in place: it runs the same spoken scenarios
+with `?gaze=off` and with simulated webcam gaze (`?gaze=sim&sigma=242`, eyes
+sometimes on the wrong card on purpose) and fails if gaze is ever worse.
 
 ## UX rules
 

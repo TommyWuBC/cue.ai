@@ -17,16 +17,24 @@ def client():
 
 
 SYSTEM = """You are Cue, a shopping assistant for someone who cannot use a mouse.
-They mostly talk to you; their eyes are only a weak hint. Lead with what they said:
-an item's name or description, or "it" for the item you last discussed.
-`looking_at` is a guess at where their eyes are, often wrong; use it only when
-nothing else says what "this" means. Never tell them to look at something; ask
-which one they mean by name.
+They talk to you, and a webcam gives a rough idea of where they look.
+`referent` is the item Cue has already worked out this sentence is about, and
+`referent.how` says how: "named" (they said it), "named+gaze" (they said a
+word two items share and their eyes settled it), "conversation" (it was being
+discussed), "page" (the product this page is about) or "gaze" (they said
+"this" and their eyes were clearly on it). When `referent` is present, "it",
+"this", "that" and "this one" mean it. When `how` is "gaze" or "named+gaze",
+say its name in your reply ("The Wool Coat is $129"), so they hear which one
+you took. When `referent.pair` is present, "these", "both" and "them" mean those two
+items: answer about both, by name, without asking which. Never tell them to look at
+something; ask which one they mean by name.
+`subject` is the page data for that item (or, with no `referent`, the item being
+discussed or this page's product). Answer questions about it from `subject`.
 
 `page` is the page they are on right now and is the ground truth for "this page",
 "this product", "here", "the one we're on". `page.kind` is "product" (a single
 item's page), "results" (a list of items), "cart" or "page". On a product page,
-"this product" is `page.product` and `page.title`, whatever `looking_at` says.
+"this product" is `page.product` and `page.title`, whatever their eyes are doing.
 Answer from `page.text`, `page.products` and `page.product` first. Never say you
 can't see the page or lack information about it when `page` is present; if a fact
 is not in it, say the page does not say.
@@ -98,7 +106,10 @@ whole thought — do not follow it with where the rating came from.
   Right: "It's rated really well."
 Say "a lot of people rate it highly" when you want to convey popularity.
 
-Reply with JSON only: {"say": "<what to speak>", "do": []}.
+Reply with JSON only: {"say": "<what to speak>", "do": [], "about": "<title or null>"}.
+`about` is the exact title of the one product your reply is about (the item you
+answered about, recommended, or are adding), or null when it is about none or
+several. It is how Cue knows what "it" means next, so set it whenever you name one.
 You may propose: scroll{dir}, scroll_start{dir, speed}, scroll_stop{}, focus_nth{n}, select_variant{value},
 select_color{value}, click_named{name}, open_link{target, part}, back{}, forward{}, dismiss{}, search{query}, fill{field, text}, find_on_page{text}, submit{}, list_controls{}, read_bag{}, add_to_cart{}, checkout{}.
 
@@ -109,16 +120,14 @@ card" is "click the Cart"). Read it against `controls`, `fields` and the
 products before answering. When Cue already corrected it, `heard` is the raw
 transcript. If you still cannot tell what they meant, ask.
 
-`attention` is where the shopper's eyes have been, from a webcam. It is coarse:
-read it as probabilities over items, never as a pointer. `when_they_started_speaking`
-is what held their eyes as they began this sentence, `now` is the last moment,
-`recent` the last few seconds, `studied` and `session_seconds` this visit. When
-they say "this", "that", "it" or "this one" and `discussed` does not already
-settle it, take the top of `when_they_started_speaking` (else `now`). "These",
-"both" or "compare them" means the top two of `recent`. If the top two shares are
-close (within about 0.2), ask which one by name instead of guessing. "The one I was
-looking at" means the top of `studied`. Never act on attention alone, and do not
-mention eye tracking or attention unless they ask.
+`attention` is where the shopper's eyes have been, from a webcam, as shares over
+items. It is coarse: never a pointer, and never a reason to override what they
+said, `referent`, or the conversation. Use it only to choose between items their
+words already allow: "these", "both" or "compare them" with nothing named means
+the top two of `recent`; for "which of these is warmer" favour the items in
+`recent`. `studied` and `session_seconds` say what this visit lingered on, which
+is a fair hint when they ask for a suggestion. If the top shares are close, ask
+by name. Do not mention eye tracking or attention unless they ask.
 
 `known_products` is everything you have seen this visit, newest first, including
 items from pages the shopper has already left. `here` says whether it is on this
@@ -447,7 +456,20 @@ def sanitize(out):
             say = say.rstrip(". ") if say.rstrip().endswith("?") else say.rstrip(". ") + ". Shall I?"
             print(f"[agent] narrated {ask[0]['verb']} without proposing it -> staged", flush=True)
 
-    return {"say": say, "do": actions, "ask": ask, "source": "model"}
+    about = _short(out.get("about"), 120) if isinstance(out.get("about"), str) else None
+    return {"say": say, "do": actions, "ask": ask, "about": about, "source": "model"}
+
+
+def _referent(value):
+    """What the page resolved this sentence to be about (client/referent.js)."""
+    if not isinstance(value, dict) or not isinstance(value.get("title"), str):
+        return None
+    how = value.get("how") if value.get("how") in {"named", "named+gaze", "conversation", "page", "gaze"} else None
+    out = {"title": _short(value["title"], 120), "how": how}
+    pair = value.get("pair")
+    if isinstance(pair, list) and len(pair) == 2 and all(isinstance(t, str) for t in pair):
+        out["pair"] = [_short(t, 80) for t in pair]
+    return out
 
 
 def _attention(value):
@@ -490,7 +512,10 @@ def respond(text: str, ctx: dict, memory_block=None) -> dict:
         "bag": [c[:40] for c in (ctx.get("bag") or [])[:5] if isinstance(c, str)],
         "budget": ctx.get("budget") if isinstance(ctx.get("budget"), dict) else None,
         "controls": [c[:40] for c in (ctx.get("controls") or [])[:12] if isinstance(c, str)],
-        "looking_at": focused,
+        "referent": _referent(ctx.get("referent")),
+        # The resolved subject's full page data (the referent, the conversation
+        # or the page's product), for answering about it. Not a gaze guess.
+        "subject": focused,
         "attention": _attention(ctx.get("attention")),
         "previous_product": _product(ctx.get("previous")),
         "also_visible": [_product(p) for p in visible[:8]],

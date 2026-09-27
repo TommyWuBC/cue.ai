@@ -39,7 +39,7 @@ what survived the wake word / push-to-talk / self-echo gate. Subscribe to
 ## Page → server
 
     POST /utterance  { text, context }  ->  { say, do: [{verb,args}], source }
-      context = { focused: Product|null, focusedAction, visible: Product[], pending, url }
+      context = { focused: Product|null (resolved subject, client/referent.js), referent, attention, visible: Product[], pending, url }
 
     GET  /tts?text=..    ->  audio/mpeg  |  { mode: "browser", text: "<spoken form>" }
     WS   /stt            ->  binary 16kHz PCM16 up; Grok transcript events down
