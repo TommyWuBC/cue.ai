@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { bestMatch, correctUtterance, findWake, isWakeOnly, stripWake } from '../client/speech.js';
+import { bestMatch, correctUtterance, echoes, findWake, isWakeOnly, stripWake } from '../client/speech.js';
 
 test('a misheard wake word counts at the start of a sentence', () => {
   assert.equal(findWake('q do xyz').rest, 'do xyz');
@@ -41,4 +41,32 @@ test('a misheard verb is corrected only when the page makes the rest make sense'
   assert.equal(correctUtterance('scrawl down', page).text, 'scroll down');
   assert.equal(correctUtterance('clique the oven mitts', page).changed, false);
   assert.equal(correctUtterance('oven mitts', page).changed, false);
+});
+
+// Real transcripts from /tmp/cue-server.log, the session where Cue heard its
+// own voice, acted on it, and looped. Each of these was processed as a fresh
+// command and produced another click_named, which spoke again.
+test('Cue recognises its own voice spanning two spoken lines', () => {
+  const said = ['Opening your cart now.', 'Opening Cart, shift, option, c.'];
+  assert.equal(echoes('Opening your cart now. Opening card. Shift. Up.', said), true);
+  assert.equal(echoes(', opening your cart now. Oh.', said), true);
+  assert.equal(echoes('Opening your cart now. O.', said), true);
+
+  // The memory window is what makes this one work: the echoing line is two
+  // utterances back, not the one playing.
+  const add = ["All set. It's in your cart.",
+               'SKIN1004 Hyalu-Cica Water-Fit Sun Serum UV, SPF 50 Sunscreen, 1.69 fl.oz, size S, $17.99. Add it?'];
+  assert.equal(echoes("All set. It's in your cart. Skin one.", add), true);
+  // ...and only the current line is not enough, which is the old behaviour.
+  assert.equal(echoes("All set. It's in your cart. Skin one.", [add[1]]), false);
+});
+
+test('a shopper talking over Cue is not swallowed as echo', () => {
+  const said = ['Opening your cart now.', 'Opening Cart, shift, option, c.'];
+  // Barge-in and genuine commands must survive: these share few content words.
+  assert.equal(echoes('no, the grey one instead', said), false);
+  assert.equal(echoes('how much is the wool coat', said), false);
+  assert.equal(echoes('stop', said), false);
+  // Nothing said yet means nothing to echo.
+  assert.equal(echoes('open my cart', []), false);
 });

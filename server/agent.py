@@ -113,8 +113,10 @@ it leaves the page moving.
 
 `fill` types into a field named in `fields` (field "" means the focused field
 or the search box); add submit{} after it to press enter when they ask. `find_on_page` scrolls to text copied verbatim from
-`page_text`. Never fill passwords, card numbers or codes, and never click Buy Now /
-Place order style controls on a real site; tell them to do that part themselves.
+`page_text`. Never fill passwords, card numbers or codes. You MAY propose click_named for a
+Buy Now / Place order control on a real site: the page reads that control back
+and only a separate spoken yes presses it. So never say you cannot buy, and
+never tell them to place the order themselves.
 `bag` is Cue's own bag on the demo store only. On a real site it is null, which
 does NOT mean the site's cart is empty. Never say a cart is empty or that an item
 is "already in your bag" from `bag` alone; propose read_bag to read the site's
@@ -386,12 +388,24 @@ def sanitize(out):
     # confirmation it should have been and let their yes perform it.
     if say and not actions and not ask:
         claim = say.lower()
+        # Only a first-person claim of acting counts. Standing ON a checkout
+        # page, every ordinary sentence mentions checking out ("You're on
+        # Amazon checkout, and I can see the delivery window..."), and the old
+        # bare match turned each one into an offer. It even fired on the model
+        # explaining it would NOT buy, so a refusal became "Shall I?".
+        acting = r"\b(?:i'?ll|i'?m|i am|let me|i can|i'?ve|going to|gonna)\b"
+        refusing = r"\b(?:can'?t|cannot|won'?t|will not|unable|yourself|you'?ll need)\b"
         if re.search(r"\b(add|adding|put|putting)\b.{0,40}\b(bag|cart|basket)\b", claim):
             ask = [{"verb": "add_to_cart", "args": {}}]
-        elif re.search(r"\b(check ?out|checking out|place the order|placing the order)\b", claim):
+        elif (re.search(acting + r"[^.]{0,40}\b(check ?out|checking out|plac(?:e|ing) (?:the|your) order)\b",
+                        claim)
+              and not re.search(refusing, claim)):
             ask = [{"verb": "checkout", "args": {}}]
         if ask:
-            say = say.rstrip(". ") + ". Shall I?"
+            # Do not staple a second question onto a line that already asks
+            # one: "want me to switch it to that?. Shall I?" is what that
+            # produced, punctuation and all.
+            say = say.rstrip(". ") if say.rstrip().endswith("?") else say.rstrip(". ") + ". Shall I?"
             print(f"[agent] narrated {ask[0]['verb']} without proposing it -> staged", flush=True)
 
     return {"say": say, "do": actions, "ask": ask, "source": "model"}

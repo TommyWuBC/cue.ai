@@ -112,7 +112,7 @@ function writeField(field, q) {
   field.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-async function runSearch(q) {
+async function runSearch(q, narrated = false) {
   // Filters said out loud ("under a hundred dollars", "four stars", "cheapest
   // first") are applied by the shop itself where we know how; otherwise they
   // stay in the search words.
@@ -124,8 +124,9 @@ async function runSearch(q) {
       discussed = null;
       stated = { id: null, size: null, color: null };
       persistShopper();
-      sayThen(`Searching for ${parsed.q}${applied ? `, ${applied}` : ""}.`,
-        () => location.assign(target));
+      const go = () => location.assign(target);
+      if (narrated) go();
+      else sayThen(`Searching for ${parsed.q}${applied ? `, ${applied}` : ""}.`, go);
       return;
     }
   }
@@ -304,6 +305,17 @@ async function sayAndWait(text) {
 }
 
 // Say it, finish saying it, then do the thing that replaces the page.
+// Amazon puts a keyboard hint inside the accessible name itself ("Add to
+// cart, shift, option, K"). It is matched on, but reading it aloud gives
+// "Opening Cart, shift, option, c", which sounds like a malfunction to
+// someone who cannot see the screen. Strip it for speech only: the name still
+// has to match the page exactly, or the wrong control gets pressed.
+function speakableName(name) {
+  return String(name ?? "")
+    .replace(/,\s*(?:(?:shift|ctrl|control|alt|option|cmd|command)\s*[,+]?\s*)+[a-z0-9]?\s*$/i, "")
+    .trim() || String(name ?? "");
+}
+
 function sayThen(text, act) {
   void sayAndWait(text).then(() => { if (!globalThis.__cueEnded) act(); });
 }
@@ -473,8 +485,16 @@ function pageBrief() {
   const products = scanAll();
   const here = location.href.split("?")[0].slice(0, 140);
   const cart = /\/(?:cart|basket|gp\/cart)\b/i.test(location.pathname);
-  const onePage = products.length === 1 && /\/(?:dp|gp\/product|product|products|item|ip)\//i.test(location.pathname);
-  const only = onePage ? products[0].product : null;
+  const detailUrl = /\/(?:dp|gp\/product|product|products|item|ip)\//i.test(location.pathname);
+  // A detail page is still a detail page when carousels below it are real
+  // products too. Requiring exactly one made every Amazon item page look like
+  // a results page: `page.product` was never set, so the model could not
+  // answer "the reviews of the product we're on" and kept re-identifying the
+  // item by name. The one that owns the buy control is the page's own.
+  const owning = detailUrl ? products.filter((p) => addButtonIn(p.el)) : [];
+  const only = detailUrl && products.length === 1 ? products[0].product
+    : owning.length === 1 ? owning[0].product
+    : null;
   const brief = {
     kind: cart ? "cart" : only ? "product" : products.length > 1 ? "results" : "page",
     title: String(document.title || "").replace(/\s+/g, " ").trim().slice(0, 140),
@@ -758,7 +778,9 @@ async function beginTurn(text) {
         completed = false;
         break;
       }
-      if (perform(a.verb, a.args ?? {}) === false) { completed = false; break; }
+      if (perform(a.verb, a.args ?? {}, { narrated: Boolean(out.say) }) === false) {
+        completed = false; break;
+      }
     }
     // The agent proposed something and asked first. Hold it: the shopper's
     // "yes" is what performs it. This is how Cue is allowed to buy — it never
@@ -829,8 +851,27 @@ function resolveConfirm(ok) {
     // refused — the confirmation covered the whole sequence, not just the end.
     for (const a of p.actions) {
       // Already read back as a whole — do not ask again for the add inside it.
-      if (perform(a.verb, a.args ?? {}, { confirmed: true }) === false) break;
+      // The readback already said what this does, so do not say it again.
+      if (perform(a.verb, a.args ?? {},
+                  { confirmed: true, narrated: Boolean(p.said) }) === false) break;
     }
+    return true;
+  }
+  // The second utterance, and the only thing that presses a money control on
+  // a real site. Re-check the element is still on the page: the readback took
+  // seconds, and pressing whatever now sits at that reference is exactly the
+  // mistake this whole path exists to prevent.
+  if (p.kind === "money") {
+    if (!ok) { bus.emit("SAY", { text: "Okay, not buying." }); return true; }
+    if (!p.el?.isConnected) {
+      bus.emit("SAY", { text: `The ${p.name} button isn't on the page any more.` });
+      return true;
+    }
+    const r = p.el.getBoundingClientRect();
+    if (r.bottom <= 0 || r.top >= innerHeight) {
+      p.el.scrollIntoView({ block: "center", behavior: "instant" });
+    }
+    sayThen(`Pressing ${p.name}.`, () => pressControl(p.el));
     return true;
   }
   if (p.kind !== "checkout") return false;
@@ -873,12 +914,64 @@ function productData(card) {
   catch { return null; }
 }
 
+/**
+ * Press a control the way a person does, not with a bare `.click()`.
+ *
+ * `.click()` fires exactly one `click` event. Real presses also produce
+ * pointer and mouse down/up, and delegated frameworks routinely bind to those
+ * instead. Amazon's add-to-cart is the case that proved it: an
+ * `<input type="button" name="submit.add-to-cart">` inside a POST form, with
+ * no inline onclick, so `type="button"` submits nothing by itself and the
+ * whole add depends on a handler a lone click event never reached. The final
+ * `.click()` stays, because that is what triggers native behaviour for a real
+ * submit button.
+ */
+function pressControl(el) {
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  if (r.bottom <= 0 || r.top >= innerHeight) {
+    el.scrollIntoView({ block: "center", behavior: "instant" });
+  }
+  const box = el.getBoundingClientRect();
+  const base = {
+    bubbles: true, cancelable: true, composed: true, button: 0, buttons: 1,
+    clientX: Math.round(box.left + box.width / 2),
+    clientY: Math.round(box.top + box.height / 2),
+  };
+  const pointer = { ...base, pointerType: "mouse", isPrimary: true, pointerId: 1 };
+  try { el.focus?.({ preventScroll: true }); } catch {}
+  try {
+    if (typeof PointerEvent === "function") {
+      el.dispatchEvent(new PointerEvent("pointerdown", pointer));
+    }
+    el.dispatchEvent(new MouseEvent("mousedown", base));
+    if (typeof PointerEvent === "function") {
+      el.dispatchEvent(new PointerEvent("pointerup", { ...pointer, buttons: 0 }));
+    }
+    el.dispatchEvent(new MouseEvent("mouseup", { ...base, buttons: 0 }));
+  } catch {}
+  el.click();
+  return true;
+}
+
 function addButtonIn(root) {
   if (!root) return null;
-  return [...root.querySelectorAll("button, [role=button], input[type=submit]")].find((el) => {
-    const name = controlName(el);
-    return /\badd\b/i.test(name) && !/address/i.test(name);
-  }) ?? null;
+  // input[type=button] matters: Amazon renders add-to-cart as a submit on one
+  // listing and a plain button on the next, so omitting it misses the control
+  // on half the pages.
+  const named = [...root.querySelectorAll(
+    "button, [role=button], input[type=submit], input[type=button]")]
+    .map((el) => ({ el, name: controlName(el) }))
+    .filter((c) => c.name && !/address/i.test(c.name));
+  // Taking the first /\badd\b/ match is not good enough. An Amazon product
+  // page offers "Add protection", "Add a gift receipt" and "Add to List"
+  // above the real control, so the first match was the warranty upsell: Cue
+  // pressed that on every add, said "Added.", and the cart never changed.
+  // Insist on adding to a cart, bag or basket before falling back.
+  const toCart = /\badd\b[^.]*\b(?:cart|bag|basket)\b/i;
+  return named.find((c) => toCart.test(c.name))?.el
+    ?? named.find((c) => /\badd\b/i.test(c.name))?.el
+    ?? null;
 }
 
 function addControl(card) {
@@ -1019,9 +1112,27 @@ function scrollAmount(x, y, delta, horizontal) {
 // What is about to go in the bag, in the words the shopper will hear. For some
 // users this is the only description of the purchase they get, so it names the
 // item, the chosen options and the price.
+// Marketplace titles are keyword stuffed for search, not for a person: the
+// real one behind this read out as "Hybrid Active Noise Cancelling Headphones
+// 120H Playtime 6 ENC Clear Call Mic, Over Ear Headphones Wireless with Hi-Res
+// Audio Comfort Earcup Low Latency ANC Bluetooth 6.0 Headphones for Travel
+// Workout". Someone who cannot see the screen has to sit through all of it
+// before the price, every single time. Keep the first clause, which is what a
+// person would actually call the thing.
+function shortTitle(title) {
+  const t = String(title ?? "").trim();
+  if (t.length <= 60) return t;
+  const clause = t.split(/\s[-–—|,(]\s?|\s{2,}/)[0].trim();
+  const base = clause.length >= 12 && clause.length <= 60 ? clause : t;
+  if (base.length <= 60) return base;
+  const cut = base.slice(0, 60);
+  const space = cut.lastIndexOf(" ");
+  return (space > 24 ? cut.slice(0, space) : cut).trim();
+}
+
 function describeAdd(card) {
   const p = productData(card) || {};
-  const title = p.title ?? "this one";
+  const title = shortTitle(p.title) || "this one";
   const size = stated.id === p.id ? stated.size : null;
   const color = stated.id === p.id ? stated.color : null;
   const missing = missingChoices(p, { size, color });
@@ -1032,6 +1143,14 @@ function describeAdd(card) {
 
 function perform(verb, args, opts = {}) {
   if (voice.isPrivateMode?.() && !["approve_checkout", "cancel_checkout", "setup_passkey", "confirm", "cancel"].includes(verb)) return false;
+  // The page announces what it is about to do so a navigation the shopper
+  // cannot see is not silent. But the model has usually just said the same
+  // thing, and the shopper hears both: "Opening your cart now." then
+  // "Opening Cart."; "Switching it to 7 to 11 AM." then "Opening Tomorrow
+  // 7 AM - 11 AM." Every turn. When the reply already narrated it, act
+  // without repeating it. Money and outcome lines are never routed through
+  // this — those are the page's own to say.
+  const announce = (text, act) => (opts.narrated ? act() : sayThen(text, act));
   // While the passkey dialog is up, nothing else may act — but recalibrate
   // and confirm/cancel must still get through, or losing tracking mid-dialog
   // traps you in it with no way out.
@@ -1137,6 +1256,25 @@ function perform(verb, args, opts = {}) {
       break;
     }
     case "add_to_cart": {
+      // Nothing may be focused at all: gaze can be off and there are no badge
+      // numbers any more, so on a detail page there is no signal to scope by.
+      // The product that fills the page is the one meant — the same fallback
+      // click_named uses. Carousel neighbours are small, so a single dominant
+      // product is an unambiguous target rather than a guess. Without this,
+      // every add on Amazon answered "Which one do you mean?" forever.
+      if (!scope()) {
+        const products = scan().filter((t) => t.kind === "product");
+        // The product that owns the page's add control is the one meant.
+        // Width is not a usable proxy: the same site renders this region at
+        // 99% of the viewport on one listing and 45% on the next. On a
+        // results page several cards own one, which stays ambiguous, and
+        // asking is the right answer there.
+        const owning = products.filter((t) => addButtonIn(t.el));
+        const main = owning.length === 1
+          ? owning
+          : products.filter((t) => t.rect.width >= innerWidth * 0.5);
+        if (main.length === 1) { gaze.setFocus(main[0]); gaze.holdFocus(); }
+      }
       // MUST be scoped to what they were looking at. A global querySelector here
       // adds the first product on the page — i.e. charges for the wrong item.
       const card = scope();
@@ -1168,8 +1306,14 @@ function perform(verb, args, opts = {}) {
       applyStated(card);
 
       const before = window.CART?.().length;
-      el.click();
+      pressControl(el);
       if (before !== undefined && window.CART().length === before) return false;
+      // On a real site there is no bag to count, so nothing here could tell
+      // the shopper whether the press landed. It said nothing at all, which
+      // after "Add it?" / "Yes" is indistinguishable from being ignored —
+      // and the only other voice in the room was the model claiming it was
+      // already done. Say what we actually did.
+      if (before === undefined) bus.emit("SAY", { text: "Added." });
       break;
     }
     // Taking something back out has to be as easy as putting it in, and is
@@ -1274,7 +1418,7 @@ function perform(verb, args, opts = {}) {
         bus.emit("SAY", { text: "What should I search for?" });
         return false;
       }
-      void runSearch(q);
+      void runSearch(q, Boolean(opts.narrated));
       break;
     }
     case "open_link": {
@@ -1289,7 +1433,7 @@ function perform(verb, args, opts = {}) {
       }
       discussed = briefProduct({ ...item, url: item.url }) ?? discussed;
       persistShopper();
-      sayThen(args.part === "reviews" ? `Opening the reviews for ${item.title.slice(0, 50)}.`
+      announce(args.part === "reviews" ? `Opening the reviews for ${item.title.slice(0, 50)}.`
         : `Opening ${item.title.slice(0, 60)}.`, () => location.assign(link));
       break;
     }
@@ -1330,7 +1474,7 @@ function perform(verb, args, opts = {}) {
       const page = c ? null : matchPage(args.name ?? args.text ?? "", site);
       if (!c && page?.url) {
         const link = [...document.querySelectorAll("a[href]")].find((a) => a.href === page.url);
-        sayThen(`Opening ${page.name || page.title}.`,
+        announce(`Opening ${page.name || page.title}.`,
           () => (link ? link.click() : location.assign(page.url)));
         break;
       }
@@ -1347,17 +1491,25 @@ function perform(verb, args, opts = {}) {
       // needs a spoken yes and a passkey, which is the guarantee that matters.
       // On a real site inside the extension there is no passkey rail, so a
       // control that spends money is the shopper's to press, never Cue's.
+      // A control that spends money is never pressed on the utterance that
+      // named it. Cue says what it is about to do and waits for a separate
+      // spoken yes — the same bar as an add, and for the same reason: speech
+      // is misheard and gaze is broad, so one utterance must not buy.
+      // `confirm` and `approve_checkout` are human-only (sanitize() strips
+      // them from the model and the dispatch loop refuses them from "grok"),
+      // so the agent cannot approve its own purchase here.
       if (COMMITS_MONEY.test(c.name) && CONFIG.injected) {
-        bus.emit("SAY", { text: `${c.name} spends money, so I won't press it. You'll need to do that yourself.` });
-        return false;
+        const p = productData(scope()) ?? discussed;
+        const amount = typeof p?.price === "number" ? ` That's $${p.price.toFixed(2)}.` : "";
+        pendingConfirm = { kind: "money", el: c.el, name: c.name };
+        bus.emit("SAY", {
+          text: `${c.name} places the order on this site.${amount} Say yes to go ahead.`,
+        });
+        break;
       }
       // Say what is about to happen before it happens — on a page the user
       // cannot see well, a silent navigation is disorienting.
-      sayThen(`Opening ${c.name}.`, () => {
-        const r = c.el.getBoundingClientRect();
-        if (r.bottom <= 0 || r.top >= innerHeight) c.el.scrollIntoView({ block: "center", behavior: "instant" });
-        c.el.click();
-      });
+      announce(`Opening ${speakableName(c.name)}.`, () => pressControl(c.el));
       break;
     }
     // "type john into the name field" — fills a field, never touches
@@ -1404,8 +1556,8 @@ function perform(verb, args, opts = {}) {
         return false;
       }
       break;
-    case "back": sayThen("Going back.", () => history.back()); break;
-    case "forward": sayThen("Going forward.", () => history.forward()); break;
+    case "back": announce("Going back.", () => history.back()); break;
+    case "forward": announce("Going forward.", () => history.forward()); break;
     case "history":
       if (args.dir === "back") history.back();
       else if (args.dir === "forward") history.forward();

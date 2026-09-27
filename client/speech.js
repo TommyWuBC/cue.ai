@@ -191,3 +191,28 @@ export function correctUtterance(text, vocab = {}) {
   const verb = correctVerb(stripped, vocab);
   return { text: verb.text, changed: verb.text !== String(text ?? "").trim() };
 }
+
+/**
+ * Is this transcript Cue's own voice coming back through the mic?
+ *
+ * `lines` is what Cue has said recently, not just the line currently playing.
+ * A turn often speaks twice in a row — the agent's reply, then the page's own
+ * announcement — and the mic hears them as one blurred transcript that matches
+ * neither line alone. Checking only the current line, with a short-fragment
+ * cap, is how "Opening your cart now. Opening card. Shift. Up." came back as a
+ * fresh command and Cue talked itself in a circle.
+ */
+export function echoes(text, lines = []) {
+  const a = norm(text);
+  if (!a) return false;
+  const pool = lines.map(norm).filter(Boolean);
+  if (!pool.length) return false;
+  if (pool.some((b) => b.includes(a))) return true;
+  // Or mostly our words. Deliberately not capped by length: a transcript that
+  // spans two lines is long, and that is the case that matters.
+  const words = a.split(" ").filter((w) => w.length > 2);
+  if (!words.length) return false;
+  const all = pool.join(" ");
+  const shared = words.filter((w) => all.includes(w)).length;
+  return shared >= Math.max(2, Math.ceil(words.length * 0.6));
+}

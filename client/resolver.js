@@ -101,6 +101,14 @@ export function controlName(el) {
       .join(" ").trim();
     if (t) return t.slice(0, 60);
   }
+  // An <input> button carries no text content: HTML-AAM defines its accessible
+  // name as the value attribute. Restricted to button-like types on purpose,
+  // since naming a text field by its value would name the search box after
+  // whatever was last typed into it.
+  if (el.tagName === "INPUT") {
+    const value = (el.value || "").trim();
+    if (value && /^(?:button|submit|reset|image)$/i.test(el.type || "")) return value.slice(0, 60);
+  }
   const text = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
   if (text) return text.slice(0, 60);
   return (el.getAttribute("title") || el.getAttribute("alt") || "").trim().slice(0, 60);
@@ -165,11 +173,15 @@ export function findControl(phrase) {
   const q = norm(phrase);
   if (!q) return null;
   const onScreen = controls();
-  const hit = literal(onScreen, q);
-  if (hit) return hit;
   const all = clickables();
-  const anywhere = literal(all, q);
-  if (anywhere) return anywhere;
+  // An exact name wins wherever it is, before any partial match that merely
+  // happens to be on screen. Amazon names an accessibility helper "Add to
+  // cart, shift, option, K" and places it above the real "Add to cart", and
+  // controls() caps at 40 in DOM order so the real button is not even in the
+  // on-screen list. Cue pressed the helper every time and nothing was added.
+  const exact = (list) => list.find((c) => norm(c.name) === q) ?? null;
+  const hit = exact(onScreen) ?? exact(all) ?? literal(onScreen, q) ?? literal(all, q);
+  if (hit) return hit;
   const fuzzy = bestMatch(q, onScreen.map((c) => c.name));
   if (fuzzy) return onScreen[fuzzy.index];
   const far = bestMatch(q, all.map((c) => c.name));
