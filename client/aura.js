@@ -22,8 +22,14 @@ const analyticsRequest = (kind, event = null) =>
 
 const analytics = createAnalytics({ request: analyticsRequest,
   onExport: async () => downloadAnalyticsCSV(await analyticsRequest("export")) });
+// Off for this branch: gaze testing is what this session is for, and every
+// scroll and card look was quietly also writing a shopping-activity event.
+// The analytics feature itself is untouched — this is the one place its
+// writes originate, same shape as GAZE_MODE.
+const ANALYTICS_ENABLED = false;
+
 function recordActivity(kind, fields) {
-  if (globalThis.__cueEnded) return Promise.resolve();
+  if (!ANALYTICS_ENABLED || globalThis.__cueEnded) return Promise.resolve();
   return analyticsRequest("event", {
     event_id: crypto.randomUUID(), kind, site: location.hostname, ...fields,
   }).catch(error => console.warn("[cue] Could not save shopping activity:", error));
@@ -307,7 +313,7 @@ function frame() {
 
   if (ui.reticle) {
     ui.reticle.style.transform = `translate3d(${render.x.toFixed(1)}px, ${render.y.toFixed(1)}px, 0)`;
-    ui.reticle.style.opacity = (0.25 + render.drawnConf * 0.55).toFixed(3);
+    ui.reticle.style.opacity = (0.18 + render.drawnConf * 0.4).toFixed(3);
     // A wide, soft reticle when the signal is poor reads as honest rather than
     // broken: it shows the user how sure Cue is instead of faking precision.
     const s = 1 + (1 - render.drawnConf) * 0.9;
@@ -421,34 +427,16 @@ const EDGE_MAX_PX = 13;   // per frame at the very edge
 
 let edgeSince = 0, edgeDir = 0, edgeSeen = 0;
 
-// Gaze alone is too coarse to scroll by. This was switched off once because the
-// page drifted while people read: reading the bottom of a screenful looks
-// exactly like asking for the next one, and at 220-350px of error there is no
-// way to tell them apart from position alone.
-//
-// So voice supplies the intent and gaze supplies the control. "Scroll with my
-// eyes" arms it, "stop" disarms it, and it disarms itself after a spell of
-// looking at nothing in particular. Reading can never start it, because the
-// shopper has to ask first — which is the whole reason it is safe to have back.
-const GAZE_SCROLL_IDLE_MS = 20000;
-const gazeScroll = { armed: false, lastActive: 0 };
-
-function armGazeScroll(on) {
-  gazeScroll.armed = on;
-  gazeScroll.lastActive = now();
-  edgeSince = 0; edgeDir = 0; edgeSeen = 0;
-  if (!on) document.body.classList.remove("cue-edge-top", "cue-edge-bottom");
-}
+// On by default — look at the top or bottom of the page and it moves, no
+// arming needed, exactly as it worked before it was switched off. Purely
+// reactive: look away from the edge and the band/dir logic below drops to 0
+// and it stops on its own, the same way it starts. gaze_scroll{on} is still a
+// spoken override for a shopper who wants it off while reading, or back on
+// after that — it does not gate anything by default, it only overrides it.
+let gazeScrollOn = true;
 
 function edgeScrollTick() {
-  if (!gazeScroll.armed) return;
-  // Armed but idle: let it lapse rather than leaving a live scroller behind a
-  // shopper who has moved on and would not think to say "stop".
-  if (now() - gazeScroll.lastActive > GAZE_SCROLL_IDLE_MS) {
-    armGazeScroll(false);
-    bus.emit("SAY", { text: "I've stopped following your eyes." });
-    return;
-  }
+  if (!gazeScrollOn) return;
   const p = render;
   const gs = gaze.getState();
   if (gs.calibrating || !gs.point) {
@@ -484,9 +472,6 @@ function edgeScrollTick() {
       : 0.2;
   const step = dir * EDGE_MAX_PX * Math.min(1, Math.max(0.15, depth));
 
-  // Actually moving counts as activity, so the idle lapse measures "not using
-  // it" rather than "has been armed a while".
-  gazeScroll.lastActive = now();
   scrollAmount(p.x, dir < 0 ? 8 : innerHeight - 8, step, false);
   document.body.classList.toggle("cue-edge-top", dir < 0);
   document.body.classList.toggle("cue-edge-bottom", dir > 0);
@@ -820,7 +805,7 @@ async function beginTurn(text) {
     text = fixed.text;
     console.log(`[cue] heard "${heard}" -> "${text}"`);
   }
-  const analyticsAction = analyticsCommand(text, analytics.isOpen);
+  const analyticsAction = ANALYTICS_ENABLED ? analyticsCommand(text, analytics.isOpen) : null;
   if (analyticsAction) {
     if (analyticsAction === "close") { analytics.close(); bus.emit("SAY", { text: "Closed analytics." }); }
     else { void analytics.open(); bus.emit("SAY", { text: "Opening your analytics." }); }
@@ -1375,29 +1360,23 @@ function perform(verb, args, opts = {}) {
       if (!opts.narrated) bus.emit("SAY", { text: `Scrolling ${args.dir}.` });
       break;
     }
-    // Gaze drives the scrolling; voice decides when it may. Arming stops any
-    // spoken auto-scroll first, so two scrollers are never fighting over the
-    // same page.
+    // Explicit override only. Left independent of scroll_stop/"stop" on
+    // purpose: gaze scroll is on by default, and "stop" already means stop
+    // the current spoken scroll or stop talking — it must not also silently
+    // switch gaze scrolling off for the rest of the session.
     case "gaze_scroll": {
-      const on = args.on === undefined ? !gazeScroll.armed : Boolean(args.on);
-      if (on) stopAutoScroll(false);
-      armGazeScroll(on);
+      const on = args.on === undefined ? !gazeScrollOn : Boolean(args.on);
+      gazeScrollOn = on;
+      if (!on) { edgeSince = 0; edgeDir = 0; edgeSeen = 0;
+        document.body.classList.remove("cue-edge-top", "cue-edge-bottom"); }
       if (!opts.narrated) {
         bus.emit("SAY", { text: on
-          ? "Following your eyes. Look at the top or bottom of the page to move it, and say stop when you're done."
-          : "Okay, I've stopped following your eyes." });
+          ? "Okay, following your eyes again."
+          : "Okay, I'll stop scrolling with your eyes." });
       }
       break;
     }
     case "scroll_stop":
-      // "Stop" has to end whichever scroller is running, and gaze-scroll is
-      // the one the shopper cannot stop by simply not talking.
-      if (gazeScroll.armed) {
-        armGazeScroll(false);
-        stopAutoScroll(false);
-        if (!opts.narrated) bus.emit("SAY", { text: "Stopped." });
-        break;
-      }
       if (!stopAutoScroll(!opts.narrated)) {
         // Nothing was moving, so "stop" was aimed at the talking.
         voice.stopSpeaking?.();

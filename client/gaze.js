@@ -1379,7 +1379,11 @@ export function refreshFocus() {
   bus.emit("FOCUS", { target: state.focus, prev: focused });
 }
 
-export function hideCamera() { if (!debugOn) eyes.showPreview(false); }
+// Always hides, debug flag or not. A live floating selfie feed pinned to the
+// page is not something to leave up once calibration is done just because a
+// diagnostic query param happened to be set — the numeric readout in
+// gaze-debug.js is the useful part of ?gazedebug=1, not a mirror.
+export function hideCamera() { eyes.showPreview(false); }
 export const getFocus = () => state.focus;
 export const getAccuracy = () => state.accuracy;
 export const isPrecise  = () => state.precise;

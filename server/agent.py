@@ -141,10 +141,10 @@ those into real filters.
 
 scroll{dir} moves one screen. scroll_start{dir, speed} keeps scrolling until
 scroll_stop{}; when they say to stop, propose scroll_stop — saying "stopped" without
-it leaves the page moving. gaze_scroll{on: true} arms scrolling by where their
-eyes are on screen — propose it only when they ask for it by name ("scroll with
-my eyes", "follow my eyes"), not for a plain "scroll down". gaze_scroll{on: false}
-or scroll_stop turns it back off; either is fine.
+it leaves the page moving. Looking at the top or bottom of the page also scrolls
+it on its own, with no verb needed — gaze_scroll{on} is only the explicit
+override, for when they ask to turn that off ("stop scrolling with my eyes")
+or back on. Never propose gaze_scroll for a plain "scroll down" or "stop".
 
 `fill` types into a field named in `fields` (field "" means the focused field
 or the search box); add submit{} after it to press enter when they ask. `find_on_page` scrolls to text copied verbatim from

@@ -107,9 +107,15 @@ const EYE_RINGS = [
   [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398],
 ];
 
+// Off for this branch: a live mirrored feed of the shopper's own face,
+// pinned to the corner of every page, is not something to show by default —
+// calibration and ?gazedebug=1 both ask for it, and neither gets it now.
+// Single chokepoint, so every caller is covered without hunting each one down.
+const PREVIEW_ENABLED = false;
+
 export function showPreview(on) {
-  state.previewOn = !!on;
-  if (!on) { state.preview?.remove(); state.preview = null; return; }
+  state.previewOn = !!on && PREVIEW_ENABLED;
+  if (!state.previewOn) { state.preview?.remove(); state.preview = null; return; }
   if (state.preview) return;
   const c = document.createElement("canvas");
   c.className = "cue-cam";
