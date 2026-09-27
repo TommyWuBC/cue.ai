@@ -100,7 +100,7 @@ Say "a lot of people rate it highly" when you want to convey popularity.
 
 Reply with JSON only: {"say": "<what to speak>", "do": []}.
 You may propose: scroll{dir}, scroll_start{dir, speed}, scroll_stop{}, focus_nth{n}, select_variant{value},
-select_color{value}, click_named{name}, open_link{target, part}, back{}, forward{}, dismiss{}, compare{a, b}, search{query}, fill{field, text}, find_on_page{text}, submit{}, list_controls{}, read_bag{}, add_to_cart{}, checkout{}.
+select_color{value}, click_named{name}, open_link{target, part}, back{}, forward{}, dismiss{}, compare{a, b}, search{query}, fill{field, text}, find_on_page{text}, submit{}, list_controls{}, read_bag{}, add_to_cart{item}, checkout{}.
 
 `said` is a speech-to-text transcript and it mishears: "q", "queue" or "cute"
 at the start is usually the wake word Cue, and a word that makes no sense is
@@ -199,6 +199,19 @@ name taken verbatim from that list. Never invent one that is not listed; say
 what you can see instead. A control that spends money is not refused — it is
 read back and waits for a separate spoken yes, as above. Propose it when they
 ask to buy; do not tell them to press it themselves.
+
+`panel` is what Cue has open over the page: "comparison" when the side-by-side
+is up, otherwise null. When it is open and they ask to close it, put dismiss{}
+in `do` — never say you are closing it without proposing it, and never claim
+nothing is open when `panel` says otherwise.
+
+One sentence can ask for two things: "close the comparison and add the AirPods"
+is dismiss{} then add_to_cart{item: "AirPods"}, in that order, both in `do`.
+Put them in the order they have to happen. add_to_cart takes `item` when they
+name what to add — words from its title, the same way open_link does. Leave
+`item` out only when the item is obvious from the page or already discussed;
+naming it is what makes the add land on the right product once a panel has
+closed and nothing is selected any more.
 
 compare{a, b} puts two products side by side in a panel over the page, with
 their own pages read first. a and b name them the way open_link does: words
@@ -362,7 +375,11 @@ def sanitize(out):
             if args.get("speed") in {"slow", "fast"}:
                 out["speed"] = args["speed"]
             return {"verb": verb, "args": out}
-        if verb in {"list_controls", "read_bag", "add_to_cart", "checkout", "back", "forward",
+        if verb == "add_to_cart":
+            item = args.get("item")
+            return {"verb": verb, "args": (
+                {"item": str(item)[:80]} if isinstance(item, (str, int)) and str(item).strip() else {})}
+        if verb in {"list_controls", "read_bag", "checkout", "back", "forward",
                     "scroll_stop", "submit", "dismiss"}:
             return {"verb": verb, "args": {}}
         return None
@@ -404,7 +421,9 @@ def sanitize(out):
         # their passkey. confirm / approve_checkout / setup_passkey are
         # deliberately absent — those words have to come from the human.
         elif verb == "add_to_cart":
-            actions.append({"verb": verb, "args": {}})
+            item = args.get("item")
+            actions.append({"verb": verb, "args": (
+                {"item": str(item)[:80]} if isinstance(item, (str, int)) and str(item).strip() else {})})
         elif verb == "checkout":
             actions.append({"verb": verb, "args": {}})
         if len(actions) == 3:
@@ -462,6 +481,7 @@ def respond(text: str, ctx: dict, memory_block=None) -> dict:
         "said": text[:300],
         "heard": _short(ctx.get("heard"), 300),
         "page": _page(ctx.get("page")),
+        "panel": ctx.get("panel") if ctx.get("panel") in {"comparison"} else None,
         "discussed": _short((ctx.get("discussed") or {}).get("title") if isinstance(ctx.get("discussed"), dict) else None, 80),
         "chosen": ctx.get("chosen") if isinstance(ctx.get("chosen"), dict) else None,
         "bag": [c[:40] for c in (ctx.get("bag") or [])[:5] if isinstance(c, str)],

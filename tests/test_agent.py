@@ -126,3 +126,18 @@ def test_dismiss_is_allowed_and_takes_no_arguments():
     assert out["do"] == [{"verb": "dismiss", "args": {}}]
     staged = agent.sanitize({"say": "Close it?", "ask": [{"verb": "dismiss", "args": {}}]})
     assert staged["ask"] == [{"verb": "dismiss", "args": {}}]
+
+
+def test_a_sentence_can_close_a_panel_and_add_a_named_item():
+    """"Close the comparison and add the AirPods" — two actions, in order, and
+    the add carries which product it means."""
+    out = agent.sanitize({"say": "Closing it and adding the AirPods.", "do": [
+        {"verb": "dismiss", "args": {}},
+        {"verb": "add_to_cart", "args": {"item": "AirPods Pro 3"}}]})
+    assert out["do"] == [{"verb": "dismiss", "args": {}},
+                         {"verb": "add_to_cart", "args": {"item": "AirPods Pro 3"}}]
+    # An unnamed add still works, and a junk item is dropped rather than passed on.
+    assert agent.sanitize({"say": "x", "do": [{"verb": "add_to_cart", "args": {}}]})["do"] \
+        == [{"verb": "add_to_cart", "args": {}}]
+    assert agent.sanitize({"say": "x", "do": [
+        {"verb": "add_to_cart", "args": {"item": "  "}}]})["do"] == [{"verb": "add_to_cart", "args": {}}]

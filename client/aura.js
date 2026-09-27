@@ -68,9 +68,11 @@ async function seedDemo(title = "Apple iPhone 17 Pro", daysAgo = 7) {
 async function recentPurchases() {
   try {
     const summary = await analyticsRequest("summary");
-    // summarizeActivity ranks them as {value, count}; value is the title.
+    // summarizeActivity's ranked() returns {label, count}. Reading .value here
+    // meant owns was always empty, so the ecosystem line never had anything to
+    // connect to and came back "" every time.
     const items = summary?.top_purchased ?? [];
-    return items.map((p) => (typeof p === "string" ? p : p?.value || p?.title))
+    return items.map((p) => (typeof p === "string" ? p : p?.label))
       .filter(Boolean).slice(0, 6);
   } catch { return []; }
 }
@@ -181,7 +183,7 @@ function learnPage() {
   knowledge.observe(items.map((t) => ({ product: t.product, el: t.el })));
 }
 // Bumped by hand when the client changes, so the server log shows which build is running.
-const CLIENT_BUILD = "2026-09-27 stop-fix";
+const CLIENT_BUILD = "2026-09-27 dual-command";
 
 const PRODUCT_VERBS = new Set(["add_to_cart", "select_variant", "select_color"]);
 
@@ -688,6 +690,16 @@ function context(utterance = "") {
     page: pageBrief(),
     nearby: asking ? nearby.map((p) => ({ title: p.title, text: (p.text || "").slice(0, 180) }))
       : nearby.map((p) => ({ title: p.title })),
+    // What Cue has open over the page. Without this the model was asked to
+    // "close the comparison" with no way to know one was open: it either said
+    // "I don't see what's open to close" or narrated closing it and proposed
+    // nothing.
+    panel: compare.isOpen() ? "comparison" : null,
+    // What Cue has open over the page. Without this the model was asked to
+    // "close the comparison" with no way to know one was open: it either said
+    // "I don't see what's open to close" or narrated closing it and proposed
+    // nothing at all.
+    panel: compare.isOpen() ? "comparison" : null,
     pending: pendingConfirm?.kind ?? null,
     session: sessionId(),
     url: location.href,
@@ -1492,6 +1504,22 @@ function perform(verb, args, opts = {}) {
       break;
     }
     case "add_to_cart": {
+      // "Close the comparison and add the AirPods" names the item, and after
+      // the panel closes there is nothing focused to scope by. Resolving the
+      // name first is what makes a two-part command land on the right product.
+      // Adding ends the comparison, the same way the panel's own Add button
+      // does. The model does not reliably pair dismiss with the add when both
+      // are asked for in one sentence, and it should not have to: once the
+      // item is chosen the panel has done its job.
+      compare.close();
+      if (args.item) {
+        const want = resolveKnown(args.item);
+        if (want) {
+          discussed = briefProduct(want) ?? discussed;
+          persistShopper();
+          pinDiscussed();
+        }
+      }
       // Nothing may be focused at all: gaze can be off and there are no badge
       // numbers any more, so on a detail page there is no signal to scope by.
       // The product that fills the page is the one meant — the same fallback
@@ -1649,6 +1677,13 @@ function perform(verb, args, opts = {}) {
       break;
     }
     case "dismiss": {
+      // Cue's own panel is a dialog like any other, but closing it by guessing
+      // at our own markup is silly when we hold the handle.
+      if (compare.isOpen()) {
+        compare.close();
+        if (!opts.narrated) bus.emit("SAY", { text: "Closed it." });
+        break;
+      }
       const how = dismissOverlay();
       if (how === "nothing") { bus.emit("SAY", { text: "There's nothing open to close." }); return false; }
       bus.emit("SAY", { text: how === "escaped" ? "Tried to close it — tell me if it's still there." : "Closed it." });

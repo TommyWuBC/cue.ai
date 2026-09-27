@@ -1,7 +1,13 @@
-# Cue — shop by looking and talking
+# Cue — shop by talking
 
-Gaze targeting, conversational answers, and a local demo checkout with server
-enforced limits and passkey approval. Demo orders do not charge a card.
+Cue shops a real site for someone who cannot use a mouse. You talk; it reads the
+page, answers from what is actually there, compares products side by side, and
+works the controls. It buys on a real store only after you say yes to the
+button that spends the money.
+
+Eye tracking is built and currently switched off (`GAZE_MODE` in
+`extension/background.js`) while the voice path is tuned. Nothing is numbered on
+screen: you name what you mean.
 
 ## Run
 
@@ -37,16 +43,19 @@ Calibration is thirteen points: look at each dot, then press SPACE, tap the dot,
 or say “Cue, next”. Keep looking while the capture message is shown. Five more
 points then measure accuracy without any input. If the camera cannot capture
 your eyes, the current point shows a retry message. The accuracy figure is
-printed to the console; over 150px prompts a retry, and over 220px uses numbered
-items for voice selection. Say “Cue, recalibrate” to start again.
+printed to the console. Say “Cue, recalibrate” to start again. Selection is by
+name in every case — numbered badges were removed after live sessions showed the
+numbers drifting as the eyes moved.
 
 ## Keys
 
-Two, both optional — everything degrades instead of dying.
+All optional — everything degrades instead of dying. The model is
+`claude-haiku-4-5-20251001`; override with `CUE_MODEL`.
 
 | Key | Used for | Without it |
 |---|---|---|
-| `XAI_API_KEY` | Grok reasoning **and** Grok speech-to-text | browser recogniser + offline answerer |
+| `ANTHROPIC_API_KEY` | Claude — every answer, and the product comparison | offline answerer, simple commands only |
+| `XAI_API_KEY` | Grok speech-to-text | browser recogniser |
 | `ELEVENLABS_API_KEY` | spoken responses | browser voice |
 
 Check what is actually live: `curl localhost:4173/health`
@@ -56,6 +65,7 @@ Check what is actually live: `curl localhost:4173/health`
     cue.say("is this wool")
     cue.say("the third one")
     cue.say("add the second one in medium")
+    cue.say("compare the airpods and the soundcore")
     cue.say("check out")
     cue.say("yes")
 
@@ -87,7 +97,11 @@ verified by Cue.
     store/checkout.js   spoken order review + browser passkey ceremony
     server/checkout.py  server priced cart, limits, passkey verification, SQLite orders
     server/router.py    regex fast path; the demo's core commands never hit an LLM
-    server/agent.py     Grok, one call, strict JSON out
+    client/compare.js   the side-by-side panel; compare.css styles it
+    client/knowledge.js every product seen this visit, with its links and facts
+    client/speech.js    corrects misheard words against what is on the page
+    server/agent.py     Claude, one call, strict JSON out
+    server/compare.py   one call returns the rows, the verdict and the pick
     server/fallback.py  offline answerer over the product data (no key needed)
     server/tts.py       speech out: Grok, then ElevenLabs, then the browser voice (disk cache first)
     server/stt.py       speech in: Grok, then ElevenLabs Scribe, then the browser recogniser
@@ -99,10 +113,14 @@ Markup contract and event shapes: see `ARCHITECTURE.md`.
 **Gaze never selects; voice commits.** Gaze sets focus, speech confirms. This is
 the accessibility story and it is also why a few cm of webgazer error is harmless.
 
-**AI answers cannot purchase.** Grok can answer questions and suggest reversible
-selection or scrolling. The server filters its action list; adding, clicking,
-checkout and approval are only reached through explicit command routes and the
-passkey step. Partial product data produces an honest "I can't see it" answer.
+**The model may shop; only you may commit.** It can search, compare, open pages,
+scroll and add to a cart. The server strips `confirm`, `approve_checkout` and
+`setup_passkey` from anything it proposes, and the page refuses them from any
+source that is not the deterministic router — that is, from anything but your
+own words. On a real store a control that actually charges (Buy now, Place your
+order) is read back with its amount and pressed only after a separate spoken
+yes. "Proceed to checkout" is not one of those: it spends nothing, so it just
+goes.
 
 **Only tagged elements are targetable.** `data-aura-product` / `data-aura-action`
 (the `data-cue-*` spelling is also accepted). Six big hit targets on a page
@@ -151,12 +169,20 @@ Check spend and which provider is live: `curl localhost:4173/health`.
 
 ## Comparing products
 
-Ask about one product, then look at or name another and say “Cue, how is this
-different from the last one?” Cue remembers the last distinct product you
-discussed or selected, including across page changes in the same tab. Both Grok
-and the offline answerer use that product. Memory stays in the tab, expires
-after an hour, and contains product details only; incidental gaze changes do
-not replace it.
+Say “Cue, compare the AirPods and the Soundcore”. Both product pages are read,
+then one model call returns the rows, a verdict, which one to pick, and a line
+about how it fits what you already own. The panel opens over the page you are
+on — not in a new tab, because the microphone and the speech timers live in this
+document and a background tab throttles them.
+
+The line about what you own comes from this browser's own purchase journal. For
+a demo, seed one with `window.cue.seedDemo()` in the console; it writes a single
+purchase marked `DEMO-SEED`. Nothing seeds itself — invented history is
+indistinguishable from a real order in the same journal.
+
+Cue also remembers every product it has seen this visit, with its links, so
+“open its reviews” still works after a search has replaced the page. That memory
+stays in the tab and expires after an hour.
 
 ## Demo checkout
 
@@ -177,8 +203,9 @@ Say “Cue, the second one” to focus a product, then “Cue, medium, in black�
 to set options. “Cue, add the second one in medium, in black” combines those
 steps. A size is required before adding; no size is silently chosen.
 
-For page control, say “Cue, scroll down”, “Cue, scroll to top”, “Cue, go
-back”, or “Cue, click this” while looking at a button. Scrolling or resizing
+For page control, say “Cue, scroll down” (then “faster”, or “stop” — “stop”
+stops the scroll, “quit” ends Cue), “Cue, scroll to top”, “Cue, go back”, or
+“Cue, no thanks” to close a popup such as the warranty upsell after an add. Scrolling or resizing
 clears focus when its target leaves the viewport, so “add it” cannot reuse an
 off-screen item.
 
