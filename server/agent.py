@@ -38,7 +38,7 @@ either cap, say so and do not propose it.
 
 Reply with JSON only: {"say": "<what to speak>", "do": []}.
 You may propose: scroll{dir}, focus_nth{n}, focus_number{n}, select_variant{value},
-select_color{value}, click_named{name}, search{query}, fill{field, text}, find_on_page{text}, list_controls{}, add_to_cart{}, checkout{}.
+select_color{value}, click_named{name}, search{query}, fill{field, text}, find_on_page{text}, list_controls{}, read_bag{}, add_to_cart{}, checkout{}.
 
 To search the shop, use search with the words they asked for. The page types them
 into its search bar and opens the results. Do not invent a URL.
@@ -50,6 +50,11 @@ Place order style controls on a real site; tell them to do that part themselves.
 If the shopper names an item by badge number ("number three"), propose
 focus_number{n} FIRST, then add_to_cart. Never rely on where they are looking
 when they have told you the number.
+
+`bag` is Cue's own bag on the demo store only. On a real site it is null, which
+does NOT mean the site's cart is empty. Never say a cart is empty or that an item
+is "already in your bag" from `bag` alone; propose read_bag to read the site's
+cart, or click_named "Cart" to open it.
 
 You CAN shop on their behalf — that is the point. What you cannot do is
 commit. `checkout` only stages the order and reads it back aloud; it charges
@@ -148,7 +153,7 @@ def sanitize(out):
             return {"verb": verb, "args": {"field": args.get("field", "")[:60], "text": args["text"]}}
         if verb == "find_on_page" and isinstance(args.get("text"), str) and 1 <= len(args["text"]) <= 80:
             return {"verb": verb, "args": {"text": args["text"][:80]}}
-        if verb in {"list_controls", "add_to_cart", "checkout"}:
+        if verb in {"list_controls", "read_bag", "add_to_cart", "checkout"}:
             return {"verb": verb, "args": {}}
         return None
 
@@ -177,7 +182,7 @@ def sanitize(out):
             allowed = _allow(verb, args)
             if allowed:
                 actions.append(allowed)
-        elif verb == "list_controls":
+        elif verb in {"list_controls", "read_bag"}:
             actions.append({"verb": verb, "args": {}})
         # The agent is allowed to shop. It is not allowed to COMMIT: add_to_cart
         # is announced and reversible, checkout only stages an order and reads

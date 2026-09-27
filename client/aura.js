@@ -338,7 +338,36 @@ function edgeScrollTick() {
 }
 
 // ── The loop: utterance -> server -> speech + actions ───────────────────────
+// The site's own cart, read from its cart page (same origin, shopper's cookies).
+let siteCart = null;
+async function readSiteCart() {
+  const link = [...document.querySelectorAll("a[href]")].find((a) =>
+    /\/(?:gp\/)?(?:cart|basket|bag)\b/i.test(new URL(a.href, location.href).pathname));
+  const page = link?.href || new URL("/cart", location.href).href;
+  try {
+    const res = await fetch(page, { credentials: "include" });
+    const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+    const rows = [...doc.querySelectorAll(
+      "[data-name='Active Items'] .sc-list-item, .sc-list-item[data-asin], [data-cart-item], .cart-item, .cart__item")];
+    const items = rows.map((r) => (r.querySelector(".sc-product-title, [class*='title'], a")?.textContent || "")
+      .replace(/\s+/g, " ").trim()).filter(Boolean);
+    siteCart = { items, at: Date.now() };
+    const empty = /your (?:amazon )?(?:cart|basket|bag) is empty/i.test(doc.body?.textContent || "");
+    if (items.length) {
+      bus.emit("SAY", { text: `${items.length} item${items.length === 1 ? "" : "s"} in the site cart. ` +
+        items.slice(0, 5).map((t, k) => `${k + 1}, ${t.slice(0, 70)}`).join(". ") + "." });
+    } else if (empty) {
+      bus.emit("SAY", { text: "The site says your cart is empty." });
+    } else {
+      bus.emit("SAY", { text: "I couldn't read the cart from here. Say open cart and I'll take you there." });
+    }
+  } catch {
+    bus.emit("SAY", { text: "I couldn't reach the cart. Say open cart and I'll take you there." });
+  }
+}
+
 function bagBrief() {
+  if (CONFIG.injected && !window.cueBag) return siteCart?.items?.length ? siteCart.items.slice(0, 5) : null;
   const items = window.cueBag?.items?.() || [];
   if (!items.length) return null;
   return items.slice(0, 5).map((i) => i.title);
@@ -953,6 +982,10 @@ function perform(verb, args, opts = {}) {
       break;
     }
     case "read_bag": {
+      // On a real site the bag is the SITE's cart, not Cue's own. Read it from
+      // the site's cart page with the shopper's own session; never say "empty"
+      // when we simply could not see it.
+      if (CONFIG.injected && !window.cueBag) { void readSiteCart(); break; }
       const list = window.cueBag?.items() ?? [];
       if (!list.length) { bus.emit("SAY", { text: "Your bag is empty." }); break; }
       const lines = list.map((i, k) => `${k + 1}, ${i.title}${i.size ? `, size ${i.size}` : ""}`);
