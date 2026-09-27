@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 
 let onActionClicked, onActivated, onMessage, onRemoved, onUpdated;
 const calls = [];
@@ -82,20 +83,31 @@ test('activation requires a shopping tab and a reachable Cue server', async () =
   healthy = true;
 });
 
-test('with gaze off, WebGazer and its models are never injected', async () => {
+// Asserts the wiring rule, not one snapshot of GAZE_MODE. The old version
+// hard-coded 'mouse' and a null model list, so simply switching gaze on failed
+// a test whose real subject — that nothing extra is ever injected, and models
+// travel only when the camera is in use — was still perfectly satisfied.
+test('the injected config matches whichever gaze mode is configured, and nothing else is injected', async () => {
+  const source = await readFile(new URL('../extension/background.js', import.meta.url), 'utf8');
+  const mode = source.match(/const GAZE_MODE = '([a-z]+)'/)[1];
+
   const result = await send({ type: 'cue:start', tab }, popup);
   assert.equal(result.ok, true);
   assert.equal(calls.filter(([kind]) => kind === 'css').length, 1);
   assert.deepEqual(calls.find(([kind]) => kind === 'css')[1].files,
     ['client/overlay.css', 'client/analytics.css']);
+  // Gaze v2 loads its tracker as a module from client/eyes.js, so the only
+  // injected files are the page scripts — in either mode.
   assert.deepEqual(calls.filter(([kind, options]) => kind === 'script' && options.files)
     .map(([, options]) => options.files), [
       ['extension/extract.js', 'extension/content.js'],
     ]);
   const config = calls.find(([kind, options]) => kind === 'script' && options.args);
   assert.equal(config[1].args[0], 'http://localhost:4173');
-  assert.equal(config[1].args[1], null);
-  assert.equal(config[1].args[4], 'mouse');
+  assert.equal(config[1].args[4], mode);
+  // Model URLs are passed only when the camera is actually going to run.
+  if (mode === 'webgazer') assert.ok(config[1].args[1] && typeof config[1].args[1] === 'object');
+  else assert.equal(config[1].args[1], null);
   assert.equal(config[1].args[2], 'chrome-extension://cue-test/extension/assets/cue-splash.jpg');
   active = true;
   assert.equal((await send({ type: 'cue:start', tab }, popup)).ok, true);

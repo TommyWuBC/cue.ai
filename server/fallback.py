@@ -115,7 +115,7 @@ def answer(text: str, ctx: dict) -> dict:
         if focused and other:
             return {"say": f"{_summary(focused)}. Compared with {_summary(other)}.",
                     "do": [], "source": "fallback"}
-        return {"say": "Tell me which two, by number, and I'll compare them.",
+        return {"say": "Tell me which two, by name, and I'll compare them.",
                 "do": [], "source": "fallback"}
 
     if not focused:

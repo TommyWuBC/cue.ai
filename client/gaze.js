@@ -1006,11 +1006,11 @@ export async function experiment({ selections = 8 } = {}) {
   const start = learned;
   const need = start + selections;
   console.log(`%c[cue] baseline ${before.error_px}px. Now use Cue normally — ` +
-              `say the number on things to pick them. ${selections} selections to go.`,
+              `name things to pick them. ${selections} selections to go.`,
               "font-weight:bold");
   bus.emit("SAY", {
     text: `Right now I'm off by about ${before.error_px} pixels. Use me normally for a minute — ` +
-          `say the number on things to pick them. I'll measure again when I've learned enough.`,
+          `name the things you want. I'll measure again when I've learned enough.`,
   });
 
   await new Promise((done) => {
@@ -1076,12 +1076,16 @@ async function calibrateOnce({ allowRetry = true, maxAttempts = 2 } = {}) {
     state.lastSampleAt = performance.now();
     bus.emit("STATE", { calibrating: false, accuracy: acc });
     const q = acc?.after_px;
+    // Nothing is numbered on screen any more, so neither of these may offer a
+    // number: it sent the shopper hunting for an affordance that does not
+    // exist, and everything they said next looked like it was being ignored.
+    // Naming the item is the way to pick it, with or without gaze.
     bus.emit("SAY", {
       text: !acc
-        ? "I couldn't measure your gaze. Check the camera and say Cue, recalibrate. You can select items by saying their numbers."
+        ? "I couldn't measure your gaze. Check the camera and say Cue, recalibrate. You can still just tell me what you want."
         : q <= GOOD_PX
         ? "Calibration done. What are you after?"
-        : "Alright. I'll number the items — just say the number of the one you want.",
+        : "My eye tracking is rough, so just tell me what you want by name. What are you after?",
     });
     // Tell the rest of the app whether gaze is precise enough to be trusted as
     // a pointer. Below this bar, what the shopper says leads the interaction.

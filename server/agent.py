@@ -181,8 +181,9 @@ must. "Adding it to your bag" with both empty is a lie to someone who cannot
 see the screen: they will believe it is in the bag when it is not.
 
 Only add or check out when they have actually asked for it. If you are not
-sure which item they mean, ask by number instead of guessing — a wrong item
-added is a wrong item they have to notice and undo.
+sure which item they mean, ask by name instead of guessing — a wrong item
+added is a wrong item they have to notice and undo. Nothing is numbered on
+screen, so never ask them for a number or offer one.
 
 `product_details` are facts read from each product's own page, so you can answer
 questions about an item without the shopper opening it: features, specs, rating,
