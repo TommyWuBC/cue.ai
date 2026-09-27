@@ -10,6 +10,8 @@ import { playSplash } from "./splash.js";
 import { matchCandidates, matchOptions, missingChoices, optionPrompt } from "./intent.js";
 import { shopperStore } from "./shopper.js";
 import { crawlNear, matchPage, pageText } from "./site.js";
+import { createDetails } from "./details.js";
+import { parseSearch, amazonSearchUrl, describeFilters } from "./search.js";
 
 let memoryStorage;
 try { memoryStorage = CONFIG.injected ? window.CUE_MEMORY_STORAGE : sessionStorage; } catch {}
@@ -30,6 +32,9 @@ function persistShopper() {
   shopper.save({ discussed, size: stated.size, color: stated.color });
 }
 let site = null;
+const details = createDetails();
+// Bumped by hand when the client changes, so the server log shows which build is running.
+const CLIENT_BUILD = "2026-09-26 crawl-debug";
 
 const PRODUCT_VERBS = new Set(["add_to_cart", "select_variant", "select_color"]);
 
@@ -86,6 +91,22 @@ function writeField(field, q) {
 }
 
 async function runSearch(q) {
+  // Filters said out loud ("under a hundred dollars", "four stars", "cheapest
+  // first") are applied by the shop itself where we know how; otherwise they
+  // stay in the search words.
+  if (CONFIG.injected) {
+    const parsed = parseSearch(q);
+    const target = amazonSearchUrl(parsed, location.href);
+    if (target) {
+      const applied = describeFilters(parsed);
+      discussed = null;
+      stated = { id: null, size: null, color: null };
+      persistShopper();
+      bus.emit("SAY", { text: `Searching for ${parsed.q}${applied ? `, ${applied}` : ""}.` });
+      setTimeout(() => location.assign(target), 900);
+      return;
+    }
+  }
   let field = findSearchField();
   if (!field) {
     const opener = searchOpener();
@@ -379,6 +400,27 @@ function budgetBrief() {
   return { remaining: b.remaining, order: b.order };
 }
 
+async function withDetails(text) {
+  if (CONFIG.injected) {
+    const f = gaze.getFocus();
+    const focused = f?.kind === "product" ? f.product : null;
+    await details.ensure(detailUrls(focused).slice(0, 3).map((p) => p.url));
+  }
+  return context(text);
+}
+
+function detailUrls(focused) {
+  const seen = new Set();
+  const list = [focused, comparisons.remember(focused), discussed,
+    ...scan().filter((t) => t.kind === "product").slice(0, 5).map((t) => t.product)];
+  return list.filter((p) => p?.url && !seen.has(p.url) && seen.add(p.url));
+}
+
+function detailsBrief(focused) {
+  return detailUrls(focused).map((p) => ({ title: p.title, facts: details.peek(p.url) }))
+    .filter((d) => d.facts).slice(0, 5);
+}
+
 function context(utterance = "") {
   const f = gaze.getFocus();
   const focused = f?.kind === "product" ? f.product : null;
@@ -395,6 +437,12 @@ function context(utterance = "") {
     bag: bagBrief(),
     budget: budgetBrief(),
     controls: controls().slice(0, 12).map((c) => c.name),
+    // Facts read from each product's own page, so questions about an item can be
+    // answered without opening it. Extension only; the demo store carries its own.
+    product_details: CONFIG.injected ? detailsBrief(focused) : [],
+    client_build: CLIENT_BUILD,
+    details_stats: CONFIG.injected ? { ...details.stats(), products: detailUrls(focused).length,
+      injected: true } : { injected: false },
     fields: fields().slice(0, 8).map((f) => f.name).filter(Boolean),
     site: site ? { title: site.title, pages: (site.pages || []).slice(0, 6).map((p) => p.title).filter(Boolean) } : null,
     page: asking ? pageText(document).slice(0, 480) : "",
@@ -424,7 +472,83 @@ let settleTimer = 0;
 const QUICK = /^(?:yes|yeah|no|nope|cancel|end|cue end|[1-9]|one|two|three|four|five|six|seven|eight|nine)$/i;
 const HALT = /^(?:exit|quit|stop|go away|shut down|turn(?: yourself)? off|disable|end|cue end|stop cue|pause cue)(?: cue)?$/i;
 
+// "scroll down" keeps going, slowly, until they say stop. Reading pace, not a
+// jump: someone who cannot scroll themselves needs to see the page pass by.
+const SCROLL_SPEEDS = [22, 38, 60, 95, 150];   // px per second
+const STOP_SCROLL = /\b(?:stop|pause|wait|hold on|hold it|halt|freeze|enough|that's good|right there|okay stop)\b/i;
+const autoScroll = { dir: 0, speed: 1, raf: 0, last: 0, carry: 0, stuck: 0 };
+
+function scrollTick(t) {
+  if (!autoScroll.dir || globalThis.__cueEnded) return stopAutoScroll(false);
+  const dt = Math.min(0.1, (t - (autoScroll.last || t)) / 1000);
+  autoScroll.last = t;
+  autoScroll.carry += autoScroll.dir * SCROLL_SPEEDS[autoScroll.speed] * dt;
+  const whole = Math.trunc(autoScroll.carry);
+  if (whole) {
+    autoScroll.carry -= whole;
+    const box = scrollerAt(innerWidth / 2, innerHeight / 2, false);
+    const el = box || document.scrollingElement || document.documentElement;
+    const before = el.scrollTop;
+    if (box) box.scrollBy({ top: whole, behavior: "instant" });
+    else window.scrollBy({ top: whole, behavior: "instant" });
+    // Lazy-loading pages grow as we go; only give up after a real stall.
+    autoScroll.stuck = el.scrollTop === before ? autoScroll.stuck + 1 : 0;
+    if (autoScroll.stuck > 90) {
+      const dir = autoScroll.dir;
+      stopAutoScroll(false);
+      bus.emit("SAY", { text: dir > 0 ? "That's the bottom." : "That's the top." });
+      return;
+    }
+  }
+  voice.keepAwake?.(15000);
+  autoScroll.raf = requestAnimationFrame(scrollTick);
+}
+
+function startAutoScroll(dir, speed) {
+  autoScroll.dir = dir;
+  if (Number.isInteger(speed)) autoScroll.speed = Math.max(0, Math.min(SCROLL_SPEEDS.length - 1, speed));
+  autoScroll.last = 0; autoScroll.carry = 0; autoScroll.stuck = 0;
+  cancelAnimationFrame(autoScroll.raf);
+  autoScroll.raf = requestAnimationFrame(scrollTick);
+  document.body.classList.toggle("cue-edge-top", dir < 0);
+  document.body.classList.toggle("cue-edge-bottom", dir > 0);
+}
+
+function stopAutoScroll(announce = true) {
+  const was = autoScroll.dir;
+  autoScroll.dir = 0;
+  cancelAnimationFrame(autoScroll.raf);
+  document.body.classList.remove("cue-edge-top", "cue-edge-bottom");
+  invalidate();
+  if (announce && was) bus.emit("SAY", { text: "Stopped." });
+  return Boolean(was);
+}
+
 bus.on("UTTERANCE", ({ text, final }) => {
+  // While the page is moving, "stop" means stop scrolling, not stop Cue. Acted
+  // on from the partial transcript so the page halts the moment it is said.
+  if (autoScroll.dir && STOP_SCROLL.test(text)) {
+    stopAutoScroll(false);
+    // The final transcript of this same "stop" follows; swallow it so it does
+    // not reach the exit handler and switch Cue off.
+    autoScroll.swallowUntil = final ? 0 : Date.now() + 2500;
+    ui.heard.textContent = text;
+    return;
+  }
+  if (final && autoScroll.swallowUntil > Date.now() && STOP_SCROLL.test(text)) {
+    autoScroll.swallowUntil = 0;
+    ui.heard.textContent = text;
+    return;
+  }
+  if (autoScroll.dir && final) {
+    const speedUp = /\b(?:faster|speed up|quicker)\b/i.test(text);
+    const slowDown = /\b(?:slower|slow down)\b/i.test(text);
+    if (speedUp || slowDown) {
+      startAutoScroll(autoScroll.dir, autoScroll.speed + (speedUp ? 1 : -1));
+      bus.emit("SAY", { text: speedUp ? "Faster." : "Slower." });
+      return;
+    }
+  }
   if (final && HALT.test(text.trim().toLowerCase().replace(/[.!?,]+/g, "").replace(/\s+/g, " "))) {
     void exitCue();
     return;
@@ -505,7 +629,7 @@ async function beginTurn(text) {
   try {
     const res = await fetch(url("/utterance"), {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text, context: context(text) }),
+      body: JSON.stringify({ text, context: await withDetails(text) }),
     });
     const out = await res.json();
     // They kept talking, or entered private payment, while this request was out.
@@ -813,7 +937,18 @@ function perform(verb, args, opts = {}) {
     return false;
   }
   switch (verb) {
+    case "scroll_start": {
+      if (!["up", "down"].includes(args.dir)) return false;
+      const speed = args.speed === "fast" ? 2 : args.speed === "slow" ? 0 : autoScroll.dir ? autoScroll.speed : 1;
+      startAutoScroll(args.dir === "down" ? 1 : -1, speed);
+      bus.emit("SAY", { text: `Scrolling ${args.dir}.` });
+      break;
+    }
+    case "scroll_stop":
+      if (!stopAutoScroll(true)) return false;
+      break;
     case "scroll":
+      stopAutoScroll(false);
       if (!["up", "down", "left", "right", "top", "bottom"].includes(args.dir)) return false;
       if (args.dir === "top" || args.dir === "bottom") {
         const box = pageScroller();
@@ -830,6 +965,7 @@ function perform(verb, args, opts = {}) {
       }
       break;
     case "history":
+      stopAutoScroll(false);
       if (args.dir === "back") history.back();
       else if (args.dir === "forward") history.forward();
       else return false;
@@ -1041,7 +1177,7 @@ function perform(verb, args, opts = {}) {
     // spoken phrase against the page's own accessibility names and click it.
     // Works on a page nobody tagged for Cue, which is the whole point.
     case "search": {
-      const q = String(args.query || "").trim().slice(0, 80);
+      const q = String(args.query || "").trim().slice(0, 120);
       if (q.length < 2) {
         bus.emit("SAY", { text: "What should I search for?" });
         return false;
@@ -1217,6 +1353,15 @@ export async function boot() {
     }, point, { workers: 2, limit: 3 }).then((found) => { if (!globalThis.__cueEnded) site = found; }).catch(() => {});
   };
   document.addEventListener("routechange", refreshSite);
+  if (CONFIG.injected) {
+    // Read the products on screen in the background so answers are instant.
+    const warm = () => {
+      if (document.visibilityState !== "visible" || globalThis.__cueEnded) return;
+      details.prefetch(detailUrls(null).map((p) => p.url));
+    };
+    setInterval(warm, 3000);
+    warm();
+  }
   bus.on("STATE", (s) => { if (s.calibrated) refreshSite(); });
 
   // Ask for the mic BEFORE the camera prompt and before calibration. Chrome
@@ -1328,7 +1473,3 @@ window.cue = { bus, gaze, voice, badges, context, perform, boot, say, recalibrat
                get pending() { return pendingConfirm; } };
 window.aura = window.cue;          // nothing that already says aura.* breaks
 
-// DOMContentLoaded may already have fired — it will have, for anything
-// injected into a live page — so check rather than assume.
-if (document.readyState === "loading") addEventListener("DOMContentLoaded", boot, { once: true });
-else boot();

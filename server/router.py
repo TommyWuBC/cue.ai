@@ -41,6 +41,25 @@ def route(text: str):
     if re.fullmatch(r"(?:please )?(?:recalibrate|calibrate again|calibrate my eyes|fix my gaze|fix gaze)", t):
         return result("Let's recalibrate your gaze.", [action("recalibrate")])
 
+    lead = r"(?:hey cue )?(?:(?:please|can you|could you|cue|keep|start|just) )*"
+    # "a bit", "a little", "once", "one page" is a single step; everything else
+    # keeps scrolling slowly until they say stop.
+    step = re.fullmatch(lead + r"scroll (up|down) (?:a (?:bit|little)|once|one (?:page|screen)|a page|a screen)(?: please)?", t)
+    if step:
+        return result(actions=[action("scroll", dir=step.group(1))])
+    scroll = re.fullmatch(lead + r"(?:scroll|scrolling|go|move) (up|down)"
+                          r"(?: (?:slowly|slow|fast|faster|quickly|more|again|please|the page|for me))*"
+                          r"(?: (?:so i can|to) see.*)?", t)
+    if scroll:
+        speed = "fast" if re.search(r"\b(?:fast|faster|quickly)\b", t) else \
+                "slow" if re.search(r"\bslow(?:ly)?\b", t) else None
+        args = {"dir": scroll.group(1), **({"speed": speed} if speed else {})}
+        return result(actions=[action("scroll_start", **args)])
+    if re.fullmatch(r"(?:please )?(?:stop scrolling|stop scroll|stop the scroll)", t):
+        return result(actions=[action("scroll_stop")])
+    if re.fullmatch(r"(?:hey cue )?(?:(?:please|can you|could you|cue) )*(?:scroll|go) to the (top|bottom)", t):
+        return result(actions=[action("scroll", dir=re.search(r"top|bottom", t).group(0))])
+
     asked = re.fullmatch(r"what(?:'s|s| is) (?:number )?([a-z0-9]+)\??", t)
     if asked:
         word = asked.group(1)

@@ -1,3 +1,4 @@
+import json
 import os, pathlib
 from dotenv import load_dotenv
 load_dotenv(pathlib.Path(__file__).parent.parent / ".env")
@@ -155,6 +156,12 @@ def merchant_orders():
 @app.post("/utterance")
 def utterance(u: Utterance):
     session = (u.context or {}).get("session") if isinstance(u.context, dict) else None
+    ctx = u.context if isinstance(u.context, dict) else {}
+    details = ctx.get("product_details") if isinstance(ctx.get("product_details"), list) else []
+    if ctx.get("url"):
+        print(f"[ctx] build={str(ctx.get('client_build') or 'OLD (no build stamp)')[:40]} "
+              f"details={len(details)} stats={json.dumps(ctx.get('details_stats'))[:300]} "
+              f"{[str((d or {}).get('title', ''))[:30] for d in details[:3]]}", flush=True)
     fast = router.route(u.text)
     if fast:
         shopper.note(session, u.text, fast)

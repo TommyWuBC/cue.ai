@@ -97,7 +97,15 @@ async function start(tab) {
       args: [SERVER.origin, models, splashImage, session],
     });
     await chrome.scripting.insertCSS({ target, files: ['client/overlay.css'] });
-    await chrome.scripting.executeScript({ target, files: ['vendor/webgazer.js'] });
+    // WebGazer bundles TensorFlow.js, which registers its WebGL kernels on the
+    // page's own global. Evaluating it twice in one page re-registers every
+    // kernel and floods the console. Inject it only if it is not already there.
+    const [loaded] = await chrome.scripting.executeScript({
+      target, func: () => Boolean(globalThis.webgazer),
+    });
+    if (!loaded?.result) {
+      await chrome.scripting.executeScript({ target, files: ['vendor/webgazer.js'] });
+    }
     await chrome.scripting.executeScript({ target, files: ['extension/extract.js', 'extension/content.js'] });
     await updateSession(tab.id, async () => {
       const key = sessionKey(tab.id);
