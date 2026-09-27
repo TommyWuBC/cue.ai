@@ -7,21 +7,19 @@
 // a robot check to cookieless requests; a product-page GET changes nothing. Everything read is
 // untrusted evidence for the agent, never an instruction.
 
-const UNSAFE = /\/(?:cart|checkout|signin|sign-in|login|logout|ap\/|gp\/buy|gp\/cart|gp\/css|wishlist|account|order|addtocart|add-to-cart)\b/i;
-const PRODUCTISH = /\/(?:dp|gp\/product|product|products|p|item|itm|ip)\//i;
+import { canonicalProductUrl } from './knowledge.js';
+
 const MAX_HTML = 1_500_000;
 const TIMEOUT_MS = 6000;
-const MAX_CACHE = 40;
+const MAX_CACHE = 80;
 
 const clean = (v, n = 160) => String(v ?? "").replace(/[\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, n);
 
 export function safeProductUrl(url, pageUrl) {
   try {
-    const a = new URL(url, pageUrl), b = new URL(pageUrl);
-    if (a.protocol !== "https:" || a.origin !== b.origin) return null;
-    if (UNSAFE.test(a.pathname) || !PRODUCTISH.test(a.pathname)) return null;
-    a.hash = "";
-    return a.href;
+    if (new URL(pageUrl).protocol !== "https:") return null;
+    const canon = canonicalProductUrl(url, pageUrl);
+    return canon && new URL(canon).protocol === "https:" ? canon : null;
   } catch { return null; }
 }
 
@@ -139,7 +137,7 @@ export function createDetails({ fetchImpl = globalThis.fetch, parse = null, page
   return {
     get,
     stats: () => ({ ...stats, cached: cache.size }),
-    prefetch(urls) { for (const u of urls.slice(0, 4)) void get(u); },
+    prefetch(urls, max = 12) { for (const u of urls.slice(0, max)) void get(u); },
     /** Wait briefly for pages the shopper is asking about, never longer than `ms`. */
     async ensure(urls, ms = 1800) {
       await Promise.race([Promise.all(urls.map(get)), new Promise((r) => setTimeout(r, ms))]);

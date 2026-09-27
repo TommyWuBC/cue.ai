@@ -22,3 +22,13 @@ test('size and color are taken from the words, and both are required before an a
   assert.deepEqual(missingChoices({ variants: ['One size'], colors: [{ name: 'Black' }] }, {}), { size: false, color: false });
   assert.match(optionPrompt(coat.title, { size: true, color: true }, coat), /size and color/);
 });
+
+test("a category word shared by most of the page does not trigger Which one", () => {
+  const page = [
+    { title: "Soundcore Q20i Wireless Headphones" }, { title: "Sony WH Headphones" },
+    { title: "Bose Headphones" }, { title: "Rated 4.5 out of 5 stars by 3217 reviews. Go to review section" },
+  ];
+  assert.deepEqual(matchCandidates("top five headphones on this page", page), []);
+  assert.deepEqual(matchCandidates("tell me about reviews and durability", page), []);
+  assert.equal(matchCandidates("the soundcore one", page).length, 1);
+});

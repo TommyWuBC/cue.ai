@@ -18,9 +18,12 @@
     const types = Array.isArray(node['@type']) ? node['@type'] : [node['@type']];
     return types.some(type => /(^|\/)Product$/i.test(type || ''));
   };
-  const rectVisible = el => {
+  // Laid out, but not necessarily on screen. Someone who cannot scroll freely
+  // still needs Cue to know what is further down the page — reading only the
+  // viewport is why "what is in my cart" answered with the first two rows.
+  const laidOut = el => {
     const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth;
+    return r.width > 0 && r.height > 0;
   };
   const normalize = (node, el, highlight, pageUrl) => {
     const offer = Array.isArray(node.offers) ? node.offers[0] : node.offers || {};
@@ -61,7 +64,7 @@
     if (pageProduct) {
       const anchor = doc.querySelector('main h1, h1');
       const el = anchor?.closest('article, main') || anchor;
-      if (el && rectVisible(el)) {
+      if (el && laidOut(el)) {
         const item = normalize(pageProduct, el, anchor, pageUrl);
         if (item) { found.push(item); seen.add(item.product.id); }
       }
@@ -72,7 +75,7 @@
     const cards = doc.querySelectorAll(
       '[data-component-type="s-search-result"][data-asin], .product-item, [data-testid="product-card"]');
     for (const card of cards) {
-      if (!rectVisible(card)) continue;
+      if (!laidOut(card)) continue;
       // Amazon now puts the brand in the first h2 and the actual product title
       // in a second h2. The title's enclosing anchor is the product link.
       const amazonTitle = card.matches?.('[data-component-type="s-search-result"][data-asin]')
@@ -98,9 +101,9 @@
       if (seen.has(card.product.id)) continue;
       found.push(card);
       seen.add(card.product.id);
-      if (found.length >= 40) break;
+      if (found.length >= 60) break;
     }
-    return found.slice(0, 40);
+    return found.slice(0, 60);
   }
 
   // Any shop: a visible card or a large linked image with a real title.
@@ -113,7 +116,7 @@
     for (const link of nodes) {
       if (link.closest?.('nav, header, footer, [role="navigation"], [role="banner"], [role="contentinfo"]')) continue;
       const card = link.closest?.('article, li, [role="listitem"]') || link;
-      if (!rectVisible(card)) continue;
+      if (!laidOut(card)) continue;
       const box = card.getBoundingClientRect?.() || link.getBoundingClientRect?.();
       if (!box || box.width < 80 || box.height < 80) continue;
       const href = link.href || '';
@@ -128,7 +131,7 @@
       out.push({ el: card, product: {
         id: clean(href), title, price: amount, currency: 'USD', url: href, attrs: {},
       } });
-      if (out.length >= 40) break;
+      if (out.length >= 60) break;
     }
     return out;
   }

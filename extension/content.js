@@ -53,13 +53,12 @@
       getItem: (key) => (key in bag ? bag[key] : null),
       setItem: (key, next) => { bag[key] = next; persist(); },
     };
-    console.log('[cue] Skipping aura import for testing');
-    // const aura = await import(chrome.runtime.getURL('client/aura.js'));
-    // if (globalThis.__cueExited) {
-    //   globalThis.__cueExited = false;
-    //   await aura.boot();
-    // }
-    // await import(chrome.runtime.getURL('client/avatar.js'));
+    const aura = await import(chrome.runtime.getURL('client/aura.js'));
+    if (globalThis.__cueExited) {
+      globalThis.__cueExited = false;
+      await aura.boot();
+    }
+    await import(chrome.runtime.getURL('client/avatar.js'));
   };
   boot().catch(error => {
     console.error('[cue] Could not load the shopping overlay:', error);

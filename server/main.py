@@ -43,13 +43,16 @@ class Utterance(BaseModel):
     context: dict = {}
 
 
-def _trace(text: str, out: dict):
-    """One line per turn: what came in, who handled it, what happens next.
-    Paired with [stt] heard, this makes every failure legible from the terminal
-    instead of requiring the browser console."""
+def _trace(text: str, out: dict, ctx: dict | None = None):
+    """One line per turn: what came in, what page it was on, who handled it, and
+    what happens next. `ask` is staged, not performed, and leaving it out of the
+    log made a correct readback look like Cue had done nothing at all."""
     verbs = ",".join(a.get("verb", "?") for a in out.get("do", [])) or "-"
-    say = (out.get("say") or "")[:60]
-    print(f'[turn] "{text}" -> {out.get("source", "?"):8} do={verbs:28} say="{say}"', flush=True)
+    staged = ",".join(a.get("verb", "?") for a in (out.get("ask") or []))
+    page = (ctx or {}).get("page") if isinstance((ctx or {}).get("page"), dict) else {}
+    where = f'{page.get("kind", "?")}:{str(page.get("title") or "")[:36]}'
+    print(f'[turn] "{text[:70]}" [{where}] -> {out.get("source", "?"):8} '
+          f'do={verbs:24}{" ask=" + staged if staged else ""} say="{(out.get("say") or "")[:60]}"', flush=True)
     return out
 
 class CartItem(BaseModel):
@@ -158,26 +161,35 @@ def utterance(u: Utterance):
     session = (u.context or {}).get("session") if isinstance(u.context, dict) else None
     ctx = u.context if isinstance(u.context, dict) else {}
     details = ctx.get("product_details") if isinstance(ctx.get("product_details"), list) else []
+    known = ctx.get("known") if isinstance(ctx.get("known"), list) else []
+    convo = ctx.get("convo") if isinstance(ctx.get("convo"), list) else []
+    # The page speaks lines the server never sees (router actions, refusals like
+    # "I don't see an add button"). They come back in convo, and without them the
+    # log shows a turn that looks fine and a shopper who heard something else.
+    spoken = [t.get("content", "") for t in convo if isinstance(t, dict) and t.get("role") == "assistant"]
+    if spoken:
+        print(f'[said] "{spoken[-1][:120]}"', flush=True)
     if ctx.get("url"):
         print(f"[ctx] build={str(ctx.get('client_build') or 'OLD (no build stamp)')[:40]} "
-              f"details={len(details)} stats={json.dumps(ctx.get('details_stats'))[:300]} "
+              f"details={len(details)} known={len(known)} convo={len(ctx.get('convo') or [])} "
+              f"stats={json.dumps(ctx.get('details_stats'))[:260]} "
               f"{[str((d or {}).get('title', ''))[:30] for d in details[:3]]}", flush=True)
     fast = router.route(u.text)
     if fast:
         shopper.note(session, u.text, fast)
-        return _trace(u.text, fast)
-    if os.getenv("XAI_API_KEY"):
+        return _trace(u.text, fast, ctx)
+    if os.getenv("ANTHROPIC_API_KEY"):
         try:
             import agent
             out = agent.respond(u.text, u.context, shopper.prompt_block(session))
             shopper.note(session, u.text, out)
-            return _trace(u.text, out)
+            return _trace(u.text, out, ctx)
         except Exception as e:
             # Never let a dead key or saturated venue wifi kill the demo.
             print(f"[agent] {type(e).__name__}: {e} -> falling back to local answerer", flush=True)
     out = fallback.answer(u.text, u.context)
     shopper.note(session, u.text, out)
-    return _trace(u.text, out)
+    return _trace(u.text, out, ctx)
 
 
 # ── Speech in ───────────────────────────────────────────────────────────────
@@ -208,8 +220,9 @@ def speak(text: str):
 @app.get("/health")
 def health():
     return {"ok": True, "tts": tts.budget_status(), "stt": stt.status(),
-            "grok_key": bool(os.getenv("XAI_API_KEY")),
-            "grok_model": os.getenv("GROK_MODEL", "grok-4")}
+            "agent_key": bool(os.getenv("ANTHROPIC_API_KEY")),
+            "agent_model": os.getenv("CUE_MODEL", "claude-haiku-4-5-20251001"),
+            "stt_key": bool(os.getenv("XAI_API_KEY"))}
 
 
 @app.get("/models")

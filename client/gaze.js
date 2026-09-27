@@ -377,7 +377,7 @@ function checkQuality() {
   // `conf < 0.45` test latched qualityLow a couple of seconds after every
   // calibration, cleared focus, and the dwell loop then refused to commit
   // anything ever again. Cue went silent right after calibrating and looked
-  // broken. Low confidence is what the badges and the drift nudge are for; it
+  // broken. Low confidence is what the soft outline and drift nudge are for; it
   // is not a reason to stop working.
   const poor = stale || outside;
 
@@ -997,7 +997,7 @@ async function calibrateOnce({ allowRetry = true, maxAttempts = 2 } = {}) {
         : "Alright. I'll number the items — just say the number of the one you want.",
     });
     // Tell the rest of the app whether gaze is precise enough to be trusted as
-    // a pointer. Below this bar, numbered badges lead the interaction.
+    // a pointer. Below this bar, what the shopper says leads the interaction.
     state.precise = !!acc && q <= POOR_PX;
     bus.emit("STATE", { precise: state.precise });
     state.qualityLow = !acc;

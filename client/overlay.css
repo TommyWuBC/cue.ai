@@ -19,11 +19,11 @@
    Everything Cue draws over the page has to be listed here or it floats on top
    of the dots the user is meant to be looking at. */
 body:has(.aura-cal) .aura-reticle, body:has(.aura-cal) .aura-outline,
-body:has(dialog:modal) .aura-outline, body:has(dialog:modal) .cue-badges { display: none; }
+body:has(dialog:modal) .aura-outline { display: none; }
 /* The avatar promotes this root into the browser's top layer, so z-index no
    longer applies and everything in here paints over the page. Hide the whole
    root during calibration rather than listing pieces: the HUD would cover the
-   lower-left training point and the number badges floated over the dots. */
+   lower-left training point floated over the dots. */
 body:has(.aura-cal) #aura-root,
 body:has(.cue-splash) #aura-root { display: none !important; visibility: hidden !important; }
 /* visibility:hidden was not enough: the dock's backdrop-filter still sampled
@@ -155,21 +155,6 @@ body:has(.cue-splash) #aura-root { visibility: hidden; }
   .cue-splash, .cue-splash[popover] { transition: none; }
 }
 
-/* ── Numbered selection badges ───────────────────────────────────────────── */
-/* Measured gaze error on a real face is 220–350px; a product tile is ~250px.
-   Gaze picks the neighbourhood, these pick the item, and an audience standing
-   behind the laptop can read them. How many appear scales with the measured
-   error — see badges.js setPrecision(). */
-.cue-badges { position: absolute; inset: 0; pointer-events: none; }
-.cue-badge { position: absolute; min-width: 34px; height: 34px; padding: 0 10px;
-  border-radius: 999px; background: var(--cue, #2f6bff); color: #fff;
-  font: 600 17px/34px var(--cue-font, -apple-system, sans-serif); text-align: center;
-  letter-spacing: -.01em;
-  box-shadow: 0 2px 8px rgba(20,24,40,.24), 0 0 0 3px rgba(255,255,255,.9);
-  will-change: transform; transition: opacity .14s ease, background .14s ease; }
-.cue-badge[data-focused="true"] { background: #1d1d1f;
-  box-shadow: 0 4px 14px rgba(20,24,40,.34), 0 0 0 3px rgba(255,255,255,.95); }
-
 /* Gaze below the precision bar: the outline is a guess, not an assertion. At
    242px it lands on the wrong card two times in three. */
 .aura-outline[data-guess="true"] { outline-style: dashed; outline-width: 2px; opacity: .55; }
@@ -209,19 +194,6 @@ body:has(.cue-splash) #aura-root { visibility: hidden; }
 /* Three training points sit on the bottom edge, where the hint lives — it
    landed right on top of the dot the user was told to look at. */
 .aura-cal-hint[data-pos="top"] { top: 36px; bottom: auto; }
-
-/* Every numbered candidate gets a soft region, not just a number. At 220-350px
-   the honest signal is "somewhere around here", so show the neighbourhood and
-   let the focused one read strongest. This is what "roughly looking at"
-   actually looks like. */
-.cue-cand { position: absolute; left: 0; top: 0; border-radius: 6px;
-  background: rgba(47,107,255,.10);
-  outline: 2px solid rgba(47,107,255,.45); outline-offset: 3px;
-  transition: background .14s ease, outline-color .14s ease, opacity .14s ease;
-  will-change: transform, width, height; }
-.cue-cand[data-focused="true"] { background: rgba(47,107,255,.15);
-  outline: 2.5px solid var(--cue, #2f6bff); outline-offset: 4px;
-  box-shadow: 0 0 0 8px rgba(47,107,255,.10); }
 
 /* A visible cue that looking at the edge is doing something, so it never feels
    like the page is drifting on its own. */
