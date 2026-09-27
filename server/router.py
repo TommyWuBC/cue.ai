@@ -78,7 +78,7 @@ def route(text: str):
     if not t:
         return None
 
-    if t in {"end", "cue end", "stop cue", "pause cue"}:
+    if t in {"end", "cue end", "stop cue", "pause cue", "quit", "exit", "quit cue", "turn off"}:
         return result("Paused.", [action("stop_cue")])
     if t in {"no", "cancel", "cancel checkout", "cancel order"}:
         return result(actions=[action("cancel_checkout")])

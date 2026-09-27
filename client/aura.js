@@ -127,7 +127,7 @@ function learnPage() {
   knowledge.observe(items.map((t) => ({ product: t.product, el: t.el })));
 }
 // Bumped by hand when the client changes, so the server log shows which build is running.
-const CLIENT_BUILD = "2026-09-27 dismiss+scroll";
+const CLIENT_BUILD = "2026-09-27 stop-vs-quit";
 
 const PRODUCT_VERBS = new Set(["add_to_cart", "select_variant", "select_color"]);
 
@@ -664,7 +664,10 @@ function actionSay(text) {
   actionSayTimer = setTimeout(() => bus.emit("SAY", { text }), 0);
 }
 const QUICK = /^(?:yes|yeah|no|nope|cancel|end|cue end|[1-9]|one|two|three|four|five|six|seven|eight|nine)$/i;
-const HALT = /^(?:exit|quit|stop|go away|shut down|turn(?: yourself)? off|disable|end|cue end|stop cue|pause cue)(?: cue)?$/i;
+// Ending Cue takes a word that means only that. "Stop" is what people say to a
+// scroll that has gone too far, and it used to shut Cue down instead — the one
+// command you cannot undo by saying it again.
+const HALT = /^(?:exit|quit|go away|shut down|turn(?: yourself)? off|disable|end|cue end|stop cue|quit cue|pause cue)(?: cue)?$/i;
 
 // "scroll down" keeps going, slowly, until they say stop. Reading pace, not a
 // jump: someone who cannot scroll themselves needs to see the page pass by.
@@ -1287,16 +1290,22 @@ function confirmMoney(el, name) {
   const amount = total ?? (typeof p?.price === "number" ? `$${p.price.toFixed(2)}` : null);
   pendingConfirm = { kind: "money", el, name };
   bus.emit("SAY", { text: amount
-    ? `That's ${amount}, and it's the real one. Want me to press it?`
-    : `That one spends money for real. Want me to press it?` });
+    ? `${amount}, and this one actually buys it. Want me to press it?`
+    : `This one actually buys it. Want me to press it?` });
 }
 
 // The order total as the page itself prints it, so the amount read back is the
-// shop's number and not something inferred from a card.
+// shop's number and not something inferred from a card. Most specific label
+// first: Amazon's cart says "Subtotal (1 item): $44.99", which an \btotal\b
+// pattern misses entirely — and a money readback with no amount in it is the
+// one thing this sentence exists to carry.
 function pageTotal() {
   const text = document.body?.innerText || "";
-  const m = text.match(/\b(?:order total|grand total|total)\b[^$\n]{0,40}(\$[\d,]+\.\d{2})/i);
-  return m ? m[1] : null;
+  for (const label of ["order total", "grand total", "total", "subtotal"]) {
+    const m = text.match(new RegExp(`${label}[^$\n]{0,40}(\\$[\\d,]+\\.\\d{2})`, "i"));
+    if (m) return m[1];
+  }
+  return null;
 }
 
 function describeAdd(card) {
@@ -1338,7 +1347,11 @@ function perform(verb, args, opts = {}) {
       break;
     }
     case "scroll_stop":
-      if (!stopAutoScroll(!opts.narrated)) return false;
+      if (!stopAutoScroll(!opts.narrated)) {
+        // Nothing was moving, so "stop" was aimed at the talking.
+        voice.stopSpeaking?.();
+        return false;
+      }
       break;
     case "scroll":
       stopAutoScroll(false);

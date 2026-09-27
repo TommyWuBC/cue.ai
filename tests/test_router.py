@@ -82,3 +82,11 @@ if __name__ == '__main__':
         # A plain no during a staged confirmation must stay a cancellation.
         for phrase in ('no', 'cancel', 'cancel checkout'):
             self.assertEqual(router.route(phrase)['do'], [{'verb': 'cancel_checkout', 'args': {}}], phrase)
+
+    def test_stop_stops_the_scroll_and_quit_quits(self):
+        """Saying "stop" to a runaway scroll used to shut Cue down entirely —
+        the one command a voice user cannot undo by repeating it."""
+        for phrase in ('stop', 'stop scrolling', 'cue stop please', "that's enough"):
+            self.assertEqual(router.route(phrase)['do'], [{'verb': 'scroll_stop', 'args': {}}], phrase)
+        for phrase in ('quit', 'exit', 'stop cue', 'quit cue', 'end'):
+            self.assertEqual(router.route(phrase)['do'], [{'verb': 'stop_cue', 'args': {}}], phrase)
