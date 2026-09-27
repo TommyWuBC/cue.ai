@@ -114,12 +114,14 @@ export function update(x, y, focusedId) {
     const box = document.createElement("div");
     box.className = "cue-cand";
     box.dataset.focused = String(target.id === focusedId);
+    box.dataset.kind = target.kind;
     root.appendChild(box);
 
     const el = document.createElement("div");
     el.className = "cue-badge";
     el.textContent = String(k + 1);
     el.dataset.focused = String(target.id === focusedId);
+    el.dataset.kind = target.kind;
     root.appendChild(el);
     return { target, n: k + 1, el, box };
   });

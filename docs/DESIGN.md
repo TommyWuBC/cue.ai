@@ -25,9 +25,16 @@ So **gaze is a region signal, not a pointer**, and everything follows from that:
   barely narrows anything, so *everything on screen* gets a number and the
   voice does all the work. Busier, but it cannot miss — verified 6/6 reachable
   at 341px, where numbering only four would sometimes omit the wanted item.
-- Below the precision bar the focus outline goes dashed and semi-transparent.
+- Below the precision bar the focus brackets thin out and fade.
   At 242px a confident outline is on the *wrong* card two times in three —
   showing certainty we do not have is worse than showing none.
+- **What it looks like** (`client/overlay.css`): each numbered badge is a small
+  Cue mark, the number inside the mark's C with the dot in its opening; the
+  focused badge's dot turns Cue blue. Candidates get four corner brackets set
+  in the gutter outside the card, never a tinted box over the photo, and
+  buttons get only their number. The reticle is the mark's dot. Warnings
+  (uncertain gaze, drift, the calibration quality card) use the mark's
+  charcoal and off-white, and the card's gauge is the C, filled by precision.
 - The reticle grows as confidence drops. Honest beats fake-precise.
 
 **Do not "fix" this by making the outline bold again or removing the badges.**
