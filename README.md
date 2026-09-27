@@ -1,4 +1,4 @@
-# Cue — shop by talking
+# Cue: shop by talking and looking
 
 Cue shops a real site for someone who cannot use a mouse. You talk; it reads the
 page, answers from what is actually there, compares products side by side, and
