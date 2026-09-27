@@ -9,7 +9,7 @@ const WAKE = /\b(cue|q|queue|kew|cu|coo|aura|ora|aurora)\b/i;
 // Once you have said the wake word you get a window to keep talking without
 // repeating it. Real conversation is "Cue, is this wool?" ... "does it run
 // small?" — not the wake word every single time.
-const WAKE_WINDOW_MS = 12000;
+const WAKE_WINDOW_MS = 10 * 60 * 1000;   // say "Hey Cue" once; stays open while you keep talking
 
 // Chrome (and Grok) deliver a final transcript some hundreds of ms AFTER
 // speech stops — which is after the user has let go of the key. Reading an

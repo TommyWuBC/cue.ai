@@ -487,7 +487,7 @@ function packEye(eye) {
     source.getContext("2d").putImageData(patch, 0, 0);
     const reduced = document.createElement("canvas");
     reduced.width = width; reduced.height = height;
-    const ctx = reduced.getContext("2d");
+    const ctx = reduced.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(source, 0, 0, width, height);
     data = ctx.getImageData(0, 0, width, height).data;
   }

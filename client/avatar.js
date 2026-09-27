@@ -402,7 +402,7 @@ class Rig {
     e.cheeks.forEach(ch => ch.setAttribute("opacity", (.55 * s.happy.v).toFixed(3)));
 
     // ── Mouth, smile, thinking dots ──────────────────────────────────────
-    const mh = s.mouth.v, mw = s.mouthW.v;
+    const mh = Math.max(0.1, s.mouth.v), mw = s.mouthW.v;
     const mouthVis = (1 - s.smile.v) * (1 - s.dots.v);
     e.mouth.setAttribute("x", (60 - mw / 2).toFixed(2)); e.mouth.setAttribute("width", mw.toFixed(2));
     e.mouth.setAttribute("y", (75 - mh / 2).toFixed(2)); e.mouth.setAttribute("height", mh.toFixed(2));

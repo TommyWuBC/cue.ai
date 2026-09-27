@@ -38,10 +38,18 @@ either cap, say so and do not propose it.
 
 Reply with JSON only: {"say": "<what to speak>", "do": []}.
 You may propose: scroll{dir}, focus_nth{n}, focus_number{n}, select_variant{value},
-select_color{value}, click_named{name}, search{query}, list_controls{}, add_to_cart{}, checkout{}.
+select_color{value}, click_named{name}, search{query}, fill{field, text}, find_on_page{text}, list_controls{}, add_to_cart{}, checkout{}.
 
 To search the shop, use search with the words they asked for. The page types them
 into its search bar and opens the results. Do not invent a URL.
+
+`fill` types into a field named in `fields`, without submitting; then click_named
+its button if they ask. `find_on_page` scrolls to text copied verbatim from
+`page_text`. Never fill passwords, card numbers or codes, and never click Buy Now /
+Place order style controls on a real site; tell them to do that part themselves.
+If the shopper names an item by badge number ("number three"), propose
+focus_number{n} FIRST, then add_to_cart. Never rely on where they are looking
+when they have told you the number.
 
 You CAN shop on their behalf — that is the point. What you cannot do is
 commit. `checkout` only stages the order and reads it back aloud; it charges
@@ -135,6 +143,11 @@ def sanitize(out):
             return {"verb": verb, "args": {"name": args["name"][:60]}}
         if verb == "search" and isinstance(args.get("query"), str) and 1 <= len(args["query"].strip()) <= 80:
             return {"verb": verb, "args": {"query": args["query"].strip()[:80]}}
+        if verb == "fill" and isinstance(args.get("text"), str) and isinstance(args.get("field", ""), str) \
+                and 1 <= len(args["text"]) <= 200:
+            return {"verb": verb, "args": {"field": args.get("field", "")[:60], "text": args["text"]}}
+        if verb == "find_on_page" and isinstance(args.get("text"), str) and 1 <= len(args["text"]) <= 80:
+            return {"verb": verb, "args": {"text": args["text"][:80]}}
         if verb in {"list_controls", "add_to_cart", "checkout"}:
             return {"verb": verb, "args": {}}
         return None
@@ -160,6 +173,10 @@ def sanitize(out):
             actions.append({"verb": verb, "args": {"name": args["name"][:60]}})
         elif verb == "search" and isinstance(args.get("query"), str) and 1 <= len(args["query"].strip()) <= 80:
             actions.append({"verb": verb, "args": {"query": args["query"].strip()[:80]}})
+        elif verb in {"fill", "find_on_page"}:
+            allowed = _allow(verb, args)
+            if allowed:
+                actions.append(allowed)
         elif verb == "list_controls":
             actions.append({"verb": verb, "args": {}})
         # The agent is allowed to shop. It is not allowed to COMMIT: add_to_cart
@@ -224,6 +241,7 @@ def respond(text: str, ctx: dict, memory_block=None) -> dict:
         "previous_product": _product(ctx.get("previous")),
         "also_visible": [_product(p) for p in visible[:8]],
         "page_text": _short(ctx.get("page"), 480) or "",
+        "fields": [f[:60] for f in (ctx.get("fields") or [])[:8] if isinstance(f, str)],
         "nearby_pages": [{"title": _short(p.get("title"), 60), "text": _short(p.get("text"), 180)}
                           for p in (ctx.get("nearby") or [])[:3]
                           if isinstance(p, dict)][:3],

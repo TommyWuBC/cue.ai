@@ -1,7 +1,8 @@
 import { bus } from "./bus.js";
 import * as gaze from "./gaze.js";
 import * as voice from "./voice.js";
-import { scan, nth, invalidate, controls, controlName, findControl } from "./resolver.js";
+import { scan, nth, invalidate, controls, controlName, findControl, fields, findField, setText,
+  findText, COMMITS_MONEY } from "./resolver.js";
 import * as badges from "./badges.js";
 import { CONFIG, url } from "./config.js";
 import { productMemory } from "./product-memory.js";
@@ -292,6 +293,10 @@ const EDGE_MAX_PX = 13;   // per frame at the very edge
 let edgeSince = 0, edgeDir = 0, edgeSeen = 0;
 
 function edgeScrollTick() {
+  // Gaze is too coarse to scroll by: the page drifted while people read.
+  // Scrolling is a spoken, discrete action only.
+  return;
+  // eslint-disable-next-line no-unreachable
   const p = render;
   const gs = gaze.getState();
   if (gs.calibrating || !gs.point) {
@@ -361,6 +366,7 @@ function context(utterance = "") {
     bag: bagBrief(),
     budget: budgetBrief(),
     controls: controls().slice(0, 12).map((c) => c.name),
+    fields: fields().slice(0, 8).map((f) => f.name).filter(Boolean),
     site: site ? { title: site.title, pages: (site.pages || []).slice(0, 6).map((p) => p.title).filter(Boolean) } : null,
     page: asking ? pageText(document).slice(0, 480) : "",
     nearby: asking ? nearby.map((p) => ({ title: p.title, text: (p.text || "").slice(0, 180) }))
@@ -1032,12 +1038,38 @@ function perform(verb, args, opts = {}) {
       // announces exactly what went into the bag and holds the budget, and the
       // checkout control only stages an order for readback. The charge still
       // needs a spoken yes and a passkey, which is the guarantee that matters.
+      // On a real site inside the extension there is no passkey rail, so a
+      // control that spends money is the shopper's to press, never Cue's.
+      if (COMMITS_MONEY.test(c.name) && CONFIG.injected) {
+        bus.emit("SAY", { text: `${c.name} spends money, so I won't press it. You'll need to do that yourself.` });
+        return false;
+      }
       // Say what is about to happen before it happens — on a page the user
       // cannot see well, a silent navigation is disorienting.
       bus.emit("SAY", { text: `Opening ${c.name}.` });
       c.el.click();
       break;
     }
+    // "type john into the name field" — fills a field, never submits, never
+    // touches passwords or card numbers (resolver.fields() filters those out).
+    case "fill": {
+      const el = findField(args.field ?? "");
+      if (!el) {
+        const names = fields().map((f) => f.name).filter(Boolean).slice(0, 3);
+        bus.emit("SAY", { text: names.length
+          ? `I can't find that field. I can see ${names.join(", ")}.`
+          : "I don't see anything to type into here." });
+        return false;
+      }
+      setText(el, String(args.text ?? "").slice(0, 200));
+      break;
+    }
+    case "find_on_page":
+      if (!findText(args.text)) {
+        bus.emit("SAY", { text: `I can't see ${String(args.text).slice(0, 40)} on this page.` });
+        return false;
+      }
+      break;
     case "back": history.back(); break;
     case "forward": history.forward(); break;
     case "history":

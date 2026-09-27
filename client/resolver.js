@@ -122,6 +122,113 @@ export function findControl(phrase) {
       ?? null;
 }
 
+// ── Typing and reading: what lets Cue act on a page nobody tagged ───────────
+const norm = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+
+function visible(el) {
+  const r = el.getBoundingClientRect();
+  return r.width > 4 && r.height > 4 && getComputedStyle(el).visibility !== "hidden";
+}
+
+// Never typed into by voice: credentials and payment details. Cue may shop; it
+// does not get to enter a password or a card number on anyone's behalf.
+function sensitive(el) {
+  const ac = (el.getAttribute("autocomplete") || "").toLowerCase();
+  return el.type === "password" || /^cc-|current-password|new-password|one-time/.test(ac) ||
+    /card|cvv|cvc|password|passcode|ssn/.test(norm(el.name + " " + el.id));
+}
+
+const FIELD_SEL = "input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=submit])" +
+  ":not([type=button]):not([type=file]),textarea,[contenteditable=true],[role=searchbox],[role=textbox]";
+
+export function fieldName(el) {
+  const labelled = el.labels?.[0]?.innerText;
+  return (el.getAttribute("aria-label") || labelled || el.placeholder ||
+    el.getAttribute("title") || el.name || el.id || "").trim().slice(0, 60);
+}
+
+/** Visible text fields a person could type into, minus anything sensitive. */
+export function fields() {
+  return [...document.querySelectorAll(FIELD_SEL)]
+    .filter((el) => !el.closest("#aura-root") && !el.disabled && !el.readOnly && visible(el) && !sensitive(el))
+    .map((el) => ({ el, name: fieldName(el) }));
+}
+
+export function searchBox() {
+  const all = fields();
+  return all.find((f) => f.el.type === "search" || f.el.getAttribute("role") === "searchbox")?.el
+    ?? all.find((f) => /search/.test(norm(f.name + " " + f.el.id + " " + f.el.name)))?.el ?? null;
+}
+
+export function findField(phrase) {
+  const q = norm(phrase);
+  const all = fields();
+  if (!q) return all[0]?.el ?? null;
+  return (all.find((f) => norm(f.name) === q) ?? all.find((f) => norm(f.name).includes(q)) ??
+    all.find((f) => q.includes(norm(f.name)) && norm(f.name).length > 2))?.el ?? null;
+}
+
+/** Type like a person: framework-controlled inputs ignore a bare `.value =`. */
+export function setText(el, text) {
+  el.focus();
+  if (el.isContentEditable) { el.textContent = text; }
+  else {
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement : HTMLInputElement;
+    Object.getOwnPropertyDescriptor(proto.prototype, "value").set.call(el, text);
+  }
+  el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+export function submitField(el) {
+  const form = el.form || el.closest("form");
+  if (form?.requestSubmit) { form.requestSubmit(); return true; }
+  for (const type of ["keydown", "keypress", "keyup"]) {
+    el.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
+  }
+  return true;
+}
+
+/** Visible page text, trimmed — the evidence for questions about untagged content. */
+export function pageText(limit = 2500) {
+  const root = document.querySelector("main,[role=main],#dp,#search") ?? document.body;
+  const out = [];
+  let used = 0;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n && used < limit; n = walker.nextNode()) {
+    const el = n.parentElement;
+    if (!el || el.closest("#aura-root,script,style,noscript,nav,footer") || /^(SCRIPT|STYLE)$/.test(el.tagName)) continue;
+    const t = n.nodeValue.replace(/\s+/g, " ").trim();
+    if (t.length < 3) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.bottom <= 0 || r.top >= (globalThis.innerHeight ?? Infinity)) continue;
+    out.push(t); used += t.length + 1;
+  }
+  return out.join(" ").slice(0, limit);
+}
+
+/** Scroll the first match into view and outline it. */
+export function findText(phrase) {
+  const q = norm(phrase);
+  if (!q) return false;
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const el = n.parentElement;
+    if (!el || el.closest("#aura-root,script,style,noscript") || !norm(n.nodeValue).includes(q)) continue;
+    if (!visible(el)) continue;
+    el.scrollIntoView({ block: "center", behavior: "instant" });
+    const prev = el.style.outline;
+    el.style.outline = "3px solid #f5a623";
+    setTimeout(() => { el.style.outline = prev; }, 3000);
+    return true;
+  }
+  return false;
+}
+
+// A spoken name is a weak signal on a real store. These controls commit money;
+// only the shopper's own hands (or the passkey flow on the demo store) may.
+export const COMMITS_MONEY = /\b(buy now|place (?:your )?order|complete (?:purchase|order)|pay now|confirm (?:order|purchase|payment)|subscribe now|proceed to checkout)\b/i;
+
 export function invalidate() { cache = null; cacheKey = ""; }
 // Guarded: this module is imported by the node test runner, which has no DOM.
 if (typeof addEventListener === "function") addEventListener("resize", invalidate);

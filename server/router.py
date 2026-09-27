@@ -48,6 +48,15 @@ def route(text: str):
         if n and 1 <= n <= 9:
             return result(actions=[action("describe_number", n=n)])
 
+    # "add number three to cart": the badge they said outranks where their eyes are.
+    added = re.fullmatch(r"(?:please |can you |could you )?add (?:number|item|option) ([a-z0-9]+)"
+                         r"(?: to (?:my |the )?(?:bag|cart|basket))?", t)
+    if added:
+        word = added.group(1)
+        n = int(word) if word.isdigit() else ORDINALS.get(word)
+        if n and 1 <= n <= 9:
+            return result(actions=[action("focus_number", n=n), action("add_to_cart")])
+
     bare = re.fullmatch(r"(?:number )?([a-z0-9]+)\.?", t)
     if bare and bare.group(1).isdigit() and 1 <= int(bare.group(1)) <= 9:
         return result(actions=[action("focus_number", n=int(bare.group(1)))])
