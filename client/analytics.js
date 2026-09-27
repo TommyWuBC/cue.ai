@@ -12,10 +12,7 @@ export function analyticsCommand(text, isOpen) {
 }
 
 // The Cue mark, static: same geometry as the live avatar in client/avatar.js,
-// at rest. Brand continuity — this is the one glyph a shopper already
-// associates with Cue, not a generic chart icon invented for this page. The
-// dot carries a class so the hero's larger mark can give it a single glance
-// on load (client/analytics.css); the small wordmark instance ignores it.
+// at rest. It is the one glyph a shopper already associates with Cue.
 const MARK = `<svg viewBox="0 0 120 120" role="img" aria-label="Cue">
   <defs><linearGradient id="cue-ia-tile" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0" stop-color="#2a2a2a"/><stop offset="1" stop-color="#1a1a1a"/>
@@ -27,7 +24,48 @@ const MARK = `<svg viewBox="0 0 120 120" role="img" aria-label="Cue">
   <circle class="cue-analytics-eye" cx="72" cy="60" r="6.8" fill="#5c8dff"/>
 </svg>`;
 
-const DOT_KIND = { search: "search", cart_add: "add", add_request: "add", purchase: "purchase" };
+// ── The dashboard ───────────────────────────────────────────────────────────
+// One idea per region, read top to bottom: what Cue noticed, the four numbers,
+// what you look for, when you shop, how interest became intent, and what just
+// happened. Colour follows the entity everywhere (validated palette, see
+// analytics.css): searched = blue, added = orange, bought = ink. Text never
+// wears a series colour; a dot or bar beside it carries the identity.
+
+const KIND = {
+  search: { verb: "Searched", tone: "search" },
+  cart_add: { verb: "Added", tone: "add" },
+  add_request: { verb: "Asked to add", tone: "add" },
+  purchase: { verb: "Bought", tone: "buy" },
+};
+
+const cap = (text) => String(text || "").replace(/^\s*\w/, (c) => c.toUpperCase());
+const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+
+function relativeDay(iso, now = new Date()) {
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return "";
+  const mins = Math.round((now - t) / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24 && t.getDate() === now.getDate()) return `${hours} hr ago`;
+  const y = new Date(now); y.setDate(y.getDate() - 1);
+  if (t.toDateString() === y.toDateString()) return "Yesterday";
+  return t.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+// A 7-point trend line for a figure. Drawn in the series colour, 2px, with the
+// last value marked; purely a shape cue, so it is hidden from screen readers.
+function spark(values, tone) {
+  const max = Math.max(1, ...values);
+  const w = 96, h = 28, step = w / Math.max(1, values.length - 1);
+  const pts = values.map((v, i) => [i * step, h - 3 - (v / max) * (h - 8)]);
+  const d = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  const [lx, ly] = pts.at(-1) ?? [0, h - 3];
+  return `<svg class="ci-spark ci-${tone}" viewBox="0 0 ${w} ${h}" aria-hidden="true" preserveAspectRatio="none">
+    <path d="${d}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+    <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3" fill="currentColor"/></svg>`;
+}
 
 export function dashboardHTML(data, { hasExport = false } = {}) {
   const totals = data.totals || {};
@@ -37,100 +75,154 @@ export function dashboardHTML(data, { hasExport = false } = {}) {
   const daily = data.daily || [];
   const recent = data.recent || [];
   const insight = data.insight || {};
-  const dayPeak = Math.max(1, ...daily.map(day => (day.searches || 0) + (day.adds || 0)));
-  const searchPeak = Math.max(1, ...searches.map(row => row.count));
+  const now = new Date();
 
-  const interestRows = searches.length
-    ? searches.map((item, index) => `<li class="cue-analytics-interest">
-        <span class="cue-analytics-interest-rank">${String(index + 1).padStart(2, "0")}</span>
-        <span class="cue-analytics-interest-name" style="--share:${Math.max(8, item.count / searchPeak * 100)}%">${escapeHTML(item.label)}</span>
-        <span class="cue-analytics-interest-count">${number(item.count)}</span>
-      </li>`).join("")
-    : `<li class="cue-analytics-empty">Your search themes will appear here as you shop with Cue.</li>`;
+  // Headline: say the pattern in a sentence, from the data, not a label.
+  const lead = searches[0];
+  const headline = lead?.count >= 2 ? `${cap(lead.label)} keeps coming up.`
+    : added[0] ? `${cap(added[0].label)} made it to your bag.`
+    : "Shop with Cue and your patterns show up here.";
+  const lede = insight.body || "Search, ask about things and add to your bag by voice. Cue keeps the journal; you keep the data.";
 
-  const weekCells = daily.map(day => {
-    const total = (day.searches || 0) + (day.adds || 0);
-    const ratio = total / dayPeak;
-    const weekday = new Date(`${day.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "narrow" });
-    return `<div class="cue-analytics-week-day" title="${escapeHTML(day.date)}: ${number(total)} actions">
-      <span class="cue-analytics-week-track"><i style="height:${total ? Math.max(14, ratio * 100) : 4}%;opacity:${total ? Math.max(.4, ratio) : .18}"></i></span>
-      <span class="cue-analytics-week-label">${escapeHTML(weekday)}</span></div>`;
+  // ── The four numbers ───────────────────────────────────────────────────
+  const orderWord = totals.orders === 1 ? "order" : "orders";
+  const itemsWord = totals.items_purchased === 1 ? "item" : "items";
+  const figures = [
+    { label: "Searches", value: number(totals.searches), note: "this week",
+      trend: spark(daily.map((d) => d.searches || 0), "search") },
+    { label: "Added to bag", value: number(totals.confirmed_adds),
+      note: totals.add_requests ? `${number(totals.add_requests)} more asked about` : "confirmed by voice",
+      trend: spark(daily.map((d) => d.adds || 0), "add") },
+    { label: "Orders", value: number(totals.orders), note: `${number(totals.items_purchased)} ${itemsWord} checked out`, trend: "" },
+    { label: "Demo spend", value: money(totals.demo_spend_cents), note: "no real charges", trend: "" },
+  ].map((f) => `<div class="ci-figure">
+      <span class="ci-figure-label">${escapeHTML(f.label)}</span>
+      <span class="ci-figure-value">${escapeHTML(f.value)}</span>
+      <span class="ci-figure-foot"><span>${escapeHTML(f.note)}</span>${f.trend}</span>
+    </div>`).join("");
+
+  // ── What you look for: ranked bars, one series ─────────────────────────
+  const searchPeak = Math.max(1, ...searches.map((row) => row.count));
+  const interest = searches.length ? searches.map((row) => {
+    const w = Math.max(3, (row.count / searchPeak) * 100);
+    const times = row.count === 1 ? "once" : `${number(row.count)} times`;
+    return `<li class="ci-rank" data-tip="${escapeHTML(row.label)}: searched ${times}">
+        <span class="ci-rank-label">${escapeHTML(row.label)}</span>
+        <span class="ci-rank-track"><i class="ci-search" style="--w:${w.toFixed(1)}%"></i></span>
+        <span class="ci-rank-value">${number(row.count)}</span>
+      </li>`;
+  }).join("") : `<li class="ci-empty">Your search themes will appear here as you shop with Cue.</li>`;
+
+  // ── This week: stacked columns, searched under added ───────────────────
+  const dayPeak = Math.max(1, ...daily.map((d) => (d.searches || 0) + (d.adds || 0)));
+  const todayKey = daily.at(-1)?.date;
+  const week = daily.map((d) => {
+    const s = d.searches || 0, a = d.adds || 0, date = new Date(`${d.date}T12:00:00`);
+    const long = date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    const tip = `${long}: ${number(s)} ${s === 1 ? "search" : "searches"}, ${number(a)} added`;
+    return `<div class="ci-day${d.date === todayKey ? " ci-today" : ""}" data-tip="${escapeHTML(tip)}">
+        <span class="ci-col">
+          ${a ? `<i class="ci-add" style="--h:${((a / dayPeak) * 100).toFixed(1)}%"></i>` : ""}
+          ${s ? `<i class="ci-search" style="--h:${((s / dayPeak) * 100).toFixed(1)}%"></i>` : ""}
+        </span>
+        <span class="ci-day-label">${escapeHTML(date.toLocaleDateString("en-US", { weekday: "short" }))}</span>
+      </div>`;
+  }).join("");
+  const weekTotal = daily.reduce((n, d) => n + (d.searches || 0) + (d.adds || 0), 0);
+
+  // ── From interest to intent: a three-step funnel ────────────────────────
+  const steps = [
+    { label: "Searched", value: totals.searches || 0, tone: "search" },
+    { label: "Added to bag", value: totals.confirmed_adds || 0, tone: "add" },
+    { label: "Bought", value: totals.items_purchased || 0, tone: "buy" },
+  ];
+  const funnelTop = Math.max(1, steps[0].value);
+  const funnel = steps.map((st, i) => {
+    const rate = i === 0 ? "" : `<span class="ci-rate">${pct(st.value, steps[i - 1].value)}% of ${escapeHTML(steps[i - 1].label.toLowerCase())}</span>`;
+    return `<li class="ci-step">
+        <span class="ci-step-head"><span class="ci-step-label"><i class="ci-key ci-${st.tone}"></i>${escapeHTML(st.label)}</span>
+          <b>${number(st.value)}</b></span>
+        <span class="ci-step-track"><i class="ci-${st.tone}" style="--w:${Math.max(st.value ? 2 : 0, (st.value / funnelTop) * 100).toFixed(1)}%"></i></span>
+        ${rate}
+      </li>`;
   }).join("");
 
-  const recentRows = recent.length ? recent.map(item => {
-    const kind = DOT_KIND[item.kind] || "add";
-    const verb = item.kind === "search" ? "Searched" : item.kind === "purchase" ? "Purchased"
-      : item.kind === "cart_add" ? "Added" : "Asked to add";
-    const time = new Date(item.at);
-    const stamp = Number.isNaN(time.getTime()) ? "" : time.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    return `<li><i class="cue-analytics-dot cue-analytics-dot-${kind}"></i>
-      <span class="cue-analytics-verb">${escapeHTML(verb)}</span>
-      <span class="cue-analytics-noun">${escapeHTML(item.label || "Item")}</span>
-      <time>${escapeHTML(stamp)}</time></li>`;
-  }).join("") : `<li class="cue-analytics-empty">No activity yet. Ask Cue to find something you like.</li>`;
+  // ── Items ───────────────────────────────────────────────────────────────
+  const items = (rows, empty) => rows.length ? rows.map((row) => `<li>
+      <span>${escapeHTML(row.label)}</span><b>${row.count > 1 ? `&times;${number(row.count)}` : "1"}</b></li>`).join("")
+    : `<li class="ci-empty">${escapeHTML(empty)}</li>`;
 
-  const itemRows = (items, empty) => items.length
-    ? items.map(item => `<li><span>${escapeHTML(item.label)}</span><b>&times;${number(item.count)}</b></li>`).join("")
-    : `<li class="cue-analytics-empty">${escapeHTML(empty)}</li>`;
+  // ── Recent activity ─────────────────────────────────────────────────────
+  const activity = recent.length ? recent.map((row) => {
+    const k = KIND[row.kind] || KIND.cart_add;
+    return `<li class="ci-event">
+        <i class="ci-key ci-${k.tone}"></i>
+        <span class="ci-event-text"><span class="ci-verb">${escapeHTML(k.verb)}</span> ${escapeHTML(row.label || "an item")}</span>
+        <time datetime="${escapeHTML(row.at || "")}">${escapeHTML(relativeDay(row.at, now))}</time>
+      </li>`;
+  }).join("") : `<li class="ci-empty">No activity yet. Ask Cue to find something you like.</li>`;
 
-  const orderWord = totals.orders === 1 ? "order" : "orders";
   const spendNote = totals.orders
-    ? ` ${money(totals.demo_spend_cents)} across ${number(totals.orders)} demo ${escapeHTML(orderWord)} — no real charges.`
+    ? ` ${money(totals.demo_spend_cents)} across ${number(totals.orders)} demo ${escapeHTML(orderWord)}, no real charges.`
     : "";
 
-  return `<div class="cue-analytics-shell">
-    <header class="cue-analytics-top"><div class="cue-analytics-top-inner">
-      <div class="cue-analytics-brand"><span class="cue-analytics-mark" aria-hidden="true">${MARK}</span>
-        <div class="cue-analytics-word"><b>Cue</b><span>Insights</span></div></div>
-      <div class="cue-analytics-top-actions">
-        <span class="cue-analytics-local"><i></i>Stored in your browser</span>
-        <button class="cue-analytics-close" type="button" aria-label="Close analytics">Done</button>
+  return `<div class="cue-analytics-shell ci">
+    <header class="ci-top"><div class="ci-top-inner">
+      <div class="ci-brand"><span class="ci-mark" aria-hidden="true">${MARK}</span>
+        <span class="ci-word"><b>Cue</b><span>Insights</span></span></div>
+      <div class="ci-top-actions">
+        <span class="ci-local"><i aria-hidden="true"></i>Stored in your browser</span>
+        <button class="cue-analytics-close ci-done" type="button" aria-label="Close analytics">Done</button>
       </div>
     </div></header>
-    <main class="cue-analytics-main">
 
-      <section class="cue-analytics-hero">
-        <span class="cue-analytics-hero-mark" aria-hidden="true">${MARK}</span>
-        <div class="cue-analytics-hero-text">
-          <p class="cue-analytics-hero-tag">Cue noticed</p>
-          <h1>${escapeHTML(insight.title || "Your patterns will appear here")}</h1>
-          <p class="cue-analytics-hero-body">${escapeHTML(insight.body || "Search and shop with Cue to see the interests you return to.")}</p>
-          <p class="cue-analytics-stat"><strong>${number(totals.searches)}</strong> searches,
-            <strong>${number(totals.confirmed_adds)}</strong> added to your bag, and
-            <strong>${number(totals.orders)}</strong> ${escapeHTML(orderWord)} placed.</p>
-        </div>
+    <main class="ci-main">
+      <section class="ci-hero">
+        <p class="ci-period">Your last seven days with Cue</p>
+        <h1>${escapeHTML(headline)}</h1>
+        <p class="ci-lede">${escapeHTML(lede)}</p>
       </section>
 
-      <div class="cue-analytics-sections">
-        <section class="cue-analytics-section">
-          <div class="cue-analytics-section-head"><h2>What you look for</h2><span>Most searched</span></div>
-          <ol class="cue-analytics-group cue-analytics-interests">${interestRows}</ol>
+      <section class="ci-figures" aria-label="Totals">${figures}</section>
+
+      <div class="ci-grid">
+        <section class="ci-card ci-span-7">
+          <header class="ci-card-head"><h2>What you look for</h2><span>Most searched</span></header>
+          <ol class="ci-ranks">${interest}</ol>
         </section>
 
-        <section class="cue-analytics-section">
-          <div class="cue-analytics-section-head"><h2>Your rhythm this week</h2></div>
-          <div class="cue-analytics-group cue-analytics-week" role="img" aria-label="Shopping activity over the last seven days">${weekCells}</div>
+        <section class="ci-card ci-span-5">
+          <header class="ci-card-head"><h2>This week</h2>
+            <span class="ci-legend"><span><i class="ci-key ci-search"></i>Searched</span><span><i class="ci-key ci-add"></i>Added</span></span>
+          </header>
+          <div class="ci-week" role="img" aria-label="Activity over the last seven days: ${number(weekTotal)} actions">${week}</div>
         </section>
 
-        <section class="cue-analytics-section">
-          <div class="cue-analytics-section-head"><h2>Added to bag</h2></div>
-          <ol class="cue-analytics-group cue-analytics-items">${itemRows(added, "Items you add to the demo store bag will appear here.")}</ol>
+        <section class="ci-card ci-span-5">
+          <header class="ci-card-head"><h2>From interest to intent</h2></header>
+          <ol class="ci-funnel">${funnel}</ol>
         </section>
 
-        <section class="cue-analytics-section">
-          <div class="cue-analytics-section-head"><h2>Checked out</h2></div>
-          <ol class="cue-analytics-group cue-analytics-items">${itemRows(purchased, "Items from approved demo checkouts will appear here.")}</ol>
+        <section class="ci-card ci-span-7 ci-pair">
+          <div>
+            <header class="ci-card-head"><h2>Added to bag</h2></header>
+            <ol class="ci-items">${items(added, "Items you add to the demo store bag will appear here.")}</ol>
+          </div>
+          <div>
+            <header class="ci-card-head"><h2>Checked out</h2></header>
+            <ol class="ci-items">${items(purchased, "Items from approved demo checkouts will appear here.")}</ol>
+          </div>
         </section>
 
-        <section class="cue-analytics-section">
-          <div class="cue-analytics-section-head"><h2>Recent activity</h2><span>Latest first</span></div>
-          <ol class="cue-analytics-group cue-analytics-activity">${recentRows}</ol>
+        <section class="ci-card ci-span-12">
+          <header class="ci-card-head"><h2>Recent activity</h2><span>Latest first</span></header>
+          <ol class="ci-activity">${activity}</ol>
         </section>
       </div>
 
-      <footer class="cue-analytics-footer">
+      <footer class="ci-foot">
         <span>Nothing here leaves your browser.${spendNote}</span>
-        ${hasExport ? `<button class="cue-analytics-export" type="button">Download CSV</button>` : ""}
+        ${hasExport ? `<button class="cue-analytics-export ci-export" type="button">Download CSV</button>` : ""}
       </footer>
     </main>
   </div>`;

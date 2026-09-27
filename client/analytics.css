@@ -1,217 +1,243 @@
-/* Cue's shopping journal: a single quiet column, not a dashboard. Same
-   design language as the live overlay (overlay.css) — system font, the
-   signature blue, frosted glass, dark charcoal for the mark. Variables are
-   redeclared here (not inherited from #aura-root) because store/analytics.html
-   opens this page standalone, without overlay.css ever loading. */
+/* Cue Insights: the shopper's own week, laid out like a product dashboard,
+   not a report. Same language as the Cue mark: charcoal and bone surfaces,
+   one signature blue, hairlines instead of shadows. Tokens are redeclared here
+   (not inherited from #aura-root) because store/analytics.html opens this page
+   standalone, without overlay.css.
+
+   Series colours follow the entity everywhere and were validated with the
+   dataviz palette checker against both surfaces (lightness band, chroma,
+   CVD separation, contrast): searched = blue, added = orange, bought = ink.
+   Text never wears a series colour; a key dot or bar beside it carries it. */
 #aura-root .cue-analytics {
-  --cue: #2f6bff; --cue-soft: rgba(47,107,255,.10); --cue-ring: rgba(47,107,255,.28);
-  --ink: #1d1d1f; --muted: #6e6e73; --faint: #96969c;
-  --bg: #f5f5f7; --surface: rgba(255,255,255,.78); --surface-solid: #ffffff;
-  --hairline: rgba(0,0,0,.08); --sheen: rgba(255,255,255,.65); --shadow: rgba(20,24,40,.08);
-  --good: #1f9d55;
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-  --ease: cubic-bezier(.2,.8,.2,1); --pad: clamp(20px,5vw,40px); --measure: 660px;
-  position: fixed; inset: 0; z-index: 2147483645; overflow: auto; overscroll-behavior: contain;
+  --cue: #2f6bff;
+  --s-search: #2f6bff; --s-add: #eb6834; --s-buy: #202020;
+  --ink: #202020; --ink-2: #55555a; --muted: #8a8a8f;
+  --bg: #f4f3ef; --card: #ffffff; --track: #eeede8; --hover: #f7f6f2;
+  --hairline: rgba(32,32,32,.08); --hairline-2: rgba(32,32,32,.14);
+  --glass: rgba(244,243,239,.8); --good: #1f9d55;
+  --tip-bg: #202020; --tip-ink: #f4f3ef;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue", Arial, sans-serif;
+  --display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Helvetica Neue", Arial, sans-serif;
+  --ease: cubic-bezier(.2,.8,.2,1); --pad: clamp(16px,4vw,40px); --measure: 1120px;
+  position: fixed; inset: 0; z-index: 2147483645; overflow: hidden auto; overscroll-behavior: contain;
   pointer-events: auto; background: var(--bg); color: var(--ink);
-  font: 15px/1.5 var(--font); letter-spacing: normal; text-align: left;
-  -webkit-font-smoothing: antialiased;
+  font: 14px/1.5 var(--font); letter-spacing: -.005em; text-align: left;
+  -webkit-font-smoothing: antialiased; color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   #aura-root .cue-analytics {
-    --cue: #5c8dff; --cue-soft: rgba(92,141,255,.16); --cue-ring: rgba(92,141,255,.35);
-    --ink: #f5f5f7; --muted: #98989d; --faint: #6b6b70;
-    --bg: #000000; --surface: rgba(28,28,30,.72); --surface-solid: #1c1c1e;
-    --hairline: rgba(255,255,255,.09); --sheen: rgba(255,255,255,.05); --shadow: rgba(0,0,0,.45);
-    --good: #34c759;
+    --cue: #5c8dff;
+    --s-search: #5c8dff; --s-add: #d95926; --s-buy: #f4f3ef;
+    --ink: #f4f3ef; --ink-2: #b4b4b8; --muted: #7c7c82;
+    --bg: #0d0d0d; --card: #161616; --track: #232323; --hover: #1c1c1c;
+    --hairline: rgba(255,255,255,.07); --hairline-2: rgba(255,255,255,.13);
+    --glass: rgba(13,13,13,.78); --good: #34c759;
+    --tip-bg: #f4f3ef; --tip-ink: #202020;
+    color-scheme: dark;
   }
 }
 #aura-root .cue-analytics, #aura-root .cue-analytics * { box-sizing: border-box; }
-#aura-root .cue-analytics :focus-visible { outline: 2px solid var(--cue); outline-offset: 2px; }
-#aura-root .cue-analytics strong, #aura-root .cue-analytics b { font-variant-numeric: tabular-nums; }
+#aura-root .cue-analytics :focus-visible { outline: 2px solid var(--cue); outline-offset: 2px; border-radius: 6px; }
 #aura-root .cue-analytics ol { list-style: none; margin: 0; padding: 0; }
+#aura-root .cue-analytics h1, #aura-root .cue-analytics h2, #aura-root .cue-analytics p { margin: 0; }
+#aura-root .cue-analytics b { font-weight: 600; font-variant-numeric: tabular-nums; }
+#aura-root .cue-analytics button { font-family: var(--font); }
 
-/* ── Header: sticky glass bar, the Cue mark as the wordmark's lockup ────────── */
-#aura-root .cue-analytics-top {
-  position: sticky; top: 0; z-index: 2; height: 64px;
-  background: var(--surface); backdrop-filter: blur(24px) saturate(1.7);
-  -webkit-backdrop-filter: blur(24px) saturate(1.7);
+/* Series swatches: one class per entity, used by keys, bars and sparklines. */
+#aura-root .ci .ci-search { background: var(--s-search); color: var(--s-search); }
+#aura-root .ci .ci-add { background: var(--s-add); color: var(--s-add); }
+#aura-root .ci .ci-buy { background: var(--s-buy); color: var(--s-buy); }
+#aura-root .ci .ci-spark { background: none; }
+#aura-root .ci .ci-key { flex: none; display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+
+/* ── Top bar ─────────────────────────────────────────────────────────────── */
+#aura-root .ci-top {
+  position: sticky; top: 0; z-index: 3; height: 60px; background: var(--glass);
+  backdrop-filter: blur(20px) saturate(1.6); -webkit-backdrop-filter: blur(20px) saturate(1.6);
   border-bottom: 1px solid var(--hairline);
 }
-#aura-root .cue-analytics-top-inner {
+#aura-root .ci-top-inner {
   max-width: var(--measure); height: 100%; margin: auto; padding: 0 var(--pad);
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
 }
-#aura-root .cue-analytics-brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
-#aura-root .cue-analytics-mark { flex: none; width: 28px; height: 28px; display: block;
-  border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px var(--shadow); }
-#aura-root .cue-analytics-mark svg { display: block; width: 100%; height: 100%; }
-#aura-root .cue-analytics-word { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
-#aura-root .cue-analytics-word b { font-size: 15px; font-weight: 650; letter-spacing: -.02em; }
-#aura-root .cue-analytics-word span { font-size: 13px; color: var(--muted); font-weight: 450; }
-#aura-root .cue-analytics-top-actions { display: flex; align-items: center; gap: 18px; }
-#aura-root .cue-analytics-local { display: none; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
-#aura-root .cue-analytics-local i { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
-  background: var(--good); margin-right: 7px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 16%, transparent); }
-#aura-root .cue-analytics-close {
-  border: 0; background: none; color: var(--cue); font: inherit; font-size: 15px; font-weight: 590;
-  letter-spacing: -.01em; padding: 8px 4px; cursor: pointer; border-radius: 8px;
+#aura-root .ci-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+#aura-root .ci-mark { flex: none; width: 26px; height: 26px; border-radius: 7px; overflow: hidden; display: block; }
+#aura-root .ci-mark svg { display: block; width: 100%; height: 100%; }
+#aura-root .ci-word { display: flex; align-items: baseline; gap: 6px; font-size: 15px; letter-spacing: -.02em; }
+#aura-root .ci-word b { font-weight: 650; }
+#aura-root .ci-word span { color: var(--muted); font-weight: 500; }
+#aura-root .ci-top-actions { display: flex; align-items: center; gap: 14px; }
+#aura-root .ci-local { display: none; align-items: center; gap: 8px; color: var(--ink-2); font-size: 12.5px; white-space: nowrap; }
+#aura-root .ci-local i { width: 6px; height: 6px; border-radius: 50%; background: var(--good);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 18%, transparent); }
+#aura-root .ci-done {
+  height: 32px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--hairline-2);
+  background: var(--card); color: var(--ink); font-size: 13px; font-weight: 590; cursor: pointer;
+  transition: background .15s, border-color .15s;
 }
-#aura-root .cue-analytics-close:hover { opacity: .7; }
+#aura-root .ci-done:hover { background: var(--hover); border-color: var(--muted); }
 
-/* ── Body: one column, read like a report ─────────────────────────────────── */
-#aura-root .cue-analytics-main { max-width: var(--measure); margin: auto; padding: 0 var(--pad) 72px; }
+/* ── Page ────────────────────────────────────────────────────────────────── */
+#aura-root .ci-main { max-width: var(--measure); margin: 0 auto; padding: 0 var(--pad) 48px; }
 
-/* ── Hero: the one bold moment. Cue's own mark, and the thing it noticed ───── */
-#aura-root .cue-analytics-hero {
-  display: flex; align-items: flex-start; gap: 20px;
-  padding: clamp(40px,7vw,60px) 0 40px;
+#aura-root .ci-hero { padding: clamp(36px,6vw,64px) 0 clamp(28px,4vw,40px); max-width: 760px; }
+#aura-root .ci-hero .ci-period { color: var(--muted); font-size: 13px; font-weight: 500; margin-bottom: 12px; }
+#aura-root .ci-hero h1 {
+  font: 650 clamp(30px,4.6vw,48px)/1.06 var(--display); letter-spacing: -.035em; text-wrap: balance;
 }
-#aura-root .cue-analytics-hero-mark { flex: none; width: 60px; height: 60px; border-radius: 15px;
-  overflow: hidden; box-shadow: 0 8px 24px -8px var(--shadow), 0 1px 2px var(--shadow); }
-#aura-root .cue-analytics-hero-mark svg { display: block; width: 100%; height: 100%; }
-#aura-root .cue-analytics-hero-text { min-width: 0; padding-top: 4px; }
-#aura-root .cue-analytics-hero-tag {
-  margin: 0; color: var(--faint); font-size: 10px; font-weight: 650;
-  letter-spacing: .07em; text-transform: uppercase;
-}
-#aura-root .cue-analytics-hero-text h1 {
-  margin: 5px 0 0; font: 650 clamp(26px,4vw,36px)/1.18 var(--font); letter-spacing: -.025em;
-  max-width: 22ch;
-}
-#aura-root .cue-analytics-hero-body { margin: 12px 0 0; color: var(--muted); font-size: 15.5px;
-  line-height: 1.55; max-width: 46ch; }
-#aura-root .cue-analytics-stat { margin: 20px 0 0; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
-#aura-root .cue-analytics-stat strong { color: var(--ink); font-weight: 650; }
+#aura-root .ci-hero .ci-lede { margin-top: 18px; color: var(--ink-2); font-size: clamp(15px,1.6vw,17px); line-height: 1.5;
+  max-width: 600px; text-wrap: pretty; }
 
-/* ── Sections: a label, then one grouped list — never a grid of cards ───────── */
-#aura-root .cue-analytics-sections { display: flex; flex-direction: column; gap: clamp(30px,4.5vw,44px); }
-#aura-root .cue-analytics-section-head {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 12px;
+/* The four numbers: one card split by hairlines, so they read as a set. */
+#aura-root .ci-figures {
+  display: grid; grid-template-columns: repeat(4, minmax(0,1fr));
+  background: var(--card); border: 1px solid var(--hairline); border-radius: 18px; overflow: hidden;
 }
-#aura-root .cue-analytics-section-head h2 { margin: 0; font: 620 16px/1.3 var(--font); letter-spacing: -.012em; }
-#aura-root .cue-analytics-section-head > span { font-size: 12.5px; color: var(--faint); white-space: nowrap; }
-#aura-root .cue-analytics-group {
-  background: var(--surface-solid); border: 1px solid var(--hairline); border-radius: 16px;
-  box-shadow: 0 1px 2px var(--shadow);
-}
-#aura-root .cue-analytics-group:not(.cue-analytics-week) { overflow: hidden; }
+#aura-root .ci-figure { display: flex; flex-direction: column; gap: 6px; padding: 20px 22px 18px; min-width: 0; }
+#aura-root .ci-figure + .ci-figure { border-left: 1px solid var(--hairline); }
+#aura-root .ci-figure-label { color: var(--ink-2); font-size: 13px; font-weight: 500; }
+#aura-root .ci-figure-value { font: 600 34px/1.1 var(--display); letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+#aura-root .ci-figure-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px;
+  min-height: 28px; color: var(--muted); font-size: 12.5px; }
+#aura-root .ci-figure-foot > span { align-self: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#aura-root .ci-spark { flex: none; width: 72px; height: 28px; overflow: visible; }
 
-/* What you look for: a ranked reading list, not a bar chart. The share of
-   attention is a thin rule under the term itself, sized by --share. */
-#aura-root .cue-analytics-interests > li {
-  display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 14px;
-  padding: 13px 18px; font-size: 14.5px; border-top: 1px solid var(--hairline);
-}
-#aura-root .cue-analytics-interests > li:first-child { border-top: 0; }
-#aura-root .cue-analytics-interest-rank { color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
-#aura-root .cue-analytics-interest-name {
-  position: relative; padding-bottom: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-#aura-root .cue-analytics-interest-name::after {
-  content: ""; position: absolute; left: 0; bottom: 0; height: 2px; border-radius: 2px;
-  width: var(--share); background: var(--cue); opacity: .5;
-}
-#aura-root .cue-analytics-interest-count { font-size: 12.5px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* ── Cards ───────────────────────────────────────────────────────────────── */
+#aura-root .ci-grid { display: grid; grid-template-columns: repeat(12, minmax(0,1fr)); gap: 16px; margin-top: 16px; }
+#aura-root .ci-card { background: var(--card); border: 1px solid var(--hairline); border-radius: 18px;
+  padding: 20px 22px 22px; min-width: 0; display: flex; flex-direction: column; }
+#aura-root .ci-pair { display: grid; }
+#aura-root .ci-span-5 { grid-column: span 5; }
+#aura-root .ci-span-7 { grid-column: span 7; }
+#aura-root .ci-span-12 { grid-column: 1 / -1; }
+#aura-root .ci-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+#aura-root .ci-card-head h2 { font: 600 15px/1.3 var(--display); letter-spacing: -.015em; }
+#aura-root .ci-card-head > span { color: var(--muted); font-size: 12.5px; }
+#aura-root .ci-legend { display: flex; gap: 14px; }
+#aura-root .ci-legend > span { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 12.5px; }
+#aura-root .ci-empty { color: var(--muted); font-size: 13.5px; padding: 8px 0; }
 
-/* Your rhythm this week: seven quiet ticks, not seven blocky bars. */
-#aura-root .cue-analytics-week {
-  display: grid; grid-template-columns: repeat(7,1fr); gap: 6px; padding: 24px 20px 18px;
+/* Tooltips: plain CSS, anchored above the hovered mark. */
+#aura-root .ci [data-tip] { position: relative; }
+#aura-root .ci [data-tip]::after {
+  content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 8px); z-index: 4;
+  transform: translate(-50%, 4px); opacity: 0; pointer-events: none; white-space: nowrap;
+  background: var(--tip-bg); color: var(--tip-ink); font-size: 12px; font-weight: 500; line-height: 1;
+  padding: 8px 10px; border-radius: 8px; transition: opacity .12s, transform .12s var(--ease);
 }
-#aura-root .cue-analytics-week-day { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-#aura-root .cue-analytics-week-track { width: 100%; height: 72px; display: flex; align-items: flex-end; justify-content: center; }
-#aura-root .cue-analytics-week-track i { width: 8px; border-radius: 4px; background: var(--cue); display: block; }
-#aura-root .cue-analytics-week-label { font-size: 11px; color: var(--faint); font-weight: 550; }
+#aura-root .ci [data-tip]:hover::after { opacity: 1; transform: translate(-50%, 0); }
+/* Edge days anchor their tooltip inward so it never leaves the card. */
+#aura-root .ci .ci-day:nth-child(-n+2)::after { left: 0; transform: translate(0, 4px); }
+#aura-root .ci .ci-day:nth-child(n+6)::after { left: auto; right: 0; transform: translate(0, 4px); }
+#aura-root .ci .ci-day:nth-child(-n+2):hover::after, #aura-root .ci .ci-day:nth-child(n+6):hover::after { transform: none; }
 
-/* Added to bag / Checked out */
-#aura-root .cue-analytics-items > li {
-  display: flex; justify-content: space-between; align-items: center; gap: 12px;
-  padding: 13px 18px; font-size: 14.5px; border-top: 1px solid var(--hairline);
-}
-#aura-root .cue-analytics-items > li:first-child { border-top: 0; }
-#aura-root .cue-analytics-items > li > span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-#aura-root .cue-analytics-items > li b { flex: none; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+/* What you look for: ranked bars, labels left, values right. */
+#aura-root .ci-ranks { display: flex; flex-direction: column; gap: 4px; }
+#aura-root .ci-rank { display: grid; grid-template-columns: minmax(96px, 34%) 1fr 32px; align-items: center; gap: 14px;
+  padding: 7px 8px; margin: 0 -8px; border-radius: 10px; transition: background .12s; }
+#aura-root .ci-rank:hover { background: var(--hover); }
+#aura-root .ci-rank-label { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#aura-root .ci-rank-label::first-letter { text-transform: uppercase; }
+#aura-root .ci-rank-track, #aura-root .ci-step-track { position: relative; height: 10px; border-radius: 4px; background: var(--track); overflow: hidden; }
+#aura-root .ci-rank-track i, #aura-root .ci-step-track i { position: absolute; inset: 0 auto 0 0; width: var(--w); border-radius: 4px;
+  animation: ci-grow .7s var(--ease) both; transform-origin: left; }
+#aura-root .ci-rank-value { text-align: right; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+#aura-root .ci-rank:nth-child(2) i { animation-delay: .04s; }
+#aura-root .ci-rank:nth-child(3) i { animation-delay: .08s; }
+#aura-root .ci-rank:nth-child(4) i { animation-delay: .12s; }
+#aura-root .ci-rank:nth-child(n+5) i { animation-delay: .16s; }
+@keyframes ci-grow { from { transform: scaleX(0); } }
 
-/* Recent activity: a plain log. A coloured dot carries the same meaning the
-   dock's own status dot does — no icon badges invented for this page. */
-#aura-root .cue-analytics-activity { max-height: 300px; overflow: auto; }
-#aura-root .cue-analytics-activity > li {
-  display: flex; align-items: center; gap: 11px; padding: 12.5px 18px; font-size: 14px;
-  border-top: 1px solid var(--hairline);
-}
-#aura-root .cue-analytics-activity > li:first-child { border-top: 0; }
-#aura-root .cue-analytics-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
-#aura-root .cue-analytics-dot-add { background: var(--cue); }
-#aura-root .cue-analytics-dot-purchase { background: var(--good); }
-#aura-root .cue-analytics-verb { flex: none; color: var(--muted); font-size: 12.5px; font-weight: 600; }
-#aura-root .cue-analytics-noun { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-#aura-root .cue-analytics-activity time { flex: none; color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+/* This week: stacked columns, 2px surface gap between segments. */
+#aura-root .ci-week { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; min-height: 196px; align-items: stretch; }
+#aura-root .ci-day { display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; cursor: default; }
+#aura-root .ci-col { flex: 1; width: 100%; max-width: 28px; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px;
+  background: linear-gradient(var(--track), var(--track)) bottom / 100% 2px no-repeat; }
+#aura-root .ci-col i { display: block; width: 100%; height: var(--h); border-radius: 4px; min-height: 4px;
+  animation: ci-rise .7s var(--ease) both; transform-origin: bottom; }
+@keyframes ci-rise { from { transform: scaleY(0); } }
+#aura-root .ci-day:hover .ci-col i { filter: brightness(1.08); }
+#aura-root .ci-day-label { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+#aura-root .ci-today .ci-day-label { color: var(--ink); font-weight: 600; }
 
-/* An empty row must not inherit its list's grid/flex track — it is prose,
-   not a data row, or every word wraps into the rank column's 22px. */
-#aura-root .cue-analytics-interests > li.cue-analytics-empty,
-#aura-root .cue-analytics-items > li.cue-analytics-empty,
-#aura-root .cue-analytics-activity > li.cue-analytics-empty {
-  display: block;
-}
-#aura-root .cue-analytics-empty { padding: 15px 18px; color: var(--faint); font-size: 13.5px; line-height: 1.6; }
+/* From interest to intent: three bars on one scale. */
+#aura-root .ci-funnel { display: flex; flex-direction: column; gap: 18px; }
+#aura-root .ci-step { display: grid; gap: 8px; }
+#aura-root .ci-step-head { display: flex; align-items: baseline; justify-content: space-between; }
+#aura-root .ci-step-label { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 500; }
+#aura-root .ci-step-head b { font: 600 20px/1 var(--display); letter-spacing: -.02em; }
+#aura-root .ci-step-track { height: 12px; }
+#aura-root .ci-rate { color: var(--muted); font-size: 12.5px; }
 
-/* ── Footer ───────────────────────────────────────────────────────────────── */
-#aura-root .cue-analytics-footer {
-  margin-top: clamp(30px,4.5vw,44px); padding-top: 24px; border-top: 1px solid var(--hairline);
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  font-size: 12.5px; color: var(--faint);
-}
-#aura-root .cue-analytics-export {
-  flex: none; border: 0; border-radius: 999px; height: 36px; padding: 0 18px;
-  background: var(--cue); color: #fff; font: 590 13px var(--font); letter-spacing: -.005em;
-  cursor: pointer; box-shadow: 0 1px 2px var(--shadow); transition: opacity .15s;
-}
-#aura-root .cue-analytics-export:hover { opacity: .88; }
+/* Added / Checked out: two short lists side by side in one card. */
+#aura-root .ci-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; }
+#aura-root .ci-pair > div + div { border-left: 1px solid var(--hairline); padding-left: 32px; }
+#aura-root .ci-items li:not(.ci-empty) { display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
+  padding: 10px 0; border-top: 1px solid var(--hairline); font-size: 13.5px; }
+#aura-root .ci-items li:first-child { border-top: 0; padding-top: 0; }
+#aura-root .ci-items li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#aura-root .ci-items li b { color: var(--ink-2); font-size: 13px; }
 
-/* ── Loading / error state ────────────────────────────────────────────────── */
+/* Recent activity: a two-column timeline on wide screens. */
+#aura-root .ci-activity { display: grid; grid-template-columns: 1fr 1fr; column-gap: 32px; }
+#aura-root .ci-event { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-top: 1px solid var(--hairline); min-width: 0; }
+#aura-root .ci-activity .ci-event:nth-child(-n+2) { border-top: 0; }
+#aura-root .ci-event-text { flex: 1; min-width: 0; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#aura-root .ci-verb { color: var(--ink-2); }
+#aura-root .ci-event time { flex: none; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+#aura-root .ci-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--hairline); color: var(--muted); font-size: 13px; }
+#aura-root .ci-export {
+  flex: none; height: 36px; padding: 0 18px; border-radius: 999px; border: 0;
+  background: var(--ink); color: var(--bg); font-size: 13px; font-weight: 590; cursor: pointer; transition: opacity .15s;
+}
+#aura-root .ci-export:hover { opacity: .85; }
+
+/* ── Loading / error state ───────────────────────────────────────────────── */
 #aura-root .cue-analytics-loading {
   min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 16px; text-align: center; color: var(--muted); font: 500 15px/1.4 var(--font); padding: 40px;
 }
 #aura-root .cue-analytics-spinner {
-  width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid var(--hairline);
+  width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid var(--hairline-2);
   border-top-color: var(--cue); animation: cue-ia-spin .8s linear infinite;
 }
 @keyframes cue-ia-spin { to { transform: rotate(360deg); } }
-#aura-root .cue-analytics-loading button { margin-top: 4px; }
+#aura-root .cue-analytics-loading button {
+  margin-top: 4px; height: 32px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--hairline-2);
+  background: var(--card); color: var(--ink); font: 590 13px var(--font); cursor: pointer;
+}
 
-/* ── Entrance: one orchestrated moment, not per-section fades ───────────────── */
-#aura-root .cue-analytics-shell { animation: cue-ia-in .32s var(--ease) both; }
+/* One entrance for the whole page. */
+#aura-root .cue-analytics-shell { animation: cue-ia-in .36s var(--ease) both; }
 @keyframes cue-ia-in { from { opacity: 0; transform: translateY(6px); } }
 
-/* The hero mark gets a single glance once the page has settled — the same
-   "look, then rest" the live avatar does, quoted rather than fully rigged. */
-#aura-root .cue-analytics-hero-mark .cue-analytics-eye {
-  transform-box: fill-box; transform-origin: center;
-  animation: cue-ia-glance 1.7s var(--ease) .5s 1 both;
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (min-width: 640px) { #aura-root .ci-local { display: inline-flex; } }
+@media (max-width: 900px) {
+  #aura-root .ci-span-5, #aura-root .ci-span-7 { grid-column: 1 / -1; }
+  #aura-root .ci-figures { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  #aura-root .ci-figure:nth-child(3) { border-left: 0; }
+  #aura-root .ci-figure:nth-child(n+3) { border-top: 1px solid var(--hairline); }
 }
-@keyframes cue-ia-glance {
-  0%, 100% { transform: translate(0,0) scaleY(1); }
-  35% { transform: translate(-1.6px,-1px) scaleY(1); }
-  50% { transform: translate(-1.6px,-1px) scaleY(.1); }
-  66% { transform: translate(1.1px,.4px) scaleY(1); }
-}
-
-@media (min-width: 561px) {
-  #aura-root .cue-analytics-local { display: inline-flex; align-items: center; }
-}
-@media (max-width: 560px) {
-  #aura-root .cue-analytics-hero { gap: 16px; }
-  #aura-root .cue-analytics-hero-mark { width: 48px; height: 48px; border-radius: 12px; }
-  #aura-root .cue-analytics-hero-text h1 { max-width: none; }
-  #aura-root .cue-analytics-interests > li { grid-template-columns: 18px 1fr auto; gap: 10px; }
-  #aura-root .cue-analytics-footer { flex-direction: column; align-items: flex-start; gap: 14px; }
-}
-@media (max-width: 420px) {
-  #aura-root .cue-analytics-week-track { height: 56px; }
+@media (max-width: 640px) {
+  #aura-root .ci-activity { grid-template-columns: 1fr; }
+  #aura-root .ci-activity .ci-event:nth-child(2) { border-top: 1px solid var(--hairline); }
+  #aura-root .ci-pair { grid-template-columns: 1fr; gap: 24px; }
+  #aura-root .ci-pair > div + div { border-left: 0; padding-left: 0; }
+  #aura-root .ci-figure { padding: 16px; }
+  #aura-root .ci-figure-value { font-size: 28px; }
+  #aura-root .ci-spark { display: none; }
+  #aura-root .ci-card { padding: 18px 16px 20px; }
+  #aura-root .ci-foot { flex-direction: column; align-items: flex-start; }
+  #aura-root .ci-week { min-height: 160px; gap: 6px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  #aura-root .cue-analytics-shell { animation: none; }
-  #aura-root .cue-analytics-spinner { animation: none; }
-  #aura-root .cue-analytics-hero-mark .cue-analytics-eye { animation: none; }
+  #aura-root .cue-analytics-shell, #aura-root .cue-analytics-spinner,
+  #aura-root .ci-rank-track i, #aura-root .ci-step-track i, #aura-root .ci-col i { animation: none; }
+}
+@media (forced-colors: active) {
+  #aura-root .ci .ci-search, #aura-root .ci .ci-add, #aura-root .ci .ci-buy { forced-color-adjust: none; }
 }
