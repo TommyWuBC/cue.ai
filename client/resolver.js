@@ -317,7 +317,11 @@ export function findText(phrase) {
 
 // A spoken name is a weak signal on a real store. These controls commit money;
 // only the shopper's own hands (or the passkey flow on the demo store) may.
-export const COMMITS_MONEY = /\b(buy now|place (?:your )?order|complete (?:purchase|order)|pay now|confirm (?:order|purchase|payment)|subscribe now|proceed to checkout)\b/i;
+// Controls that actually take the money. "Proceed to checkout" and "Continue"
+// are NOT here: they move you to the next page and spend nothing, and treating
+// them as a purchase made "proceed to checkout" cost two confirmations before
+// anything happened. The gate belongs on the button that charges.
+export const COMMITS_MONEY = /\b(buy now|place (?:your )?order|complete (?:purchase|order)|pay now|confirm (?:order|purchase|payment)|subscribe now)\b/i;
 
 export function invalidate() { cache = null; cacheKey = ""; }
 // Guarded: this module is imported by the node test runner, which has no DOM.

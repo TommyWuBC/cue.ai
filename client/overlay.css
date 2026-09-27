@@ -96,7 +96,7 @@ body:has(.cue-splash) #aura-root { visibility: hidden; }
   background: var(--cue); box-shadow: 0 0 0 3px rgba(47,107,255,.28); }
 
 /* ── Cue's dock ───────────────────────────────────────────────────────────── */
-.aura-hud { position: absolute; z-index: 2; left: 20px; bottom: 20px; width: 372px; pointer-events: auto;
+.aura-hud { position: absolute; z-index: 2; left: 20px; bottom: 20px; width: 404px; pointer-events: auto;
   display: grid; grid-template-columns: 58px 1fr; column-gap: 14px; align-items: start;
   padding: 14px 18px 14px 14px; border-radius: 26px;
   background: var(--cue-surface); backdrop-filter: blur(30px) saturate(1.7);
@@ -127,15 +127,23 @@ body:has(.cue-splash) #aura-root { visibility: hidden; }
   animation: cue-hot 1.2s ease-in-out infinite; }
 @keyframes cue-hot { 50% { box-shadow: 0 0 0 6px transparent; } }
 
-.aura-hud-heard, .aura-hud-said { overflow-wrap: anywhere; }
-.aura-hud-heard { margin-top: 7px; color: var(--cue-muted); font-size: 12px;
-  letter-spacing: -.005em; }
+/* Both halves of the turn get a real window. What was heard used to be one
+   unscrollable line and the reply capped at four, so the long answers — which
+   are the useful ones — were cut off mid-sentence with no way to read on. */
+.aura-hud-heard, .aura-hud-said { overflow-wrap: anywhere; overflow-y: auto;
+  overscroll-behavior: contain; scrollbar-width: thin;
+  scrollbar-color: var(--cue-hairline) transparent; }
+.aura-hud-heard::-webkit-scrollbar, .aura-hud-said::-webkit-scrollbar { width: 4px; }
+.aura-hud-heard::-webkit-scrollbar-thumb, .aura-hud-said::-webkit-scrollbar-thumb {
+  background: var(--cue-hairline); border-radius: 3px; }
+.aura-hud-heard { margin-top: 8px; max-height: 22vh; padding: 8px 10px;
+  border-radius: 12px; background: var(--cue-pill); color: var(--cue-muted);
+  font-size: 12.5px; line-height: 1.45; letter-spacing: -.005em; }
 .aura-hud-heard:not(:empty)::before { content: "You"; margin-right: 6px;
   font-size: 9.5px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase;
   color: var(--cue-faint); }
-.aura-hud-said { margin-top: 5px; font-size: 15px; line-height: 1.42; letter-spacing: -.015em;
-  font-weight: 450; max-height: calc(1.42em * 4); overflow-y: auto; overscroll-behavior: contain;
-  scrollbar-width: thin; scrollbar-color: var(--cue-hairline) transparent; }
+.aura-hud-said { margin-top: 9px; font-size: 15px; line-height: 1.45;
+  letter-spacing: -.015em; font-weight: 450; max-height: 34vh; }
 .aura-hud-said::-webkit-scrollbar { width: 4px; }
 .aura-hud-said::-webkit-scrollbar-thumb { background: var(--cue-hairline); border-radius: 999px; }
 .aura-hud-heard:empty, .aura-hud-said:empty { display: none; }

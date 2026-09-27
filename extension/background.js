@@ -122,7 +122,7 @@ async function start(tab) {
       },
       args: [SERVER.origin, models, splashImage, session, GAZE_MODE],
     });
-    await chrome.scripting.insertCSS({ target, files: ['client/overlay.css', 'client/analytics.css'] });
+    await chrome.scripting.insertCSS({ target, files: ['client/overlay.css', 'client/analytics.css', 'client/compare.css'] });
     // WebGazer bundles TensorFlow.js, which registers its WebGL kernels on the
     // page's own global. Evaluating it twice in one page re-registers every
     // kernel and floods the console. Inject it only if it is not already there.

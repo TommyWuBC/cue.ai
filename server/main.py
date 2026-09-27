@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import compare as compare_mod
 import fallback, memory, router, stt, tts
 from checkout import Checkout, CheckoutError
 from trust import TrustError, MERCHANT_PATH, MAX_BODY
@@ -54,6 +55,12 @@ def _trace(text: str, out: dict, ctx: dict | None = None):
     print(f'[turn] "{text[:70]}" [{where}] -> {out.get("source", "?"):8} '
           f'do={verbs:24}{" ask=" + staged if staged else ""} say="{(out.get("say") or "")[:60]}"', flush=True)
     return out
+
+class ComparePair(BaseModel):
+    a: dict
+    b: dict
+    owns: list[str] = []
+
 
 class CartItem(BaseModel):
     id: str
@@ -159,6 +166,16 @@ def merchant_orders():
 @app.get("/analytics")
 def analytics_page():
     return FileResponse(ROOT / "store" / "analytics.html")
+
+
+@app.post("/compare")
+def compare_products(body: ComparePair):
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise HTTPException(503, "No model key, so there is nothing to compare with.")
+    out = compare_mod.compare(body.a, body.b, body.owns)
+    print(f'[compare] "{out["titles"]["a"][:30]}" vs "{out["titles"]["b"][:30]}" '
+          f'-> {out["pick"]} rows={len(out["rows"])} eco={bool(out["ecosystem"])}', flush=True)
+    return out
 
 
 @app.post("/utterance")

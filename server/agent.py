@@ -100,7 +100,7 @@ Say "a lot of people rate it highly" when you want to convey popularity.
 
 Reply with JSON only: {"say": "<what to speak>", "do": []}.
 You may propose: scroll{dir}, scroll_start{dir, speed}, scroll_stop{}, focus_nth{n}, select_variant{value},
-select_color{value}, click_named{name}, open_link{target, part}, back{}, forward{}, dismiss{}, search{query}, fill{field, text}, find_on_page{text}, submit{}, list_controls{}, read_bag{}, add_to_cart{}, checkout{}.
+select_color{value}, click_named{name}, open_link{target, part}, back{}, forward{}, dismiss{}, compare{a, b}, search{query}, fill{field, text}, find_on_page{text}, submit{}, list_controls{}, read_bag{}, add_to_cart{}, checkout{}.
 
 `said` is a speech-to-text transcript and it mishears: "q", "queue" or "cute"
 at the start is usually the wake word Cue, and a word that makes no sense is
@@ -149,6 +149,12 @@ nothing. Completing it needs the shopper's own spoken yes and their passkey,
 and those never come from you: never propose confirm, approve_checkout,
 cancel_checkout or setup_passkey.
 
+A definitive instruction is not a question. "Proceed to checkout", "add the
+AirPods", "press continue", "go to the cart" are decisions they have already
+made: put those in `do` and say one short line. Use `ask` only when you truly
+cannot tell which item they mean, or when the control spends money. Asking
+"shall I?" about something they just told you to do makes them say it twice.
+
 When you want to act but should check first, put it in `ask` instead of `do`
 and say precisely what you are about to do:
 
@@ -193,6 +199,14 @@ name taken verbatim from that list. Never invent one that is not listed; say
 what you can see instead. A control that spends money is not refused — it is
 read back and waits for a separate spoken yes, as above. Propose it when they
 ask to buy; do not tell them to press it themselves.
+
+compare{a, b} puts two products side by side in a panel over the page, with
+their own pages read first. a and b name them the way open_link does: words
+from the title, or "it" for the one being discussed. Propose it when they ask
+which of two is better, or to compare, or to see them side by side. Say one
+short line — "Putting them side by side." — and let the panel do the rest: do
+not recite the comparison, and never state the verdict yourself, because the
+panel decides it.
 
 dismiss{} closes whatever is covering the page — a warranty or protection-plan
 upsell after an add, a newsletter or cookie sheet, an interstitial. Propose it
@@ -335,6 +349,8 @@ def sanitize(out):
         if verb == "fill" and isinstance(args.get("text"), str) and isinstance(args.get("field", ""), str) \
                 and 1 <= len(args["text"]) <= 200:
             return {"verb": verb, "args": {"field": args.get("field", "")[:60], "text": args["text"]}}
+        if verb == "compare" and all(isinstance(args.get(k), (str, int)) for k in ("a", "b")):
+            return {"verb": verb, "args": {"a": str(args["a"])[:80], "b": str(args["b"])[:80]}}
         if verb == "open_link" and isinstance(args.get("target", ""), (str, int)) \
                 and args.get("part", "product") in {"product", "reviews", "brand", "options"}:
             return {"verb": verb, "args": {"target": str(args.get("target", ""))[:80],
@@ -372,7 +388,7 @@ def sanitize(out):
             actions.append({"verb": verb, "args": {"name": args["name"][:60]}})
         elif verb == "search" and isinstance(args.get("query"), str) and 1 <= len(args["query"].strip()) <= 120:
             actions.append({"verb": verb, "args": {"query": args["query"].strip()[:120]}})
-        elif verb in {"fill", "find_on_page", "open_link", "submit"}:
+        elif verb in {"fill", "find_on_page", "open_link", "submit", "compare"}:
             allowed = _allow(verb, args)
             if allowed:
                 actions.append(allowed)

@@ -87,7 +87,7 @@ test('with gaze off, WebGazer and its models are never injected', async () => {
   assert.equal(result.ok, true);
   assert.equal(calls.filter(([kind]) => kind === 'css').length, 1);
   assert.deepEqual(calls.find(([kind]) => kind === 'css')[1].files,
-    ['client/overlay.css', 'client/analytics.css']);
+    ['client/overlay.css', 'client/analytics.css', 'client/compare.css']);
   assert.deepEqual(calls.filter(([kind, options]) => kind === 'script' && options.files)
     .map(([, options]) => options.files), [
       ['extension/extract.js', 'extension/content.js'],
