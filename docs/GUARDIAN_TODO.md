@@ -61,3 +61,60 @@ and pays, or declines and nothing happens. The shopper never enters a card.
 - Notification channel: another browser tab, QR code, SMS, or email?
 - Can a guardian approve for several shoppers, and can one shopper have several?
 - Does the guardian see the whole bag or one request per item?
+
+---
+
+## Background moved from CLAUDE.md
+
+### Planned, not built: guardian approval
+
+**Nothing below this line exists in the repo yet.** This is a direction under
+active discussion (as of the guardian pitch), written down here so a session
+working on it has the context and so no other session assumes it is already
+wired up because it reads like architecture.
+
+The pitch, verbatim: *"Cue is a clerk you talk to, and a lock on the payment
+… Children, older adults, and anyone who should not put payment details on a
+website get one protection: the request goes to a guardian. It shows the
+item, the price, the page, and the exact words that were spoken. Visa signs
+that request so it cannot be swapped. The guardian approves and pays, or
+declines and nothing happens. The agent can help you shop. It cannot spend."*
+
+**This is a different trust model from what is built, not an extension of it.**
+Today: shopper says yes → shopper's own passkey approves → order completes.
+Self-approval; the confirmation step exists to catch a wrong item, not a wrong
+person. The guardian pitch removes the shopper's own ability to pay at all —
+approval comes from a second, different human who was not looking at the
+screen when the order was assembled.
+
+Known gaps between the pitch and the code, for whoever picks this up:
+
+- **No guardian identity exists.** There is no second account, no
+  phone/email/notification channel, nothing to route a request *to*. The
+  closest existing concept is `server/checkout.py`'s single local shopper
+  (`SHOPPER = "local"` in `server/memory.py`) — there is exactly one party in
+  the system today.
+- **Self-approval and guardian-approval likely need to coexist, not replace
+  each other.** An adult shopping for themselves probably still self-approves;
+  a minor's or a protected shopper's order should always route to a guardian.
+  That is a mode switch nothing currently reads (no field for "this shopper
+  requires guardian approval").
+- **The signing infrastructure this needs partly exists, aimed the wrong
+  direction.** `server/trust.py` already does real RFC 9421 HTTP message
+  signing with a pinned Ed25519 key — see "Signed agent requests" below — but
+  it authenticates *the agent's request to the merchant server*. The pitch
+  needs a signature over *the request the merchant sends to the guardian*
+  (item, price, page, the shopper's exact words), so the guardian can verify
+  nothing was altered in transit. Same primitive, different direction; check
+  whether `AgentTrust` can be reused or needs a second instance.
+- **The "exact words that were spoken" already exist as data.** Every order
+  row already stores `customer_words` (see `server/checkout.py`,
+  `intent["customer_words"]`) — assembled in `store/checkout.js` from each
+  cart item's recorded utterance plus `window.cue.lastActionUtterance`. The
+  guardian-facing screen would read from data that is already captured; it
+  does not need a new capture mechanism.
+- **`store/merchant.html` is the closest existing UI shape** — it already
+  renders order/trust evidence for a human reviewer. A guardian-approval
+  screen is closer to a rebuild of that audience (a specific approving human,
+  not a generic merchant dashboard) than to the shopper-facing checkout dialog.
+
