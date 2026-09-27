@@ -127,7 +127,7 @@ function learnPage() {
   knowledge.observe(items.map((t) => ({ product: t.product, el: t.el })));
 }
 // Bumped by hand when the client changes, so the server log shows which build is running.
-const CLIENT_BUILD = "2026-09-27 dismiss";
+const CLIENT_BUILD = "2026-09-27 dismiss+scroll";
 
 const PRODUCT_VERBS = new Set(["add_to_cart", "select_variant", "select_color"]);
 
@@ -672,7 +672,7 @@ const HALT = /^(?:exit|quit|stop|go away|shut down|turn(?: yourself)? off|disabl
 // apart for "slower" and "faster" to make an obvious, predictable change.
 const SCROLL_SPEEDS = [39.6, 68.4, 108, 171, 270];   // px per second
 const STOP_SCROLL = /\b(?:stop|pause|wait|hold on|hold it|halt|freeze|enough|that's good|right there|okay stop)\b/i;
-const autoScroll = { dir: 0, speed: 2, raf: 0, last: 0, carry: 0, stuck: 0 };
+const autoScroll = { dir: 0, speed: 3, raf: 0, last: 0, carry: 0, stuck: 0 };
 
 function scrollTick(t) {
   if (!autoScroll.dir || globalThis.__cueEnded) return stopAutoScroll(false);
@@ -1332,7 +1332,7 @@ function perform(verb, args, opts = {}) {
   switch (verb) {
     case "scroll_start": {
       if (!["up", "down"].includes(args.dir)) return false;
-      const speed = args.speed === "fast" ? 3 : args.speed === "slow" ? 1 : autoScroll.dir ? autoScroll.speed : 2;
+      const speed = args.speed === "fast" ? 4 : args.speed === "slow" ? 2 : autoScroll.dir ? autoScroll.speed : 3;
       startAutoScroll(args.dir === "down" ? 1 : -1, speed);
       if (!opts.narrated) bus.emit("SAY", { text: `Scrolling ${args.dir}.` });
       break;
