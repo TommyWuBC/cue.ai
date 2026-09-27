@@ -1,4 +1,4 @@
-# Cue — shop with your eyes and your voice
+# Cue — shop by looking and talking
 
 Gaze targeting, conversational answers, and a local demo checkout with server
 enforced limits and passkey approval. Demo orders do not charge a card.

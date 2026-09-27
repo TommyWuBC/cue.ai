@@ -79,7 +79,14 @@ recite ratings as "four point five from seventy five thousand reviews"; say
 
 Reply with JSON only: {"say": "<what to speak>", "do": []}.
 You may propose: scroll{dir}, scroll_start{dir, speed}, scroll_stop{}, focus_nth{n}, select_variant{value},
-select_color{value}, click_named{name}, open_link{target, part}, back{}, forward{}, search{query}, fill{field, text}, find_on_page{text}, list_controls{}, read_bag{}, add_to_cart{}, checkout{}.
+select_color{value}, click_named{name}, open_link{target, part}, back{}, forward{}, search{query}, fill{field, text}, find_on_page{text}, submit{}, list_controls{}, read_bag{}, add_to_cart{}, checkout{}.
+
+`said` is a speech-to-text transcript and it mishears: "q", "queue" or "cute"
+at the start is usually the wake word Cue, and a word that makes no sense is
+often a sound-alike of a control, field or product on this page ("clique the
+card" is "click the Cart"). Read it against `controls`, `fields` and the
+products before answering. When Cue already corrected it, `heard` is the raw
+transcript. If you still cannot tell what they meant, ask.
 
 `known_products` is everything you have seen this visit, newest first, including
 items from pages the shopper has already left. `here` says whether it is on this
@@ -104,10 +111,12 @@ scroll{dir} moves one screen. scroll_start{dir, speed} keeps scrolling until
 scroll_stop{}; when they say to stop, propose scroll_stop — saying "stopped" without
 it leaves the page moving.
 
-`fill` types into a field named in `fields`, without submitting; then click_named
-its button if they ask. `find_on_page` scrolls to text copied verbatim from
-`page_text`. Never fill passwords, card numbers or codes, and never click Buy Now /
-Place order style controls on a real site; tell them to do that part themselves.
+`fill` types into a field named in `fields` (field "" means the focused field
+or the search box); add submit{} after it to press enter when they ask. `find_on_page` scrolls to text copied verbatim from
+`page_text`. Never fill passwords, card numbers or codes. You MAY propose click_named for a
+Buy Now / Place order control on a real site: the page reads that control back
+and only a separate spoken yes presses it. So never say you cannot buy, and
+never tell them to place the order themselves.
 `bag` is Cue's own bag on the demo store only. On a real site it is null, which
 does NOT mean the site's cart is empty. Never say a cart is empty or that an item
 is "already in your bag" from `bag` alone; propose read_bag to read the site's
@@ -310,7 +319,7 @@ def sanitize(out):
                 out["speed"] = args["speed"]
             return {"verb": verb, "args": out}
         if verb in {"list_controls", "read_bag", "add_to_cart", "checkout", "back", "forward",
-                    "scroll_stop"}:
+                    "scroll_stop", "submit"}:
             return {"verb": verb, "args": {}}
         return None
 
@@ -335,7 +344,7 @@ def sanitize(out):
             actions.append({"verb": verb, "args": {"name": args["name"][:60]}})
         elif verb == "search" and isinstance(args.get("query"), str) and 1 <= len(args["query"].strip()) <= 120:
             actions.append({"verb": verb, "args": {"query": args["query"].strip()[:120]}})
-        elif verb in {"fill", "find_on_page", "open_link"}:
+        elif verb in {"fill", "find_on_page", "open_link", "submit"}:
             allowed = _allow(verb, args)
             if allowed:
                 actions.append(allowed)
@@ -379,12 +388,24 @@ def sanitize(out):
     # confirmation it should have been and let their yes perform it.
     if say and not actions and not ask:
         claim = say.lower()
+        # Only a first-person claim of acting counts. Standing ON a checkout
+        # page, every ordinary sentence mentions checking out ("You're on
+        # Amazon checkout, and I can see the delivery window..."), and the old
+        # bare match turned each one into an offer. It even fired on the model
+        # explaining it would NOT buy, so a refusal became "Shall I?".
+        acting = r"\b(?:i'?ll|i'?m|i am|let me|i can|i'?ve|going to|gonna)\b"
+        refusing = r"\b(?:can'?t|cannot|won'?t|will not|unable|yourself|you'?ll need)\b"
         if re.search(r"\b(add|adding|put|putting)\b.{0,40}\b(bag|cart|basket)\b", claim):
             ask = [{"verb": "add_to_cart", "args": {}}]
-        elif re.search(r"\b(check ?out|checking out|place the order|placing the order)\b", claim):
+        elif (re.search(acting + r"[^.]{0,40}\b(check ?out|checking out|plac(?:e|ing) (?:the|your) order)\b",
+                        claim)
+              and not re.search(refusing, claim)):
             ask = [{"verb": "checkout", "args": {}}]
         if ask:
-            say = say.rstrip(". ") + ". Shall I?"
+            # Do not staple a second question onto a line that already asks
+            # one: "want me to switch it to that?. Shall I?" is what that
+            # produced, punctuation and all.
+            say = say.rstrip(". ") if say.rstrip().endswith("?") else say.rstrip(". ") + ". Shall I?"
             print(f"[agent] narrated {ask[0]['verb']} without proposing it -> staged", flush=True)
 
     return {"say": say, "do": actions, "ask": ask, "source": "model"}
@@ -395,6 +416,7 @@ def respond(text: str, ctx: dict, memory_block=None) -> dict:
     visible = ctx.get("visible") if isinstance(ctx.get("visible"), list) else []
     user = json.dumps({
         "said": text[:300],
+        "heard": _short(ctx.get("heard"), 300),
         "page": _page(ctx.get("page")),
         "discussed": _short((ctx.get("discussed") or {}).get("title") if isinstance(ctx.get("discussed"), dict) else None, 80),
         "chosen": ctx.get("chosen") if isinstance(ctx.get("chosen"), dict) else None,

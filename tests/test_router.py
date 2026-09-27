@@ -21,12 +21,45 @@ class RouterTests(unittest.TestCase):
             'Is this wool?',
             'Add the second one in medium, in black',
             "Don't add it",
-            'search for wool coats',
             'scroll to bottom',
             'go back',
             'find the second one',
+            'find me the cheapest one',
+            'click it',
+            'type that',
+            'how do I open the bag',
+            'what does this button do',
         ):
             self.assertIsNone(router.route(phrase), phrase)
+
+    def test_clicking_opening_and_selecting_by_name(self):
+        click = lambda name: [{'verb': 'click_named', 'args': {'name': name}}]
+        self.assertEqual(router.route('click the cart')['do'], click('cart'))
+        self.assertEqual(router.route('Open my bag.')['do'], click('bag'))
+        self.assertEqual(router.route('select medium')['do'], click('medium'))
+        self.assertEqual(router.route('can you click on account and lists')['do'], click('account and lists'))
+        # Nothing is numbered on screen: ordinals go to the agent, which has focus_nth.
+        self.assertIsNone(router.route('open number three'))
+        self.assertIsNone(router.route('select the second one'))
+        # Money controls keep their own verbs, which are confirmed on the page.
+        self.assertEqual(router.route('click add to cart')['do'][0]['verb'], 'add_to_cart')
+        self.assertEqual(router.route('go to checkout')['do'][0]['verb'], 'checkout')
+
+    def test_searching_types_into_the_search_bar(self):
+        search = lambda q: [{'verb': 'search', 'args': {'query': q}}]
+        self.assertEqual(router.route('find me desk tops')['do'], search('desk tops'))
+        self.assertEqual(router.route('search for wool coats')['do'], search('wool coats'))
+        self.assertEqual(router.route('Search Amazon for gaming laptops.')['do'], search('gaming laptops'))
+        self.assertEqual(router.route('i want to buy a standing desk')['do'], search('standing desk'))
+        self.assertEqual(router.route('find shipping info on this page')['do'],
+                         [{'verb': 'find_on_page', 'args': {'text': 'shipping info'}}])
+
+    def test_typing_keeps_case_and_can_press_enter(self):
+        self.assertEqual(router.route('Type John@Example.com into the email field.')['do'],
+                         [{'verb': 'fill', 'args': {'field': 'email', 'text': 'John@Example.com'}}])
+        self.assertEqual(router.route('Type desk top, and press enter.')['do'],
+                         [{'verb': 'fill', 'args': {'field': '', 'text': 'desk top'}}, {'verb': 'submit', 'args': {}}])
+        self.assertEqual(router.route('press enter')['do'], [{'verb': 'submit', 'args': {}}])
 
 
 if __name__ == '__main__':
