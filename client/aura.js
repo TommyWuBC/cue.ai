@@ -1990,16 +1990,13 @@ export async function boot() {
   if (exited) return;
 
   let announced = false;
-  // Gaze-v2's fixation sweep fits a per-user model from sample.features,
-  // which WebGazer's samples do not carry (see gaze.js's onEyes — WebGazer
-  // resolves a screen position itself, there is no separate model to train).
-  // Running that sweep against this engine would fit nothing meaningful, so
-  // a real site skips it and goes straight to running: decorative, moving,
-  // uncalibrated, which costs nothing now that nothing reads it for a
-  // decision.
+  // gaze.js itself picks the right calibration for whichever engine is
+  // running — its own fixation sweep for the per-user model, or WebGazer's
+  // native training walk on a real site (calibrateOnce branches on
+  // eyes.recordScreenPosition). Both show the same dot overlay.
   if (actual === "webgazer" && gaze.getState().calibrated) {
     announced = true;
-  } else if (actual === "webgazer" && CONFIG.autoCal && !CONFIG.injected) {
+  } else if (actual === "webgazer" && CONFIG.autoCal) {
     await gaze.calibrate();
   }
   if (actual === "webgazer") {

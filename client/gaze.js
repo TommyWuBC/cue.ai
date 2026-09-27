@@ -1068,7 +1068,121 @@ export function calibrate(options = {}) {
   return calibration;
 }
 
+// The same fixation-point walk as runCalibration, visually — same overlay,
+// same dot, same "Press SPACE, tap the dot, or say Cue, ready" start gesture
+// — but training WebGazer's own regression directly at each point
+// (eyes.recordScreenPosition) instead of collecting sample.features for
+// fitGazeModel, which this engine's samples do not have. Real training, not
+// a prop: WebGazer's ridge regression genuinely updates from this, it is
+// just not validated against a held-out accuracy number the way the other
+// engine's calibration is, so there is no acc.after_px to report at the end.
+function runWebgazerCalibration(attempt) {
+  return new Promise((done) => {
+    const cleanup = [];
+    const ov = document.createElement("div");
+    ov.className = "aura-cal";
+    ov.tabIndex = -1;
+    ov.setAttribute("role", "dialog");
+    ov.setAttribute("aria-label", "Eye tracking calibration");
+    ov.innerHTML = `<div class="aura-cal-hint" role="status" aria-live="polite"></div><button type="button" class="aura-cal-dot" aria-label="Start calibration"></button>`;
+    document.body.appendChild(ov);
+    ov.focus({ preventScroll: true });
+    const dot  = ov.querySelector(".aura-cal-dot");
+    const hint = ov.querySelector(".aura-cal-hint");
+    let cancelled = false;
+
+    state.calibrating = true;
+    state.calibrated = false;
+    setFocus(null, 0);
+    bus.emit("STATE", { calibrating: true });
+
+    const place = (x, y) => { dot.style.left = x + "px"; dot.style.top = y + "px"; };
+    const say = (text) => { hint.textContent = text; };
+
+    const run = async () => {
+      for (let k = 0; k < FIX_POINTS.length; k++) {
+        if (cancelled) return false;
+        const [fx, fy] = FIX_POINTS[k];
+        const px = fx * innerWidth, py = fy * innerHeight;
+        place(px, py);
+        dot.classList.remove("armed");
+        say(`Look at the dot · ${k + 1} / ${FIX_POINTS.length}`);
+        setTimeout(() => dot.classList.add("armed"), TIMING.settle);
+        await sleep(TIMING.settle);
+        const until = performance.now() + TIMING.hold;
+        while (performance.now() < until && !cancelled) {
+          eyes.recordScreenPosition(px, py);
+          await sleep(120);
+        }
+      }
+      return !cancelled;
+    };
+
+    const finish = (ok) => {
+      state.calibrating = false;
+      state.calibrated = ok;
+      bus.emit("STATE", { calibrated: ok, accuracy: null });
+      done(ok);
+    };
+
+    let started = false;
+    const begin = () => {
+      if (started) return;
+      started = true;
+      removeEventListener("keydown", onKey, true);
+      dot.disabled = true;
+      run().then(finish).finally(() => {
+        cleanup.forEach((fn) => fn());
+        if (cancelCalibration === cancel) cancelCalibration = null;
+        ov.remove();
+      });
+    };
+    const onKey = (e) => {
+      if ((e.code !== "Space" && e.key !== " ") || e.repeat) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      begin();
+    };
+    const cancel = () => {
+      cancelled = true;
+      removeEventListener("keydown", onKey, true);
+      cleanup.forEach((fn) => fn());
+      ov.remove();
+      state.calibrating = false;
+      if (cancelCalibration === cancel) cancelCalibration = null;
+      done(false);
+    };
+    cancelCalibration = cancel;
+
+    const stopVoice = bus.on("UTTERANCE", ({ text, final }) => {
+      if (final && /^(next|ready|start|begin|go|ok|okay|done)\b/i.test(text.trim())) begin();
+    });
+    cleanup.push(stopVoice);
+    dot.addEventListener("click", begin);
+    cleanup.push(() => dot.removeEventListener("click", begin));
+    addEventListener("keydown", onKey, true);
+
+    place(innerWidth / 2, innerHeight / 2);
+    const again = attempt > 1 ? " · attempt " + attempt : "";
+    say(`Keep your head still and follow the dot with your eyes. Press SPACE, tap the dot, or say “Cue, ready”${again}`);
+    if (attempt === 1) bus.emit("SAY", { text: "Keep your head still and follow the dot with your eyes. Say ready when you're set." });
+  });
+}
+
 async function calibrateOnce({ allowRetry = true, maxAttempts = 2 } = {}) {
+  // WebGazer trains its own regression rather than fitting gaze-v2's
+  // features-based model (see runWebgazerCalibration) — a whole separate,
+  // shorter path, with no accuracy number to gate a retry on.
+  if (eyes.recordScreenPosition) {
+    const ok = await runWebgazerCalibration(1);
+    state.lastSampleAt = performance.now();
+    bus.emit("SAY", { text: ok
+      ? "Calibration done. What are you after?"
+      : "Let's skip calibration for now — just tell me what you want." });
+    state.precise = ok;
+    bus.emit("STATE", { precise: state.precise });
+    return ok ? { after_px: null } : null;
+  }
   eyes.showPreview(true);
   for (let attempt = 1; ; attempt++) {
     const acc = await runCalibration(attempt);

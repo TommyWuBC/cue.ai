@@ -54,3 +54,12 @@ export const isRunning = () => state.running;
 export const stats = () => ({ delegate: "webgazer" });
 // Its own preview is already off above; nothing to toggle here.
 export function showPreview() {}
+
+// WebGazer's own training primitive: pair the eye image at this instant with
+// a screen position. gaze.js's fixation sweep (runCalibration) cannot be
+// reused here — it fits a per-user model from sample.features, which this
+// engine's samples do not carry (see the top of this file). Its presence is
+// also how gaze.js knows which calibration path to run at all
+// (runWebgazerCalibration), rather than a second CONFIG.injected check
+// living in two files.
+export function recordScreenPosition(x, y) { window.webgazer?.recordScreenPosition(x, y); }
