@@ -174,6 +174,9 @@ def utterance(u: Utterance):
               f"details={len(details)} known={len(known)} convo={len(ctx.get('convo') or [])} "
               f"stats={json.dumps(ctx.get('details_stats'))[:260]} "
               f"{[str((d or {}).get('title', ''))[:30] for d in details[:3]]}", flush=True)
+    heard = (u.context or {}).get("heard") if isinstance(u.context, dict) else None
+    if isinstance(heard, str) and heard and heard != u.text:
+        print(f'[stt] corrected "{heard[:120]}" -> "{u.text[:120]}"', flush=True)
     fast = router.route(u.text)
     if fast:
         shopper.note(session, u.text, fast)

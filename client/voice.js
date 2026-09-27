@@ -1,10 +1,12 @@
 import { bus } from "./bus.js";
 import * as mic from "./mic.js";
 import { url } from "./config.js";
+import { findWake, stripWake, echoes } from "./speech.js";
 
-// STT mishears the wake word constantly. Accept the near-misses it actually
-// produces, and keep the old name working so nothing breaks mid-demo.
-const WAKE = /\b(cue|q|queue|kew|cu|coo|aura|ora|aurora)\b/i;
+// STT mishears the wake word constantly ("q", "queue", "cute"). findWake()
+// decides from context: a bare "q" counts at the start of a sentence, a
+// sound-alike like "cute" only when a command follows it, and neither counts
+// mid-sentence, so "a cute dress" never wakes Cue.
 
 // Once you have said the wake word you get a window to keep talking without
 // repeating it. Real conversation is "Cue, is this wool?" ... "does it run
@@ -58,13 +60,13 @@ export function keepAwake(ms = WAKE_WINDOW_MS) {
 }
 
 export function calibrationCommand(text) {
-  const n = norm(text).replace(/^(?:cue|q|queue|kew|cu|coo|aura|ora|aurora)\s+/, "");
+  const n = norm(stripWake(norm(text)));
   if (!n) return null;
   return CAL_DOT.test(n) || CAL_CHOICE.test(n) ? n : null;
 }
 
 function isHalt(text) {
-  const n = norm(text).replace(/^(?:cue|q|queue|kew|cu|coo|aura|ora|aurora)\s+/, "");
+  const n = norm(stripWake(norm(text)));
   return /^(?:end|cue end|stop cue|pause cue|exit|quit|stop|go away|shut down|turn(?: yourself)? off|disable)(?: cue)?$/.test(n);
 }
 
@@ -116,7 +118,7 @@ function handleTranscript(text, final, alternatives = null) {
   // Push-to-talk, or still inside the wake window: take it verbatim.
   if (pttArmed() || now() < state.wakeUntil) {
     state.wakeUntil = now() + WAKE_WINDOW_MS;     // keep the conversation open
-    bus.emit("UTTERANCE", { text: strip(text), final: true });
+    bus.emit("UTTERANCE", { text: stripWake(text), final: true });
     return;
   }
 
@@ -125,12 +127,12 @@ function handleTranscript(text, final, alternatives = null) {
   const cands = alternatives?.length ? alternatives : [text];
   let hit = null;
   for (const alt of cands) {
-    const m = (alt || "").match(WAKE);
-    if (m) { hit = { alt, m }; break; }
+    hit = findWake(alt || "");
+    if (hit) break;
   }
   if (!hit) return;
 
-  const rest = hit.alt.slice(hit.m.index + hit.m[0].length).replace(/^[,.\s]+/, "").trim();
+  const rest = hit.rest;
   state.wakeUntil = now() + WAKE_WINDOW_MS;
   if (rest) bus.emit("UTTERANCE", { text: rest, final: true });
   else bus.emit("STATE", { awake: true });        // just the name: open the window
@@ -140,28 +142,29 @@ function handleTranscript(text, final, alternatives = null) {
 let speakingText = "";
 const norm = (s) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 
-function isEcho(text) {
-  if (!speakingText) return false;
-  const a = norm(text), b = norm(speakingText);
-  if (!a) return true;
-  if (b.includes(a)) return true;                 // a literal chunk of our line
-  // Or mostly our words, in a short fragment — what leaks is rarely clean.
-  const words = a.split(" ");
-  if (words.length <= 6) {
-    const shared = words.filter((w) => w.length > 2 && b.includes(w)).length;
-    if (shared >= Math.max(2, Math.ceil(words.length * 0.6))) return true;
-  }
-  return false;
+// A turn often speaks twice in a row — the agent's line, then the page's own
+// ("Opening your cart now." then "Opening Cart, shift, option, c."). The mic
+// hears them as one blurred transcript that matches neither line on its own,
+// so remember the last few, not just the one playing.
+let spokenRecently = [];
+const ECHO_MEMORY_MS = 6000;
+const ECHO_TAIL_MS = 1200;
+
+function rememberSpoken(text) {
+  const t = norm(text);
+  if (!t) return;
+  spokenRecently = [...spokenRecently, { t, at: now() }]
+    .filter((s) => now() - s.at < ECHO_MEMORY_MS)
+    .slice(-4);
 }
 
-// Strip a leading wake word if push-to-talk picked it up anyway.
-function strip(text) {
-  const m = text.match(WAKE);
-  if (m && m.index <= 2) {
-    const rest = text.slice(m.index + m[0].length).replace(/^[,.\s]+/, "").trim();
-    if (rest) return rest;
-  }
-  return text;
+function isEcho(text) {
+  if (!norm(text)) return Boolean(speakingText);
+  // Consult memory only while we are talking or just after. Beyond that the
+  // words are the shopper's, and treating them as echo would eat real speech:
+  // "open my cart" right after Cue mentions the cart is a real command.
+  const listening = state.speaking || now() < state.mutedUntil + ECHO_TAIL_MS;
+  return echoes(text, [speakingText, ...(listening ? spokenRecently.map((s) => s.t) : [])]);
 }
 
 bus.on("STT", ({ text, final }) => handleTranscript(text, final));
@@ -373,6 +376,7 @@ export async function speak(text) {
   // What we are saying, so the echo check can recognise it coming back.
   // We deliberately do NOT mute the mic here: barge-in has to keep working.
   speakingText = text;
+  rememberSpoken(text);
   try {
     const res = await fetch(url("/tts?text=" + encodeURIComponent(text)));
     if (!current() || state.privateMode) return;  // superseded, or payment mode started mid-fetch
