@@ -106,8 +106,22 @@
     return found.slice(0, 60);
   }
 
-  // Any shop: a visible card or a large linked image with a real title.
-  // A missing or ambiguous price stays missing. The card is still numbered.
+  // A link is only a product when the page gives a reason to think so: a
+  // product-shaped URL, or a price on the card. Without this, reading the whole
+  // page instead of the viewport turned "+1 other color/pattern" and
+  // "29,222 ratings" into products, and Cue then discussed them.
+  const PRODUCT_URL = /\/(?:dp|gp\/product|products?|items?|itm|ip|p)\//i;
+  const NOT_PRODUCT = new RegExp([
+    '^[+]?\\d[\\d,.]*\\s*(?:ratings?|reviews?|answered questions?|bought|stars?)',
+    '^[+]?\\d+\\s+other\\b', '^(?:see|shop|view|learn|compare|explore|discover)\\b',
+    '\\bout of \\d\\b', '^(?:sponsored|prime|best ?seller|amazon.s choice|overall pick)\\b',
+    '^(?:add to|buy |subscribe|sign in|log in|next page|previous page|back to)',
+    '^(?:customer reviews?|more buying choices|other sellers|visit the)\\b',
+    '^(?:free |save |get it|deal of|limited time|coupon|up to \\d)',
+  ].join('|'), 'i');
+
+  // Any shop: a card or a large linked image with a real title.
+  // A missing or ambiguous price stays missing.
   function genericCards(doc) {
     const out = [];
     const seen = new Set();
@@ -126,7 +140,10 @@
         link.querySelector?.('img[alt]')?.getAttribute?.('alt') || link.textContent);
       if (title.length < 6 || title.length > 140) continue;
       if (/^(search|sign in|log in|account|bag|cart|menu|home)$/i.test(title)) continue;
+      if (NOT_PRODUCT.test(title) || !/[a-z]{3}/i.test(title)) continue;
       const amount = price(card.textContent || '');
+      // Evidence, not just a link in a box.
+      if (amount === null && !PRODUCT_URL.test(href)) continue;
       seen.add(href);
       out.push({ el: card, product: {
         id: clean(href), title, price: amount, currency: 'USD', url: href, attrs: {},

@@ -55,7 +55,7 @@ function learnPage() {
   knowledge.observe(items.map((t) => ({ product: t.product, el: t.el })));
 }
 // Bumped by hand when the client changes, so the server log shows which build is running.
-const CLIENT_BUILD = "2026-09-26 speak-first";
+const CLIENT_BUILD = "2026-09-26 real-products";
 
 const PRODUCT_VERBS = new Set(["add_to_cart", "select_variant", "select_color"]);
 
@@ -403,13 +403,31 @@ async function readSiteCart() {
 }
 
 // The name of something seen this visit, or "it" for what was last discussed.
+// The agent names items by their full title, which rarely survives word-for-word
+// ("the Beat Solo" for "Beats Solo 4 Wireless On-Ear"), so an exact single match
+// is too strict — it refused items that were right there on the page.
 function resolveKnown(target) {
   const t = String(target ?? "").trim();
   if (!t || /^(?:it|this|that|this one|that one)$/i.test(t)) {
     return discussed ? knowledge.get(discussed.id) : null;
   }
-  const hits = matchCandidates(t, knowledge.recent(40));
-  return hits.length === 1 ? hits[0] : null;
+  // What is on this page as well as what was seen earlier, so "open its page"
+  // works for something Cue has only just laid eyes on.
+  const here = scanAll().map((p) => knowledge.get(p.product.id) ?? p.product);
+  const pool = [...here, ...knowledge.recent(40)]
+    .filter((p, i, all) => p?.title && all.findIndex((q) => q.id === p.id) === i);
+  const hits = matchCandidates(t, pool);
+  if (hits.length) return hits[0];
+  // Last resort: the longest title that shares a distinctive run of words.
+  const words = t.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3);
+  if (!words.length) return null;
+  let best = null, bestScore = 0;
+  for (const p of pool) {
+    const title = p.title.toLowerCase();
+    const score = words.filter((w) => title.includes(w)).length;
+    if (score > bestScore) { best = p; bestScore = score; }
+  }
+  return bestScore >= Math.min(2, words.length) ? best : null;
 }
 
 function bagBrief() {
@@ -1234,7 +1252,10 @@ function perform(verb, args, opts = {}) {
       const item = resolveKnown(args.target);
       const link = item && knowledge.linkFor(item, args.part || "product");
       if (!link) {
-        bus.emit("SAY", { text: item ? `I don't have its ${args.part || "page"} link.` : "I'm not sure which item you mean." });
+        const near = scanAll().slice(0, 2).map((p) => p.product.title.slice(0, 40)).filter(Boolean);
+        bus.emit("SAY", { text: item ? `I don't have its ${args.part || "page"} link.`
+          : near.length ? `I can't place that one. I can see the ${near.join(", and the ")}.`
+          : "I'm not sure which item you mean." });
         return false;
       }
       discussed = briefProduct({ ...item, url: item.url }) ?? discussed;
