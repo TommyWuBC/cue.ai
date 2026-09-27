@@ -6,7 +6,7 @@ const deferred = () => { let resolve; const promise = new Promise(r => { resolve
 const quote = { intent_id: 'intent-1', total_cents: 1000, remaining_after_cents: 24000,
   items: [{ title: 'Coat', size: 'M', color: 'Black', unit_price_cents: 1000 }] };
 
-function setup(t, handler = () => undefined) {
+function setup(t, handler = () => undefined, onApproved = null) {
   class Element extends EventTarget {
     open = false; disabled = false; textContent = '';
     nodes = new Map();
@@ -38,7 +38,7 @@ function setup(t, handler = () => undefined) {
     t.after(() => before ? Object.defineProperty(globalThis, key, before) : delete globalThis[key]);
   }
   const flow = setupCheckout({ getCart: () => [{ id: 'j1', size: 'M', color: 'Black' }],
-    clearCart: () => { cleared = true; }, onStatus() {} });
+    clearCart: () => { cleared = true; }, onStatus() {}, onApproved });
   return { flow, calls, spoken, dialog, cleared: () => cleared };
 }
 
@@ -92,4 +92,19 @@ test('private mode prepares server-checked order without spoken readback', async
   assert.ok(h.calls.includes('/api/checkout/prepare'));
   assert.ok(!h.spoken.some(s => s.includes('Total $10.00')));
   assert.equal(h.dialog.querySelector('.checkout-approve').disabled, false);
+});
+
+test('local purchase recording runs only after a successful passkey approval', async t => {
+  const recorded = [];
+  const h = setup(t, path => path.endsWith('/approve')
+    ? { ok: true, json: async () => ({ order_id: 'order-1', remaining_cents: 24000 }) }
+    : undefined, (order, intent) => recorded.push({ order, intent }));
+  navigator.credentials.get = async () => ({ toJSON: () => ({ rawId: 'YQ' }) });
+  await h.flow.prepare();
+  assert.equal(recorded.length, 0);
+  await h.flow.approve();
+  assert.equal(recorded.length, 1);
+  assert.equal(recorded[0].order.order_id, 'order-1');
+  assert.equal(recorded[0].intent.intent_id, 'intent-1');
+  assert.equal(h.cleared(), true);
 });

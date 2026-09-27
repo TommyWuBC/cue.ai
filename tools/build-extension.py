@@ -12,10 +12,11 @@ import zipfile
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEST = ROOT / 'dist' / 'cue-extension'
 FILES = [
-    'extension/background.js', 'extension/content.js', 'extension/extract.js',
+    'extension/background.js', 'extension/content.js', 'extension/extract.js', 'extension/demo-analytics.js',
     'extension/popup.html', 'extension/popup.css', 'extension/popup.js',
     'extension/privacy.html', 'extension/assets/cue-splash.jpg',
-    'client/aura.js', 'client/avatar.js', 'client/bus.js',
+    'client/aura.js', 'client/analytics.js', 'client/analytics.css', 'client/analytics-store.js',
+    'client/analytics-transport.js', 'client/avatar.js', 'client/bus.js',
     'client/config.js', 'client/details.js', 'client/gaze.js', 'client/intent.js', 'client/knowledge.js', 'client/mic.js', 'client/overlay.css',
     'client/resolver.js', 'client/search.js', 'client/shopper.js', 'client/site.js', 'client/speech.js', 'client/splash.js',
     'client/voice.js', 'client/product-memory.js', 'vendor/webgazer.js',
@@ -107,6 +108,7 @@ def main():
     origin = server_origin(args.server_url)
     manifest = json.loads((ROOT / 'extension/manifest.json').read_text())
     manifest['host_permissions'] = [origin + '/*']
+    manifest['content_scripts'][0]['matches'] = [origin + '/*']
     manifest['icons'] = {str(size): f'icons/{size}.png' for size in (16, 32, 48, 128)}
     manifest['action']['default_icon'] = manifest['icons']
 

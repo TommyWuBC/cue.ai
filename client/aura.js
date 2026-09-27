@@ -13,6 +13,77 @@ import { crawlNear, matchPage, pageText } from "./site.js";
 import { createDetails } from "./details.js";
 import { createKnowledge } from "./knowledge.js";
 import { parseSearch, amazonSearchUrl, describeFilters } from "./search.js";
+import { analyticsCommand, createAnalytics } from "./analytics.js";
+import { analyticsRequest as browserAnalyticsRequest, downloadAnalyticsCSV } from "./analytics-transport.js";
+
+const analyticsRequest = (kind, event = null) =>
+  browserAnalyticsRequest(kind, event, { injected: CONFIG.injected });
+
+const analytics = createAnalytics({ request: analyticsRequest,
+  onExport: async () => downloadAnalyticsCSV(await analyticsRequest("export")) });
+function recordActivity(kind, fields) {
+  if (globalThis.__cueEnded) return Promise.resolve();
+  return analyticsRequest("event", {
+    event_id: crypto.randomUUID(), kind, site: location.hostname, ...fields,
+  }).catch(error => console.warn("[cue] Could not save shopping activity:", error));
+}
+
+let pendingSearch = null;
+function recordSearch(query, source = "route") {
+  const clean = String(query || "").trim().slice(0, 120);
+  if (!clean) return Promise.resolve();
+  const now = Date.now();
+  if (source !== "voice" && pendingSearch?.query === clean.toLowerCase() &&
+      now - pendingSearch.at < 30000 &&
+      (pendingSearch.source === "voice" || (pendingSearch.source === "submit" && source === "route"))) {
+    if (source === "route") pendingSearch = null;
+    return Promise.resolve();
+  }
+  pendingSearch = { query: clean.toLowerCase(), source, at: now };
+  return recordActivity("search", { query: clean });
+}
+
+document.addEventListener("submit", event => {
+  const field = event.target?.querySelector?.('input[type="search"],input[name="q"],input[name="k"]');
+  if (field && !event.target.closest("#aura-root")) void recordSearch(field.value, "submit");
+}, true);
+document.addEventListener("routechange", () => {
+  if (location.pathname === "/search") void recordSearch(new URLSearchParams(location.search).get("q"));
+});
+document.addEventListener("cue:cart-added", ({ detail }) => {
+  if (!window.cue || globalThis.__cueEnded) return;
+  void recordActivity("cart_add", {
+    product_id: detail.id, product_title: detail.title, size: detail.size,
+    color: detail.color, price_cents: detail.price_cents,
+  });
+});
+document.addEventListener("cue:order-approved", ({ detail }) => {
+  if (!window.cue || globalThis.__cueEnded) return;
+  (detail.items || []).forEach((item, index) => {
+    void recordActivity("purchase", {
+      event_id: `purchase:${detail.order_id}:${index}`,
+      product_id: item.id, product_title: item.title, size: item.size, color: item.color,
+      price_cents: item.unit_price_cents, order_id: detail.order_id,
+      order_total_cents: detail.total_cents,
+    });
+  });
+});
+document.addEventListener("click", event => {
+  if (!CONFIG.injected || globalThis.__cueEnded) return;
+  const button = event.target?.closest?.('button,input[type="submit"],[role="button"]');
+  if (!button || button.closest("#aura-root") ||
+      !/\badd\s+to\s+(?:cart|bag)\b/i.test(controlName(button))) return;
+  const card = button.closest("[data-cue-product],[data-aura-product]");
+  const product = productData(card) || discussed || {};
+  void recordActivity("add_request", {
+    product_id: product.id || "", product_title: product.title || "Item",
+    size: stated.size || "", color: stated.color || "",
+    price_cents: Number.isFinite(product.price) ? Math.round(product.price * 100) : null,
+  });
+}, true);
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && analytics.isOpen) { event.preventDefault(); analytics.close(); }
+});
 
 let memoryStorage;
 try { memoryStorage = CONFIG.injected ? window.CUE_MEMORY_STORAGE : sessionStorage; } catch {}
@@ -121,6 +192,7 @@ async function runSearch(q, narrated = false) {
     const target = amazonSearchUrl(parsed, location.href);
     if (target) {
       const applied = describeFilters(parsed);
+      await recordSearch(parsed.q, "voice");
       discussed = null;
       stated = { id: null, size: null, color: null };
       persistShopper();
@@ -147,6 +219,7 @@ async function runSearch(q, narrated = false) {
   }
   field.focus();
   writeField(field, q);
+  await recordSearch(q, "voice");
   discussed = null;
   stated = { id: null, size: null, color: null };
   invalidate();
@@ -178,7 +251,7 @@ function mountUI() {
     <div class="aura-hud">
       <div class="aura-hud-row"><b>Cue</b><span class="aura-status"><span class="aura-dot"></span><span class="aura-chip aura-mode"></span></span></div>
       <div class="aura-hud-heard"></div>
-      <div class="aura-hud-said"></div>
+      <div class="aura-hud-said" role="status" aria-live="polite" tabindex="0"></div>
       <div class="aura-hud-drift">tracking has drifted · say &ldquo;recalibrate&rdquo;</div>
       <div class="aura-hud-foot">hold <kbd>space</kbd> to talk · say &ldquo;Cue, &hellip;&rdquo;</div>
     </div>
@@ -299,7 +372,13 @@ bus.on("SAY", ({ text }) => { void sayAndWait(text); });
 // waits for this to resolve first.
 async function sayAndWait(text) {
   if (!text) return;
-  if (ui.said) ui.said.textContent = text;
+  if (ui.said) {
+    ui.said.textContent = text;
+    // The response area is intentionally compact. When an answer grows beyond
+    // it, keep the newest words in view instead of leaving the shopper looking
+    // at the beginning of a clipped answer.
+    requestAnimationFrame(() => { ui.said.scrollTop = ui.said.scrollHeight; });
+  }
   remember("assistant", text);
   try { await voice.speak(text); } catch { /* a failed line must not block the action */ }
 }
@@ -462,7 +541,16 @@ async function withDetails(text) {
     const focused = f?.kind === "product" ? f.product : null;
     await details.ensure(detailUrls(focused).slice(0, 3).map((p) => p.url));
   }
-  return context(text);
+  const ctx = context(text);
+  try {
+    const summary = await analyticsRequest("summary");
+    ctx.shopping_interests = {
+      searched: (summary.top_searches || []).slice(0, 3).map(item => item.label),
+      added: (summary.top_added || []).slice(0, 3).map(item => item.label),
+      purchased: (summary.top_purchased || []).slice(0, 3).map(item => item.label),
+    };
+  } catch {}
+  return ctx;
 }
 
 function detailUrls(focused) {
@@ -580,7 +668,9 @@ const HALT = /^(?:exit|quit|stop|go away|shut down|turn(?: yourself)? off|disabl
 
 // "scroll down" keeps going, slowly, until they say stop. Reading pace, not a
 // jump: someone who cannot scroll themselves needs to see the page pass by.
-const SCROLL_SPEEDS = [22, 38, 60, 95, 150];   // px per second
+// Each reading pace is 1.8x the original speed. The steps remain far enough
+// apart for "slower" and "faster" to make an obvious, predictable change.
+const SCROLL_SPEEDS = [39.6, 68.4, 108, 171, 270];   // px per second
 const STOP_SCROLL = /\b(?:stop|pause|wait|hold on|hold it|halt|freeze|enough|that's good|right there|okay stop)\b/i;
 const autoScroll = { dir: 0, speed: 2, raf: 0, last: 0, carry: 0, stuck: 0 };
 
@@ -697,6 +787,12 @@ async function beginTurn(text) {
   if (fixed.changed) {
     text = fixed.text;
     console.log(`[cue] heard "${heard}" -> "${text}"`);
+  }
+  const analyticsAction = analyticsCommand(text, analytics.isOpen);
+  if (analyticsAction) {
+    if (analyticsAction === "close") { analytics.close(); bus.emit("SAY", { text: "Closed analytics." }); }
+    else { void analytics.open(); bus.emit("SAY", { text: "Opening your analytics." }); }
+    return;
   }
   remember("user", text);
   // Naming an item and then talking about it must not let gaze quietly take
@@ -1719,6 +1815,7 @@ export async function exitCue() {
   exited = true;
   globalThis.__cueEnded = true;
   pendingConfirm = null;
+  analytics.close();
   voice.exitPrivateMode?.();
   voice.stopListening();
   gaze.stop();

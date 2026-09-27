@@ -134,8 +134,10 @@ body:has(.cue-splash) #aura-root { visibility: hidden; }
   font-size: 9.5px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase;
   color: var(--cue-faint); }
 .aura-hud-said { margin-top: 5px; font-size: 15px; line-height: 1.42; letter-spacing: -.015em;
-  font-weight: 450;
-  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  font-weight: 450; max-height: calc(1.42em * 4); overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: var(--cue-hairline) transparent; }
+.aura-hud-said::-webkit-scrollbar { width: 4px; }
+.aura-hud-said::-webkit-scrollbar-thumb { background: var(--cue-hairline); border-radius: 999px; }
 .aura-hud-heard:empty, .aura-hud-said:empty { display: none; }
 
 /* The keyboard hint is for someone who has not started yet. Once there is a
