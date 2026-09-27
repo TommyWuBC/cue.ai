@@ -42,6 +42,10 @@
 .cc-name { font-size: 14px; font-weight: 600; letter-spacing: -.015em; line-height: 1.3; }
 .cc-price { font-size: 13px; color: var(--cue-muted); }
 .cc-price:empty { display: none; }
+/* What buyers said. A quoted fragment reached here only by matching the page,
+   so it can be shown as a quotation without hedging. */
+.cc-voice { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--cue-hairline);
+  font-size: 12px; line-height: 1.4; color: var(--cue-muted); }
 
 .cc-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .cc-table th, .cc-table td { padding: 9px 10px; text-align: left; vertical-align: top;

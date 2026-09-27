@@ -141,3 +141,26 @@ def test_a_sentence_can_close_a_panel_and_add_a_named_item():
         == [{"verb": "add_to_cart", "args": {}}]
     assert agent.sanitize({"say": "x", "do": [
         {"verb": "add_to_cart", "args": {"item": "  "}}]})["do"] == [{"verb": "add_to_cart", "args": {}}]
+
+
+def test_a_quote_survives_only_if_the_page_really_contains_it():
+    """A shopper cannot check a quote, and the whole point of one is that
+    somebody actually said it — so it is verified, not trusted."""
+    import compare
+    evidence = "the ear tips work loose on a run, but the battery lasts all day"
+    assert compare._voice('One buyer said "the ear tips work loose on a run".', evidence)
+    # Reworded inside the quotation marks is still a fabrication.
+    assert compare._voice('One buyer said "the tips fall out when running".', evidence) is None
+    assert compare._voice('A buyer said "these exploded in my ear".', evidence) is None
+    # Punctuation and case differences are not fabrication.
+    assert compare._voice('One said "The Ear Tips Work Loose!".', evidence)
+    # An unquoted summary of the star split needs no evidence to quote.
+    assert compare._voice("Two thirds rate it five stars.", "") == "Two thirds rate it five stars."
+
+
+def test_evidence_for_a_quote_is_only_what_buyers_wrote():
+    import compare
+    ev = compare._evidence({"facts": {"reviews": ["battery lasts all day"],
+                                      "customers_say": "buyers like the fit"}})
+    assert "battery lasts all day" in ev and "buyers like the fit" in ev
+    assert compare._evidence({}) == "" or compare._evidence({}).strip() == ""

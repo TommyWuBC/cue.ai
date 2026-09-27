@@ -25,6 +25,7 @@ export function compareHTML(data) {
       ${pick === side ? '<span class="cc-badge">Cue\u2019s pick</span>' : ""}
       <span class="cc-name">${title}</span>
       <span class="cc-price">${esc(money(d.prices?.[side]))}</span>
+      ${d.voices?.[side] ? `<span class="cc-voice">${esc(d.voices[side])}</span>` : ""}
     </div>`;
   const rows = (d.rows || []).map((r) => `
     <tr>

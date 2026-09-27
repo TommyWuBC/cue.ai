@@ -8,6 +8,7 @@ Everything here is page text and local history — untrusted evidence, never
 instructions, and every field is type-checked and capped before it is rendered.
 """
 import json
+import re
 
 from agent import MODEL, _details, client
 
@@ -17,7 +18,8 @@ them: plain words, no marketing, no hedging.
 
 Return JSON only:
 {"rows": [{"label": "...", "a": "...", "b": "..."}],
- "verdict": "...", "pick": "a" | "b", "ecosystem": "..."}
+ "verdict": "...", "pick": "a" | "b", "ecosystem": "...",
+ "voices": {"a": "...", "b": "..."}}
 
 `rows` are 3 to 5 things a person would actually weigh — price, battery, fit,
 noise cancelling, what buyers complain about. Label is two words or less. `a`
@@ -26,6 +28,17 @@ say, write "not listed". Do not invent a number that is not in the evidence.
 
 `verdict` is one sentence, under twenty words, naming which one you would hand
 them and why. `pick` is which side that is.
+
+`voices` is what buyers say about each side, one short line each.
+  If that side's evidence has `reviews` or `customers_say`, quote a real
+  fragment from it in double quotes and attribute it plainly: One buyer said
+  "the tips work loose on a run".
+  If it does not, do NOT use quotation marks. Say what the star split shows
+  instead: Two thirds rate it five stars, but one in six gives it one.
+  Never invent a quote, never reword one inside quotation marks, and never
+  attribute an opinion to a buyer that you were not given. A quoted fragment
+  that is not in the evidence is removed before this is shown, and the line
+  goes with it.
 
 `ecosystem` is one sentence about how the pick fits what they already own, from
 `owns`. Say it the way a person would — "you picked up the iPhone last week, so
@@ -42,6 +55,38 @@ def _row(value):
     if not all(isinstance(x, str) and x.strip() for x in (label, a, b)):
         return None
     return {"label": label[:24], "a": a[:80], "b": b[:80]}
+
+
+def _evidence(side: dict) -> str:
+    """Everything a quote could legitimately come from, flattened."""
+    facts = side.get("facts") if isinstance(side, dict) else None
+    facts = facts if isinstance(facts, dict) else {}
+    bits = [facts.get("customers_say") or ""]
+    for key in ("reviews", "highlights"):
+        value = facts.get(key)
+        if isinstance(value, list):
+            bits.extend(x for x in value if isinstance(x, str))
+    return " ".join(bits).lower()
+
+
+def _voice(line, evidence: str):
+    """A quote survives only if the page really contains it.
+
+    The prompt forbids inventing one, but a shopper cannot check and the whole
+    point of a quote is that someone actually said it. So it is verified
+    against the evidence rather than trusted, and a line whose quote is not
+    there is dropped entirely — a fabricated review is worse than no review.
+    """
+    if not isinstance(line, str) or not line.strip():
+        return None
+    line = line.strip()[:160]
+    quotes = re.findall(r'"([^"]{8,})"', line)
+    if not quotes:
+        return line
+    def squash(t):
+        return " ".join(re.sub(r"[^a-z0-9 ]+", " ", t.lower()).split())
+    hay = squash(evidence)
+    return line if all(squash(q) in hay for q in quotes) else None
 
 
 def compare(a: dict, b: dict, owns=None) -> dict:
@@ -72,7 +117,15 @@ def compare(a: dict, b: dict, owns=None) -> dict:
     rows = [r for r in (_row(x) for x in (out.get("rows") or [])[:6]) if r]
     pick = out.get("pick") if out.get("pick") in {"a", "b"} else "a"
     verdict = out.get("verdict")
+    voices_in = out.get("voices") if isinstance(out.get("voices"), dict) else {}
+    voices = {}
+    for key, product in (("a", a), ("b", b)):
+        kept = _voice(voices_in.get(key), _evidence(product))
+        if kept:
+            voices[key] = kept
+
     return {
+        "voices": voices,
         "rows": rows,
         "verdict": verdict[:200] if isinstance(verdict, str) else "",
         "pick": pick,

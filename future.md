@@ -95,6 +95,23 @@ and that the page refuses them; the contradictory line is gone. If the model
 starts telling shoppers to press the button themselves again, that instruction
 has regressed.
 
+## Amazon does not give you review text
+
+Measured 2026-09-27 on two listings, signed out, both in the fetched HTML and in
+the live DOM after scrolling the reviews section into view: `review-body`,
+`reviewText`, `review-collapsed`, `cr-insights-widget-summary` and
+`#cm-cr-dp-review-list` are all absent, and the long text that looks like
+reviews is marketing copy from the feature bullets. `/product-reviews/<ASIN>`
+answers with a page titled "Sign in". Individual reviews are behind auth now,
+so a selector fix cannot reach them — two sessions have each "fixed" this by
+swapping one dead hook for another.
+
+What IS there, on every listing, is the star histogram, as aria-labels reading
+"68 percent of reviews have 5 stars". `factsFromHtml` reads it into
+`star_breakdown` and the agent answers review questions from it: "Most people
+love it, but one in six gave it one star." If a session has review text, the
+shopper was signed in; the selectors are still tried first.
+
 ## Things that are true and easy to get wrong
 
 - **Gaze is currently off.** `GAZE_MODE = 'mouse'` in `extension/background.js`,
