@@ -99,7 +99,7 @@ whole thought — do not follow it with where the rating came from.
 Say "a lot of people rate it highly" when you want to convey popularity.
 
 Reply with JSON only: {"say": "<what to speak>", "do": []}.
-You may propose: scroll{dir}, scroll_start{dir, speed}, scroll_stop{}, focus_nth{n}, select_variant{value},
+You may propose: scroll{dir}, scroll_start{dir, speed}, scroll_stop{}, gaze_scroll{on}, focus_nth{n}, select_variant{value},
 select_color{value}, click_named{name}, open_link{target, part}, back{}, forward{}, dismiss{}, search{query}, fill{field, text}, find_on_page{text}, submit{}, list_controls{}, read_bag{}, add_to_cart{}, checkout{}.
 
 `said` is a speech-to-text transcript and it mishears: "q", "queue" or "cute"
@@ -141,7 +141,10 @@ those into real filters.
 
 scroll{dir} moves one screen. scroll_start{dir, speed} keeps scrolling until
 scroll_stop{}; when they say to stop, propose scroll_stop — saying "stopped" without
-it leaves the page moving.
+it leaves the page moving. gaze_scroll{on: true} arms scrolling by where their
+eyes are on screen — propose it only when they ask for it by name ("scroll with
+my eyes", "follow my eyes"), not for a plain "scroll down". gaze_scroll{on: false}
+or scroll_stop turns it back off; either is fine.
 
 `fill` types into a field named in `fields` (field "" means the focused field
 or the search box); add submit{} after it to press enter when they ask. `find_on_page` scrolls to text copied verbatim from
@@ -358,6 +361,8 @@ def sanitize(out):
             if args.get("speed") in {"slow", "fast"}:
                 out["speed"] = args["speed"]
             return {"verb": verb, "args": out}
+        if verb == "gaze_scroll":
+            return {"verb": verb, "args": {"on": bool(args.get("on", True))}}
         if verb in {"list_controls", "read_bag", "add_to_cart", "checkout", "back", "forward",
                     "scroll_stop", "submit", "dismiss"}:
             return {"verb": verb, "args": {}}
@@ -390,7 +395,7 @@ def sanitize(out):
                 actions.append(allowed)
         elif verb in {"list_controls", "read_bag", "back", "forward", "scroll_stop", "dismiss"}:
             actions.append({"verb": verb, "args": {}})
-        elif verb == "scroll_start":
+        elif verb in {"scroll_start", "gaze_scroll"}:
             allowed = _allow(verb, args)
             if allowed:
                 actions.append(allowed)

@@ -421,11 +421,34 @@ const EDGE_MAX_PX = 13;   // per frame at the very edge
 
 let edgeSince = 0, edgeDir = 0, edgeSeen = 0;
 
+// Gaze alone is too coarse to scroll by. This was switched off once because the
+// page drifted while people read: reading the bottom of a screenful looks
+// exactly like asking for the next one, and at 220-350px of error there is no
+// way to tell them apart from position alone.
+//
+// So voice supplies the intent and gaze supplies the control. "Scroll with my
+// eyes" arms it, "stop" disarms it, and it disarms itself after a spell of
+// looking at nothing in particular. Reading can never start it, because the
+// shopper has to ask first — which is the whole reason it is safe to have back.
+const GAZE_SCROLL_IDLE_MS = 20000;
+const gazeScroll = { armed: false, lastActive: 0 };
+
+function armGazeScroll(on) {
+  gazeScroll.armed = on;
+  gazeScroll.lastActive = now();
+  edgeSince = 0; edgeDir = 0; edgeSeen = 0;
+  if (!on) document.body.classList.remove("cue-edge-top", "cue-edge-bottom");
+}
+
 function edgeScrollTick() {
-  // Gaze is too coarse to scroll by: the page drifted while people read.
-  // Scrolling is a spoken, discrete action only.
-  return;
-  // eslint-disable-next-line no-unreachable
+  if (!gazeScroll.armed) return;
+  // Armed but idle: let it lapse rather than leaving a live scroller behind a
+  // shopper who has moved on and would not think to say "stop".
+  if (now() - gazeScroll.lastActive > GAZE_SCROLL_IDLE_MS) {
+    armGazeScroll(false);
+    bus.emit("SAY", { text: "I've stopped following your eyes." });
+    return;
+  }
   const p = render;
   const gs = gaze.getState();
   if (gs.calibrating || !gs.point) {
@@ -461,6 +484,9 @@ function edgeScrollTick() {
       : 0.2;
   const step = dir * EDGE_MAX_PX * Math.min(1, Math.max(0.15, depth));
 
+  // Actually moving counts as activity, so the idle lapse measures "not using
+  // it" rather than "has been armed a while".
+  gazeScroll.lastActive = now();
   scrollAmount(p.x, dir < 0 ? 8 : innerHeight - 8, step, false);
   document.body.classList.toggle("cue-edge-top", dir < 0);
   document.body.classList.toggle("cue-edge-bottom", dir > 0);
@@ -1349,7 +1375,29 @@ function perform(verb, args, opts = {}) {
       if (!opts.narrated) bus.emit("SAY", { text: `Scrolling ${args.dir}.` });
       break;
     }
+    // Gaze drives the scrolling; voice decides when it may. Arming stops any
+    // spoken auto-scroll first, so two scrollers are never fighting over the
+    // same page.
+    case "gaze_scroll": {
+      const on = args.on === undefined ? !gazeScroll.armed : Boolean(args.on);
+      if (on) stopAutoScroll(false);
+      armGazeScroll(on);
+      if (!opts.narrated) {
+        bus.emit("SAY", { text: on
+          ? "Following your eyes. Look at the top or bottom of the page to move it, and say stop when you're done."
+          : "Okay, I've stopped following your eyes." });
+      }
+      break;
+    }
     case "scroll_stop":
+      // "Stop" has to end whichever scroller is running, and gaze-scroll is
+      // the one the shopper cannot stop by simply not talking.
+      if (gazeScroll.armed) {
+        armGazeScroll(false);
+        stopAutoScroll(false);
+        if (!opts.narrated) bus.emit("SAY", { text: "Stopped." });
+        break;
+      }
       if (!stopAutoScroll(!opts.narrated)) {
         // Nothing was moving, so "stop" was aimed at the talking.
         voice.stopSpeaking?.();

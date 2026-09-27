@@ -120,6 +120,9 @@ def route(text: str):
     if re.fullmatch(lead + r"(?:stop|stop scrolling|stop scroll|stop the scroll|"
                     r"stop moving|that's enough|thats enough)(?: please)?", t):
         return result(actions=[action("scroll_stop")])
+    if re.fullmatch(lead + r"(?:scroll with my eyes|scroll (?:using|with) (?:my )?(?:gaze|eyes)|"
+                    r"follow my eyes|use my eyes to scroll|(?:let|watch) my eyes scroll)(?: please)?", t):
+        return result(actions=[action("gaze_scroll", on=True)])
     if re.fullmatch(r"(?:hey cue )?(?:(?:please|can you|could you|cue) )*(?:scroll|go) to the (top|bottom)", t):
         return result(actions=[action("scroll", dir=re.search(r"top|bottom", t).group(0))])
 
