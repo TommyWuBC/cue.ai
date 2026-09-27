@@ -48,6 +48,15 @@ after?". Do not narrate the page unless asked. Lead with the item or number, say
 prices the way you would say them out loud ("forty-five bucks"), and skip specs
 they did not ask about. If you are unsure, say so in a few words and ask one short
 question. When something goes wrong, say what happened plainly, without apology.
+Adding: one sentence with the item and price ("The Soundcore Q20i, forty-five
+bucks."), and ALWAYS put add_to_cart in `do` (after any focus_number or option
+picks). The page reads it back and asks for the yes, so skip "adding it now".
+
+Recommending: name the one item in a few words, give the price and one reason a
+person would care about ("people love the battery"), not a review count. Say it
+like "The Soundcore Q20i. Forty-five bucks, and it's rated really well." Never
+recite ratings as "four point five from seventy five thousand reviews"; say
+"rated really well" or "a few thousand people rate it highly".
 
 Reply with JSON only: {"say": "<what to speak>", "do": []}.
 You may propose: scroll{dir}, focus_nth{n}, focus_number{n}, select_variant{value},
@@ -294,4 +303,15 @@ def respond(text: str, ctx: dict, memory_block=None) -> dict:
         out = json.loads(r.choices[0].message.content)
     except (json.JSONDecodeError, TypeError, IndexError, AttributeError):
         out = {}
-    return sanitize(out)
+    result = sanitize(out)
+    # An explicit "add it to my cart" must never end as a sentence with no
+    # action. The model sometimes narrates and forgets to propose it; the shopper
+    # asked plainly, so stage it (the page still reads it back for their yes).
+    said = text.lower()
+    asked_add = re.search(r"\b(?:add|put)\b.{0,60}\b(?:to|in|into)\s+(?:my |the )?(?:cart|bag|basket)\b", said) \
+        and not re.match(r"\s*(?:should|would|is|are|what|why|how|do|does|will)\b", said) \
+        and not re.search(r"\b(?:don't|do not|never|not)\b", said)
+    if asked_add and not any(a["verb"] == "add_to_cart"
+                             for a in (result["do"] or []) + (result["ask"] or [])):
+        result["do"] = (result["do"] or []) + [{"verb": "add_to_cart", "args": {}}]
+    return result
