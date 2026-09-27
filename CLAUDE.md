@@ -48,6 +48,10 @@ Use Chrome or Brave, not the Claude preview pane (no camera/mic). URL flags:
   (`extension-browser.test.mjs` needs `puppeteer-core`).
 
 ## Docs
+- **`future.md` — read first when debugging on a live site.** The traps that have
+  already cost sessions hours: module-only syntax errors `node --check` misses,
+  `querySelector` comma lists returning DOM order, first-match-wins picking
+  Amazon's "Add protection", and where the Amazon flow actually stands.
 - `docs/DESIGN.md` reasoning per area: accuracy, voice, models, agent, checkout, undo,
   extension, signing, config, markup contract, tests, overlay traps, known gaps.
 - `docs/GUARDIAN_TODO.md` planned guardian-approval pivot and steps left.
