@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <title>Your insights · Cue</title>
+  <link rel="stylesheet" href="/client/analytics.css">
+</head>
+<body style="margin:0">
+  <div id="aura-root"><div class="cue-analytics"><div class="cue-analytics-loading" role="status">Gathering your insights…</div></div></div>
+  <script type="module">
+    import { dashboardHTML } from "/client/analytics.js";
+    import { analyticsRequest, downloadAnalyticsCSV } from "/client/analytics-transport.js";
+    const panel = document.querySelector(".cue-analytics");
+    try {
+      panel.innerHTML = dashboardHTML(await analyticsRequest("summary"), { hasExport: true });
+    } catch {
+      panel.innerHTML = `<div class="cue-analytics-loading" role="alert">Could not open your browser's shopping journal.</div>`;
+    }
+    panel.addEventListener("click", event => {
+      if (event.target.closest(".cue-analytics-export")) {
+        void analyticsRequest("export").then(downloadAnalyticsCSV);
+      }
+      if (event.target.closest(".cue-analytics-close")) {
+        if (history.length > 1) history.back();
+        else location.assign("/");
+      }
+    });
+  </script>
+</body>
+</html>

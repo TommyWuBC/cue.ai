@@ -50,6 +50,16 @@ class AgentBoundaryTests(unittest.TestCase):
         self.assertEqual(result['do'], [{'verb': 'select_variant', 'args': {'value': 'M'}},
                                         {'verb': 'select_color', 'args': {'value': 'Black'}}])
 
+    def test_the_agent_can_type_and_press_enter(self):
+        result = agent.sanitize({'say': 'Searching', 'do': [
+            {'verb': 'fill', 'args': {'field': '', 'text': 'desk top'}},
+            {'verb': 'submit', 'args': {}},
+            {'verb': 'focus_number', 'args': {'n': 3}},
+        ]})
+        # focus_number went with the numbered badges; the model may not propose it.
+        self.assertEqual(result['do'], [{'verb': 'fill', 'args': {'field': '', 'text': 'desk top'}},
+                                        {'verb': 'submit', 'args': {}}])
+
     def test_page_evidence_is_bounded(self):
         product = {'id': 'j1', 'title': 'A' * 1000, 'price': 4,
                    'attrs': {'material': 'wool' * 1000},
@@ -109,3 +119,10 @@ def test_whole_page_reaches_the_model_including_items_below_the_fold():
     assert page["kind"] == "cart"
     assert [p["title"] for p in page["products"]] == ["Dawn dish soap", "Banana Boat Sport SPF 50"]
     assert page["products"][1]["onScreen"] is False
+
+
+def test_dismiss_is_allowed_and_takes_no_arguments():
+    out = agent.sanitize({"say": "Closed it.", "do": [{"verb": "dismiss", "args": {"el": "#x"}}]})
+    assert out["do"] == [{"verb": "dismiss", "args": {}}]
+    staged = agent.sanitize({"say": "Close it?", "ask": [{"verb": "dismiss", "args": {}}]})
+    assert staged["ask"] == [{"verb": "dismiss", "args": {}}]

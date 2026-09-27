@@ -1,10 +1,10 @@
-// Cue's face. A small SVG robot driven by springs. Everything it does answers
-// something real: it looks where the shopper looks, glances at clicks, perks up
-// at its name, leans in and pings while it hears words, shows dots while a
-// request is in flight, shapes its mouth to the words it is saying, and hops,
-// tilts or shakes its head depending on how the reply went. It drifts off when
-// nothing has happened for a while. Presentation only: it never emits events
-// and never touches the page beyond its own dock.
+// Cue's face: the Cue mark, driven by springs. The two Cs hold still and the
+// dot is the eye. Everything it does answers something real: the eye looks
+// where the shopper looks, glances at clicks, turns blue and sends rings while
+// it hears words, scans while a request is in flight, pulses with the words it
+// is saying, and the mark hops, tilts or shakes depending on how the reply
+// went. The eye droops when nothing has happened for a while. Presentation
+// only: it never emits events and never touches the page beyond its own dock.
 import { bus } from "./bus.js";
 
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
@@ -88,7 +88,7 @@ addEventListener("scroll", () => {
 
 const voiceState = () => window.cue?.voice?.getVoiceState?.() ?? {};
 
-// ── Speech shapes: a mouth that follows the words actually being said ───────
+// ── Speech shapes: how open each letter is, for the eye's pulse ─────────────
 function viseme(ch) {
   if (!ch) return .1;
   if ("ao".includes(ch)) return 1;
@@ -99,7 +99,6 @@ function viseme(ch) {
   if (",.;:!?—-".includes(ch)) return 0;
   return .35;
 }
-const round = ch => ch === "o" || ch === "u" || ch === "w";
 
 // ── Springs ─────────────────────────────────────────────────────────────────
 class Spring {
@@ -112,69 +111,64 @@ class Spring {
   kick(impulse) { this.vel += impulse; }
 }
 
-// ── Artwork ─────────────────────────────────────────────────────────────────
+// ── Artwork: the Cue mark on its charcoal tile ──────────────────────────────
+// Geometry follows the logo on a 120 grid: an outer C open to the right, an
+// inner C whose left side merges into it, and the dot in the inner C's mouth.
+// The two Cs never move. The dot is the eye.
 let uid = 0;
 const STAR = "M0 -5 C0.6 -1.2 1.2 -0.6 5 0 C1.2 0.6 0.6 1.2 0 5 C-0.6 1.2 -1.2 0.6 -5 0 C-1.2 -0.6 -0.6 -1.2 0 -5Z";
+const OUTER = { cx: 60, cy: 60, r: 36, w: 6 };
+const INNER = { cx: 45, cy: 60, r: 20, w: 5.4 };
+const DOT = { x: 72, y: 60, r: 6.8 };
+const TIPS = [[60.32, 47.14], [60.32, 72.86]];        // the inner C's two ends
+const BONE = "#f4f3ef";
+
+// Keep the eye clear of the strokes, whatever the springs are doing.
+function confine(x, y, scale) {
+  const r = DOT.r * scale;
+  x = Math.max(x, 61);                                  // it may peek into the inner C, not enter
+  for (const [tx, ty] of TIPS) {
+    const dx = x - tx, dy = y - ty, d = Math.hypot(dx, dy) || 1, min = r + INNER.w / 2 + .8;
+    if (d < min) { x = tx + dx / d * min; y = ty + dy / d * min; }
+  }
+  const dx = x - OUTER.cx, dy = y - OUTER.cy, d = Math.hypot(dx, dy) || 1;
+  const max = OUTER.r - OUTER.w / 2 - r - 1.2;
+  if (d > max) { x = OUTER.cx + dx / d * max; y = OUTER.cy + dy / d * max; }
+  return [x, y];
+}
+
 function art(id) {
-  const eye = side => `
-          <g class="cue-av-eye" data-side="${side}">
-            <path class="cue-av-brow" d="M-5.5 0 H5.5" stroke="#9cc6ff" stroke-width="2.4" stroke-linecap="round" opacity="0"/>
-            <g class="cue-av-open">
-              <rect x="-5.5" y="-7.5" width="11" height="15" rx="5.5" fill="url(#${id}-iris)"/>
-              <circle class="cue-av-glint" cx="-2" cy="-3.6" r="1.7" fill="#fff" opacity=".9"/>
-            </g>
-            <path class="cue-av-happy" d="M-6 2.5 Q0 -6 6 2.5" fill="none" stroke="#b9d6ff" stroke-width="3.2" stroke-linecap="round" opacity="0"/>
-          </g>`;
   return `
 <svg viewBox="0 0 120 120" role="img" aria-label="Cue" focusable="false">
   <defs>
-    <linearGradient id="${id}-shell" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e6e7ec"/>
+    <linearGradient id="${id}-tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2a2a"/><stop offset="1" stop-color="#1a1a1a"/>
     </linearGradient>
-    <linearGradient id="${id}-visor" x1="0" y1="0" x2=".35" y2="1">
-      <stop offset="0" stop-color="#2a2d35"/><stop offset="1" stop-color="#0f1014"/>
-    </linearGradient>
-    <radialGradient id="${id}-iris" cx=".5" cy=".4" r=".7">
-      <stop offset="0" stop-color="#e9f3ff"/><stop offset=".55" stop-color="#9cc6ff"/><stop offset="1" stop-color="#5b92ff"/>
-    </radialGradient>
-    <filter id="${id}-glow" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="2.4" result="b"/>
+    <filter id="${id}-shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3.4" flood-color="#000" flood-opacity=".22"/>
+    </filter>
+    <filter id="${id}-glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="2.2" result="b"/>
       <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
-    <filter id="${id}-shadow" x="-30%" y="-30%" width="160%" height="170%">
-      <feDropShadow dx="0" dy="3" stdDeviation="3.2" flood-color="#1d1d1f" flood-opacity=".16"/>
-    </filter>
-    <clipPath id="${id}-clip"><rect x="27" y="37" width="66" height="48" rx="19"/></clipPath>
+    <clipPath id="${id}-clip"><rect x="6" y="6" width="108" height="108" rx="30"/></clipPath>
   </defs>
-  <ellipse class="cue-av-floor" cx="60" cy="112" rx="26" ry="3.2" fill="#1d1d1f" opacity=".08"/>
   <g class="cue-av-body">
-    <g class="cue-av-antenna">
-      <path d="M60 24 V13" stroke="#c9ccd4" stroke-width="3" stroke-linecap="round"/>
-      <circle class="cue-av-ring" cx="60" cy="10" r="5" fill="none" stroke="#2f6bff" stroke-width="1.6" opacity="0"/>
-      <circle class="cue-av-ring" cx="60" cy="10" r="5" fill="none" stroke="#2f6bff" stroke-width="1.6" opacity="0"/>
-      <circle class="cue-av-ring" cx="60" cy="10" r="5" fill="none" stroke="#2f6bff" stroke-width="1.6" opacity="0"/>
-      <circle class="cue-av-bulb-glow" cx="60" cy="10" r="7" fill="#2f6bff" opacity="0"/>
-      <circle class="cue-av-bulb" cx="60" cy="10" r="4.6" fill="#d5d8df"/>
-    </g>
-    <rect class="cue-av-ear" data-side="-1" x="9" y="54" width="9" height="20" rx="4.5" fill="#d9dbe1"/>
-    <rect class="cue-av-ear" data-side="1" x="102" y="54" width="9" height="20" rx="4.5" fill="#d9dbe1"/>
-    <rect x="16" y="22" width="88" height="80" rx="31" fill="url(#${id}-shell)" filter="url(#${id}-shadow)"/>
-    <rect x="16.5" y="22.5" width="87" height="79" rx="30.5" fill="none" stroke="#000" stroke-opacity=".05"/>
-    <rect x="27" y="37" width="66" height="48" rx="19" fill="url(#${id}-visor)"/>
+    <rect x="6" y="6" width="108" height="108" rx="30" fill="url(#${id}-tile)" filter="url(#${id}-shadow)"/>
+    <rect x="6.5" y="6.5" width="107" height="107" rx="29.5" fill="none" stroke="#fff" stroke-opacity=".06"/>
     <g clip-path="url(#${id}-clip)">
-      <g class="cue-av-face">
-        <ellipse class="cue-av-cheek" cx="37" cy="70" rx="5.5" ry="3" fill="#ff8fa8" opacity="0"/>
-        <ellipse class="cue-av-cheek" cx="83" cy="70" rx="5.5" ry="3" fill="#ff8fa8" opacity="0"/>
-        <g filter="url(#${id}-glow)">
-          ${eye(-1)}${eye(1)}
-          <rect class="cue-av-mouth" x="-5" y="-1.2" width="10" height="2.4" rx="1.2" fill="#9cc6ff" opacity=".85"/>
-          <path class="cue-av-smile" d="M-6 -1.5 Q0 4 6 -1.5" fill="none" stroke="#9cc6ff" stroke-width="2.4" stroke-linecap="round" opacity="0"/>
-          <g class="cue-av-dots" opacity="0">
-            <circle cx="53" cy="75" r="1.9" fill="#9cc6ff"/><circle cx="60" cy="75" r="1.9" fill="#9cc6ff"/><circle cx="67" cy="75" r="1.9" fill="#9cc6ff"/>
-          </g>
+      <g class="cue-av-mark">
+        <path d="M88.37 37.83 A36 36 0 1 0 88.37 82.17" fill="none" stroke="${BONE}" stroke-width="${OUTER.w}"/>
+        <path d="M60.32 47.14 A20 20 0 1 0 60.32 72.86" fill="none" stroke="${BONE}" stroke-width="${INNER.w}"/>
+        <circle class="cue-av-ring" cx="${DOT.x}" cy="${DOT.y}" r="8" fill="none" stroke="${BONE}" stroke-width="1.4" opacity="0"/>
+        <circle class="cue-av-ring" cx="${DOT.x}" cy="${DOT.y}" r="8" fill="none" stroke="${BONE}" stroke-width="1.4" opacity="0"/>
+        <circle class="cue-av-ring" cx="${DOT.x}" cy="${DOT.y}" r="8" fill="none" stroke="${BONE}" stroke-width="1.4" opacity="0"/>
+        <g class="cue-av-eye">
+          <circle class="cue-av-halo" r="11" fill="#2f6bff" opacity="0"/>
+          <circle class="cue-av-dot" r="${DOT.r}" fill="${BONE}"/>
+          <circle class="cue-av-live" r="${DOT.r}" fill="#6e9bff" opacity="0" filter="url(#${id}-glow)"/>
         </g>
       </g>
-      <path d="M27 50 Q30 38 44 37 H64 Q40 42 27 58 Z" fill="#fff" opacity=".07"/>
     </g>
   </g>
   <g class="cue-av-sparkles">${Array.from({ length: 6 }, () =>
@@ -194,29 +188,24 @@ class Rig {
     const $ = s => this.svg.querySelector(s);
     const $$ = s => [...this.svg.querySelectorAll(s)];
     this.el = {
-      body: $(".cue-av-body"), floor: $(".cue-av-floor"), face: $(".cue-av-face"),
-      eyes: $$(".cue-av-eye"), open: $$(".cue-av-open"), happy: $$(".cue-av-happy"), glints: $$(".cue-av-glint"),
-      brows: $$(".cue-av-brow"), cheeks: $$(".cue-av-cheek"), mouth: $(".cue-av-mouth"), smile: $(".cue-av-smile"),
-      dots: $(".cue-av-dots"), dot: $$(".cue-av-dots circle"), ears: $$(".cue-av-ear"),
-      bulb: $(".cue-av-bulb"), bulbGlow: $(".cue-av-bulb-glow"), rings: $$(".cue-av-ring"),
-      sparkles: $$(".cue-av-sparkles path"),
+      body: $(".cue-av-body"), mark: $(".cue-av-mark"), eye: $(".cue-av-eye"),
+      dot: $(".cue-av-dot"), live: $(".cue-av-live"), halo: $(".cue-av-halo"),
+      rings: $$(".cue-av-ring"), sparkles: $$(".cue-av-sparkles path"),
     };
     this.s = {
       lx: new Spring(0, 120, 16), ly: new Spring(0, 120, 16),
-      scale: new Spring(1, 260, 16), squint: new Spring(1, 200, 20),
-      happy: new Spring(0, 160, 20), concern: new Spring(0, 140, 18), curious: new Spring(0, 140, 18),
-      mouth: new Spring(2.4, 620, 26), mouthW: new Spring(10, 400, 24), smile: new Spring(0, 160, 20),
-      glow: new Spring(0, 90, 14), tilt: new Spring(0, 90, 11), lean: new Spring(1, 160, 16),
-      y: new Spring(0, 220, 13), faceY: new Spring(0, 300, 14), shake: new Spring(0, 320, 7),
-      squash: new Spring(0, 380, 10), ear: new Spring(0, 160, 16), dots: new Spring(0, 160, 18),
+      size: new Spring(1, 260, 16), glow: new Spring(0, 90, 14), dim: new Spring(1, 60, 12),
+      tilt: new Spring(0, 90, 11), y: new Spring(0, 220, 13), eyeY: new Spring(0, 300, 14),
+      shake: new Spring(0, 320, 7), squash: new Spring(0, 380, 10), talk: new Spring(0, 620, 26),
       sleepy: new Spring(0, 30, 10),
     };
     this.blinkAt = now() + 1500; this.blinkStart = -1; this.doubleBlink = false;
     this.wanderAt = 0; this.wander = { x: 0, y: 0 };
     this.seen = pulseId;
-    this.rings = [];            // { el, at }
-    this.stars = [];            // { el, at, x, y, r }
+    this.rings = [];            // { el, at, soft, x, y }
+    this.stars = [];            // { el, at, a, r, size }
     this.wasSpeaking = false; this.wordAt = -1;
+    this.eyeAt = [DOT.x, DOT.y];
   }
 
   react(p, t, calm) {
@@ -224,25 +213,26 @@ class Rig {
     switch (p.kind) {
       case "celebrate":
         if (!calm) { s.y.kick(-90); s.squash.kick(-14); this.burst(t); }
+        s.size.kick(3);
         break;
       case "boop":
-        s.squash.kick(26); s.scale.kick(-2);
+        s.squash.kick(26); s.size.kick(-3);
         if (!calm) this.burst(t, 3);
         break;
       case "perk":
-        this.ring(t); s.scale.kick(3.5);
+        this.ring(t); s.size.kick(4);
         if (!calm) { s.y.kick(-45); s.squash.kick(-8); }
         break;
       case "ping":
         this.ring(t, p.data.soft);
-        if (!calm) s.faceY.kick(p.data.soft ? 8 : 14);
+        if (!calm) s.eyeY.kick(p.data.soft ? 10 : 18);
         break;
       case "nod":
-        if (!calm) s.faceY.kick(55);
-        s.scale.kick(1.2);
+        if (!calm) s.eyeY.kick(70);
+        s.size.kick(1.5);
         break;
       case "notice":
-        s.scale.kick(2.2);
+        s.size.kick(2.6);
         break;
       case "shake":
         if (!calm) s.shake.kick(160);
@@ -258,7 +248,7 @@ class Rig {
 
   ring(t, soft = false) {
     const free = this.el.rings.find(el => !this.rings.some(r => r.el === el)) ?? this.rings.shift()?.el;
-    if (free) this.rings.push({ el: free, at: t, soft });
+    if (free) this.rings.push({ el: free, at: t, soft, x: this.eyeAt[0], y: this.eyeAt[1] });
   }
 
   burst(t, n = 5) {
@@ -266,7 +256,7 @@ class Rig {
     const base = Math.random() * Math.PI * 2;
     for (let i = 0; i < n; i++) {
       const a = base + (i / n) * Math.PI * 2 + (Math.random() - .5) * .5;
-      this.stars.push({ el: this.el.sparkles[i], at: t + i * 35, a, r: 48 + Math.random() * 10, size: 1 + Math.random() * .45 });
+      this.stars.push({ el: this.el.sparkles[i], at: t + i * 35, a, r: 60 + Math.random() * 8, size: 1 + Math.random() * .45 });
     }
   }
 
@@ -286,16 +276,16 @@ class Rig {
     sleepiness = s.sleepy.v;
     s.sleepy.t = !calm && idleFor > SLEEPY_AFTER_MS && !talking && !listening && !thinking ? 1 : 0;
 
-    // ── Where to look ────────────────────────────────────────────────────
+    // ── Where the eye looks ──────────────────────────────────────────────
     const r = this.host.getBoundingClientRect();
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     const toward = (x, y, reachPx = 420) => {
       const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy) || 1, reach = clamp(d / reachPx, 0, 1);
-      return [(dx / d) * 8.5 * reach, (dy / d) * 5.5 * reach];
+      return [(dx / d) * 13 * reach, (dy / d) * 12 * reach];
     };
     let lx = 0, ly = 0;
     if (thinking) {
-      lx = Math.sin(t / 260) * 4.5; ly = -3.5;
+      lx = Math.sin(t / 260) * 6; ly = -6;
     } else if (m.look && t < m.look.until) {
       [lx, ly] = toward(m.look.x, m.look.y);
     } else if (m.gaze && t - m.gazeAt < 1500) {
@@ -304,50 +294,42 @@ class Rig {
       if (t > this.wanderAt) {
         this.wanderAt = t + (s.sleepy.v > .5 ? 5000 : 1600) + Math.random() * 2600;
         this.wander = Math.random() < .35 ? { x: 0, y: 0 }
-          : { x: (Math.random() * 2 - 1) * 5, y: (Math.random() * 2 - 1) * 3 };
+          : { x: (Math.random() * 2 - 1) * 6, y: (Math.random() * 2 - 1) * 5 };
       }
-      lx = this.wander.x; ly = this.wander.y + s.sleepy.v * 2.5;
+      lx = this.wander.x; ly = this.wander.y;
     }
+    if (curious) { lx += 3; ly -= 4; }
+    if (concerned) ly += 3;
+    ly += s.sleepy.v * 7;
     s.lx.t = lx; s.ly.t = ly;
 
     // ── Expression targets ───────────────────────────────────────────────
-    s.scale.t = listening ? 1.1 : 1;
-    s.squint.t = thinking ? .62 : concerned ? .78 : 1;
-    s.happy.t = happy ? 1 : 0;
-    s.smile.t = happy ? 1 : m.hovered ? .45 : 0;
-    s.concern.t = concerned ? 1 : 0;
-    s.curious.t = curious ? 1 : 0;
-    s.glow.t = listening ? 1 : thinking ? .55 : 0;
-    s.ear.t = listening ? 1 : 0;
-    s.lean.t = listening ? 1.035 : 1;
-    s.dots.t = thinking ? 1 : 0;
-    s.tilt.t = listening ? -5 : curious ? 8 : concerned ? 4 : s.sleepy.v * 5;
+    s.size.t = listening ? 1.18 : thinking ? .9 : concerned ? .86 : happy ? 1.1 : m.hovered ? 1.06 : 1;
+    s.glow.t = listening ? 1 : thinking ? .4 : 0;
+    s.dim.t = 1 - s.sleepy.v * .45;
+    s.tilt.t = listening ? -4 : curious ? 8 : concerned ? 3 : s.sleepy.v * 5;
 
-    // ── Talking: follow the words, with a small bob at each new word ─────
+    // ── Talking: the eye pulses with the words, a small bob at each word ─
     if (talking && !this.wasSpeaking) { m.speech = { text: m.said.toLowerCase(), start: t }; this.wordAt = -1; }
     this.wasSpeaking = talking;
     if (talking && m.speech) {
       const i = Math.floor((t - m.speech.start) / 1000 * CHARS_PER_SEC);
       const text = m.speech.text;
-      let open, ch;
+      let open;
       if (i < text.length) {
-        ch = text[i];
+        const ch = text[i];
         open = viseme(ch);
         const wordStart = i > 0 && text[i - 1] === " " && ch !== " ";
-        if (wordStart && i !== this.wordAt) { this.wordAt = i; if (!calm) s.faceY.kick(10); }
+        if (wordStart && i !== this.wordAt) { this.wordAt = i; if (!calm) s.eyeY.kick(12); }
       } else {
-        // Audio can run longer than our estimate: keep moving, gently.
         open = Math.max(0, Math.sin(t / 70) * .5 + Math.sin(t / 113) * .3);
       }
-      s.mouth.t = 2.4 + open * 6.8;
-      s.mouthW.t = round(ch) ? 6.5 : 10 - open * 1.5;
-    } else {
-      s.mouth.t = 2.4; s.mouthW.t = 10;
-    }
+      s.talk.t = open;
+    } else s.talk.t = 0;
 
     for (const k in s) s[k].step(dt);
 
-    // ── Blink: every few seconds, sometimes twice; slow when drowsy ──────
+    // ── Blink: the dot squashes flat for a moment ────────────────────────
     let open = 1;
     if (calm) this.blinkAt = Infinity;
     else if (this.blinkAt === Infinity) this.blinkAt = t + 1500;
@@ -361,68 +343,34 @@ class Rig {
       } else if (p > 0) open = 1 - Math.sin(Math.PI * p);
     }
 
-    // ── Body ─────────────────────────────────────────────────────────────
-    const breathe = calm ? 0 : Math.sin(t / (620 + s.sleepy.v * 500)) * (1.3 + s.sleepy.v * .6);
+    // ── Tile ─────────────────────────────────────────────────────────────
+    const breathe = calm ? 0 : Math.sin(t / (620 + s.sleepy.v * 500)) * (1 + s.sleepy.v * .5);
     const e = this.el;
-    const lift = breathe + s.y.v + s.sleepy.v * 1.5;
+    const lift = breathe + s.y.v;
     const sq = clamp(s.squash.v, -12, 12) * .012;               // + squash, - stretch
-    const lean = s.lean.v;
     e.body.setAttribute("transform",
-      `translate(60 102) scale(${(lean * (1 + sq)).toFixed(4)} ${(lean * (1 - sq)).toFixed(4)}) translate(-60 -102)` +
-      ` translate(0 ${lift.toFixed(2)}) rotate(${(s.tilt.v + s.shake.v * .09).toFixed(2)} 60 62)`);
-    e.floor.setAttribute("rx", (26 - lift * .6).toFixed(2));
-    e.floor.setAttribute("opacity", (.08 - clamp(-lift, 0, 12) * .004).toFixed(3));
-    e.face.setAttribute("transform", `translate(${(s.lx.v + s.shake.v * .02).toFixed(2)} ${(s.ly.v + s.faceY.v * .06).toFixed(2)})`);
+      `translate(60 114) scale(${(1 + sq).toFixed(4)} ${(1 - sq).toFixed(4)}) translate(-60 -114) translate(0 ${lift.toFixed(2)})`);
+    e.mark.setAttribute("transform", `rotate(${(s.tilt.v + s.shake.v * .09).toFixed(2)} 60 60)`);
 
-    e.ears.forEach(ear => {
-      const side = +ear.dataset.side;
-      ear.setAttribute("transform", `translate(${(side * s.ear.v * 1.6).toFixed(2)} 0)`);
-      ear.setAttribute("fill", s.ear.v > .5 ? "#c5d6ff" : "#d9dbe1");
-    });
+    // ── The eye ──────────────────────────────────────────────────────────
+    const size = Math.max(.4, s.size.v * (1 + s.talk.v * .26));
+    const [ex, ey] = confine(DOT.x + s.lx.v + s.shake.v * .02, DOT.y + s.ly.v + s.eyeY.v * .06, size);
+    this.eyeAt = [ex, ey];
+    const lid = Math.max(.1, open);
+    e.eye.setAttribute("transform",
+      `translate(${ex.toFixed(2)} ${ey.toFixed(2)}) scale(${size.toFixed(3)} ${(size * lid).toFixed(3)})`);
+    e.eye.setAttribute("opacity", s.dim.v.toFixed(3));
+    const g = clamp(s.glow.v, 0, 1), pulseGlow = calm ? 1 : .75 + .25 * Math.sin(t / 180);
+    e.live.setAttribute("opacity", (g * .9).toFixed(3));
+    e.halo.setAttribute("opacity", (g * .28 * pulseGlow).toFixed(3));
 
-    // ── Eyes, brows, cheeks ──────────────────────────────────────────────
-    const lids = 1 - s.sleepy.v * .62;
-    const openness = Math.max(.08, open * s.squint.v * lids);
-    e.eyes.forEach((eye, i) => {
-      const side = i ? 1 : -1;
-      const rot = side * -6 * s.concern.v;
-      const tall = 1 + s.curious.v * (side < 0 ? .14 : -.04);
-      eye.setAttribute("transform",
-        `translate(${60 + side * 13} 60) rotate(${rot.toFixed(2)}) scale(${s.scale.v.toFixed(3)} ${(s.scale.v * tall).toFixed(3)})`);
-      e.open[i].setAttribute("transform", `scale(1 ${openness.toFixed(3)})`);
-      e.open[i].setAttribute("opacity", (1 - s.happy.v).toFixed(3));
-      e.happy[i].setAttribute("opacity", s.happy.v.toFixed(3));
-      e.glints[i].setAttribute("r", (1.7 + clamp(s.scale.v - 1, 0, .3) * 3).toFixed(2));
-      // Brows: worried (inner ends up) or curious (one raised).
-      const c = s.concern.v, q = side < 0 ? s.curious.v : 0;
-      e.brows[i].setAttribute("transform",
-        `translate(0 ${(-12.5 + 2 * (1 - c) - 2.5 * q).toFixed(2)}) rotate(${(side * 17 * c - 10 * q).toFixed(2)})`);
-      e.brows[i].setAttribute("opacity", clamp(c + q, 0, 1).toFixed(3));
-    });
-    e.cheeks.forEach(ch => ch.setAttribute("opacity", (.55 * s.happy.v).toFixed(3)));
-
-    // ── Mouth, smile, thinking dots ──────────────────────────────────────
-    const mh = Math.max(0.1, s.mouth.v), mw = s.mouthW.v;
-    const mouthVis = (1 - s.smile.v) * (1 - s.dots.v);
-    e.mouth.setAttribute("x", (60 - mw / 2).toFixed(2)); e.mouth.setAttribute("width", mw.toFixed(2));
-    e.mouth.setAttribute("y", (75 - mh / 2).toFixed(2)); e.mouth.setAttribute("height", mh.toFixed(2));
-    e.mouth.setAttribute("rx", (Math.min(mw, mh) / 2).toFixed(2));
-    e.mouth.setAttribute("opacity", (.85 * mouthVis).toFixed(3));
-    e.smile.setAttribute("transform", `translate(60 75) scale(${(.7 + .3 * s.smile.v).toFixed(3)})`);
-    e.smile.setAttribute("opacity", s.smile.v.toFixed(3));
-    e.dots.setAttribute("opacity", s.dots.v.toFixed(3));
-    e.dot.forEach((d, i) => d.setAttribute("transform",
-      `translate(0 ${(-2.6 * Math.max(0, Math.sin(t / 170 - i * .9))).toFixed(2)})`));
-
-    // ── Antenna: glow while listening, rings when words arrive ───────────
-    const g = s.glow.v, pulseGlow = calm ? 1 : .75 + .25 * Math.sin(t / 180);
-    e.bulb.setAttribute("fill", g > .15 ? "#2f6bff" : "#d5d8df");
-    e.bulbGlow.setAttribute("opacity", (clamp(g, 0, 1) * .35 * pulseGlow).toFixed(3));
+    // ── Rings from the eye when words arrive ─────────────────────────────
     this.rings = this.rings.filter(rg => {
       const p = (t - rg.at) / (rg.soft ? 520 : 700);
       if (p >= 1) { rg.el.setAttribute("opacity", "0"); return false; }
-      rg.el.setAttribute("r", (5 + p * (rg.soft ? 7 : 11)).toFixed(2));
-      rg.el.setAttribute("opacity", ((1 - p) * (rg.soft ? .35 : .6)).toFixed(3));
+      rg.el.setAttribute("cx", rg.x.toFixed(2)); rg.el.setAttribute("cy", rg.y.toFixed(2));
+      rg.el.setAttribute("r", (8 + p * (rg.soft ? 8 : 14)).toFixed(2));
+      rg.el.setAttribute("opacity", ((1 - p) * (rg.soft ? .3 : .55)).toFixed(3));
       return true;
     });
 

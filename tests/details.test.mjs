@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { safeProductUrl, isBlocked, factsFromHtml, createDetails } from '../client/details.js';
+import { safeProductUrl, isBlocked, factsFromHtml, createDetails, MAX_HTML } from '../client/details.js';
 
 const PAGE = 'https://www.amazon.com/s?k=headphones';
 const html = `<html><head><script type="application/ld+json">${JSON.stringify({
@@ -48,4 +48,19 @@ test('each page is fetched once and cached', async () => {
   assert.equal(d.peek('/dp/B09').brand, 'Anker');
   assert.equal(await d.get('/gp/cart/view.html'), null);
   assert.equal(calls.length, 1);
+});
+
+
+test('review text is read from every hook Amazon ships, and the cap fits a real listing', () => {
+  // Measured: live Amazon listings run ~1.88MB, so the old 1.5MB cap cut the
+  // tail off every one of them before parsing.
+  assert.ok(MAX_HTML >= 2_000_000, `cap too small: ${MAX_HTML}`);
+  const review = (text) => ({ textContent: text });
+  const long = 'Battery lasts about forty hours and the noise cancelling is genuinely good for the money.';
+  for (const hook of ['reviewText', 'review-body', 'review-collapsed']) {
+    const doc = { querySelector: (sel) => (sel.includes('productTitle') ? { textContent: 'Soundcore Q20i' } : null),
+      querySelectorAll: (sel) => (sel.includes(`'${hook}'`) ? [review(long)] : []) };
+    const facts = factsFromHtml('<html></html>', doc);
+    assert.deepEqual(facts?.reviews, [long], hook);
+  }
 });

@@ -70,6 +70,16 @@
       }
     }
 
+    // A detail page may carry no structured data at all: Amazon ships none.
+    // The product you are standing on is not a link, so genericCards cannot
+    // see it by construction, and Cue ends up listing the recommendation
+    // carousel while the item in front of you is missing. Measured on
+    // /dp/B07KWV1N5V: 12 products found, none of them this one.
+    if (!found.length && likelyDetail) {
+      const item = detailProduct(doc, pageUrl);
+      if (item) { found.push(item); seen.add(item.product.id); }
+    }
+
     // Store search-result adapters use visible title, price, and product link.
     // Missing evidence is left missing; no material or size is inferred.
     const cards = doc.querySelectorAll(
@@ -80,8 +90,12 @@
       // in a second h2. The title's enclosing anchor is the product link.
       const amazonTitle = card.matches?.('[data-component-type="s-search-result"][data-asin]')
         ? card.querySelector('h2[aria-label]') : null;
+      // Amazon prefixes paid placements with "Sponsored Ad - " inside the
+      // title itself. Read aloud it is noise, and it is the first thing a
+      // shopper who cannot see the screen would hear about the item.
       const title = clean(amazonTitle?.getAttribute('aria-label') || amazonTitle?.textContent ||
-        card.querySelector('h2, h3, [class*="product-name"]')?.textContent);
+        card.querySelector('h2, h3, [class*="product-name"]')?.textContent)
+        .replace(/^sponsored\s+ad\s*-\s*/i, '');
       // querySelector with a selector list returns the earliest DOM element;
       // Amazon's price wrapper also contains the crossed-out list price.
       const amount = price((card.querySelector('.a-price .a-offscreen') ||
@@ -119,6 +133,84 @@
     '^(?:customer reviews?|more buying choices|other sellers|visit the)\\b',
     '^(?:free |save |get it|deal of|limited time|coupon|up to \\d)',
   ].join('|'), 'i');
+
+  // The buy box price, in preference order. `.a-price .a-offscreen` alone is
+  // not usable on an Amazon detail page: the first match is whitespace, and
+  // the next non-empty ones belong to other widgets. On /dp/B07KWV1N5V they
+  // read $59.99 and $13.25 against a real price of $52.99, so a bare
+  // `.a-price` selector does not just fail, it reads the wrong price aloud.
+  // Ordered, and deliberately NOT joined into one selector list: querySelector
+  // with commas returns the earliest element in DOM order, not the first
+  // selector's match. Joined, the title resolves to an accessibility helper
+  // heading and the price to a neighbouring widget, which on /dp/B07KWV1N5V
+  // reads $59.99 against a real price of $52.99.
+  const DETAIL_TITLE = ['#productTitle', '#title', 'main h1', 'h1'];
+  const DETAIL_PRICE = [
+    '#corePrice_feature_div .a-offscreen',
+    '#corePriceDisplay_desktop_feature_div .a-offscreen',
+    '#corePriceDisplay_mobile_feature_div .a-offscreen',
+    '.priceToPay .a-offscreen',
+    '#price_inside_buybox',
+    '#priceblock_ourprice',
+    '[itemprop=price]',
+  ];
+
+  // First selector, in order, that yields something usable.
+  function firstBy(doc, selectors, read) {
+    for (const selector of selectors) {
+      for (const el of doc.querySelectorAll(selector)) {
+        const value = read(el);
+        if (value !== null && value !== '') return value;
+      }
+    }
+    return null;
+  }
+
+  const BUY_HINT = /^(?:add to (?:cart|bag|basket)|add item to cart)$/i;
+
+  function buyControl(doc) {
+    for (const el of doc.querySelectorAll(
+      'input[type=submit],input[type=button],button,[role=button]')) {
+      const n = (el.getAttribute?.('aria-label') || el.value || el.textContent || '').trim();
+      if (BUY_HINT.test(n) && laidOut(el)) return el;
+    }
+    return null;
+  }
+
+  // The region tagged for a detail page has to enclose the buy control as well
+  // as the title, or nothing can act on it. On Amazon the title sits in a 22%
+  // wide column and the add button is in a different one, so anchoring on the
+  // title's column scopes an add that can never find its own button — every
+  // add answered "Which one do you mean?". Grow from the heading until both
+  // are inside, stopping short of the whole document.
+  function productRegion(doc, heading) {
+    const fallback = heading.closest('article, main') || heading;
+    const buy = buyControl(doc);
+    if (!buy) return fallback;
+    let region = heading;
+    while (region && region !== doc.body && !region.contains(buy)) region = region.parentElement;
+    return region && region !== doc.body && region !== doc.documentElement ? region : fallback;
+  }
+
+  // The product a detail page is about, when nothing structured describes it.
+  function detailProduct(doc, pageUrl) {
+    const heading = firstBy(doc, DETAIL_TITLE, el => (laidOut(el) ? el : null));
+    const title = clean(heading?.textContent);
+    if (!title) return null;
+    const amount = firstBy(doc, DETAIL_PRICE,
+      el => price(el.getAttribute?.('content') || el.textContent));
+    const el = productRegion(doc, heading);
+    if (!el || !laidOut(el)) return null;
+    let id = '';
+    try {
+      id = new URL(pageUrl).pathname
+        .match(/\/(?:dp|gp\/product|product|item)\/([A-Za-z0-9]{6,})/i)?.[1] || '';
+    } catch {}
+    return { el, highlight: heading, product: {
+      id: clean(id || pageUrl), title, price: amount, currency: 'USD',
+      url: clean(pageUrl), attrs: {},
+    } };
+  }
 
   // Any shop: a card or a large linked image with a real title.
   // A missing or ambiguous price stays missing.
