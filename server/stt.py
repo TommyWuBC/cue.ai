@@ -64,6 +64,7 @@ def status() -> dict:
 
 KEYTERM_MAX_CHARS = 50
 KEYTERM_MAX_COUNT = 100
+DEFAULT_KEYTERMS = ("Cue", "Hey Cue")
 
 
 def _keyterms() -> list[str]:
@@ -71,8 +72,15 @@ def _keyterms() -> list[str]:
     xAI rejects the whole handshake with HTTP 400 if any single term is over
     50 characters, and a joined list counts as one very long term."""
     raw = os.getenv("STT_KEYTERMS", "")
-    terms = [t.strip() for t in raw.split(",")]
-    return [t for t in terms if t and len(t) <= KEYTERM_MAX_CHARS][:KEYTERM_MAX_COUNT]
+    # The wake word is always biased for, whatever the env list says: an
+    # unbiased recogniser writes "Cue" as "q" or "queue" most of the time.
+    terms = [*DEFAULT_KEYTERMS, *(t.strip() for t in raw.split(","))]
+    seen, out = set(), []
+    for t in terms:
+        if t and len(t) <= KEYTERM_MAX_CHARS and t.lower() not in seen:
+            seen.add(t.lower())
+            out.append(t)
+    return out[:KEYTERM_MAX_COUNT]
 
 
 def _upstream_url() -> str:

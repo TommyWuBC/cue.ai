@@ -837,7 +837,7 @@ function qualityModal(acc, attempt) {
     const ov = document.createElement("div");
     ov.className = "cue-modal";
     ov.innerHTML = `
-      <div class="cue-modal-card">
+      <div class="cue-modal-card" data-poor="${poor}" style="--err:${Number(acc.after_px) || 200}">
         <h3>${poor ? "I can't see where you're looking well enough" : "That calibration is a bit loose"}</h3>
         <p class="cue-modal-num">${acc.after_px}px <span>average error</span></p>
         <p>${poor

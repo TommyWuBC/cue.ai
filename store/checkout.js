@@ -40,7 +40,7 @@ function requestOptions(options) {
     allowCredentials: (options.allowCredentials || []).map(c => ({ ...c, id: decode(c.id) })) };
 }
 
-export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
+export function setupCheckout({ getCart, clearCart, onStatus, onPrepared, onApproved }) {
   const dialog = document.getElementById('checkout-dialog');
   const details = dialog.querySelector('.checkout-details');
   const message = dialog.querySelector('.checkout-message');
@@ -189,6 +189,8 @@ export function setupCheckout({ getCart, clearCart, onStatus, onPrepared }) {
         ceremony_id: ceremony.ceremony_id, credential: credentialJSON(credential),
       });
       pending = null; ready = false;
+      try { await onApproved?.(order, intent); }
+      catch (error) { console.warn('[cue] Could not save approved order activity:', error); }
       clearCart();
       await refresh();
       dialog.close();

@@ -1,4 +1,4 @@
-# Cue — shop with your eyes and your voice
+# Cue — shop by looking and talking
 
 Gaze targeting, conversational answers, and a local demo checkout with server
 enforced limits and passkey approval. Demo orders do not charge a card.
@@ -60,6 +60,19 @@ Check what is actually live: `curl localhost:4173/health`
     cue.say("yes")
 
 Same code path as speech — only the wake word and STT are bypassed.
+
+## Shopping insights
+
+With Cue active, say “Cue, show me my analytics” to see searches, frequent
+interests, confirmed demo-store additions, approved demo orders, and recent
+activity. Say “close table” or another phrase containing “close” to return to
+the store. The same view is available at `http://localhost:4173/analytics`.
+Events stay in Chrome extension storage on live stores and in this browser's
+site storage when using the demo store without the extension. The page can
+download a CSV from that browser data; analytics does not call the Cue server.
+On live stores,
+an add click is recorded as a request because the merchant cart cannot be
+verified by Cue.
 
 ## How the pieces fit
 
