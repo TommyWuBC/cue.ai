@@ -321,7 +321,16 @@ function confidence() {
     const over = Math.max(0, off.dist - HEAD_SOFT) / (HEAD_HARD - HEAD_SOFT);
     c *= Math.max(0.15, 1 - over);
   }
-  if (state.mode === "webgazer" && !head.now) c = 0;   // face lost entirely
+  // head.now only ever gets set from sample.head (onEyes, below), and
+  // gaze-v2's own MediaPipe engine is the only one that reports it — the
+  // native WebGazer engine (client/eyes-webgazer.js) has no head-pose
+  // concept at all, by design, not because tracking failed. Both engines
+  // share the mode name "webgazer" (it means "camera" project-wide), so this
+  // check has to name the actual engine rather than the mode string, or it
+  // permanently forces confidence to exactly 0 for the whole WebGazer
+  // session — which is precisely why the reticle was never visible: its
+  // opacity is confidence-scaled, and confidence never once left zero.
+  if (state.mode === "webgazer" && !eyes.recordScreenPosition && !head.now) c = 0;
   // A steady estimate from a loose calibration is steadily wrong by that much.
   const acc = state.accuracy?.after_px;
   if (state.mode === "webgazer" && acc) c *= Math.max(0.3, Math.min(1, 1 - (acc - 80) / 300));
@@ -1068,14 +1077,28 @@ export function calibrate(options = {}) {
   return calibration;
 }
 
-// The same fixation-point walk as runCalibration, visually — same overlay,
-// same dot, same "Press SPACE, tap the dot, or say Cue, ready" start gesture
-// — but training WebGazer's own regression directly at each point
-// (eyes.recordScreenPosition) instead of collecting sample.features for
-// fitGazeModel, which this engine's samples do not have. Real training, not
-// a prop: WebGazer's ridge regression genuinely updates from this, it is
-// just not validated against a held-out accuracy number the way the other
-// engine's calibration is, so there is no acc.after_px to report at the end.
+// Adapted from commit 86286b5's runCalibration — the last gaze.js before the
+// MediaPipe rewrite, and the proven reference for this exact engine, not
+// gaze-v2's own fixation sweep. Same overlay, same dot, same CSS classes.
+//
+// Two things that version got right and the first pass at this file did not:
+// each point requires its own deliberate capture gesture (space, tap, or
+// "Cue, next") rather than an auto-timed wait, so the recording burst starts
+// only once the shopper is actually looking at that specific dot, not
+// wherever their eyes still were when a timer happened to fire; and every
+// capture is verified — eyes.recordScreenPosition (client/eyes-webgazer.js)
+// diffs WebGazer's own regression data before and after the call, since
+// WebGazer silently no-ops when eye features are not ready (a blink, a face
+// briefly out of frame). Without that check, calibration could walk through
+// every point, report success, and have trained on nothing — which is
+// exactly the "idk if calibration was actually successful" this produced.
+const WEBGAZER_TRAIN = [
+  [.06, .08], [.50, .08], [.94, .08],
+  [.06, .50], [.50, .50], [.94, .50],
+  [.06, .92], [.50, .92], [.94, .92],
+  [.28, .28], [.72, .28], [.28, .72], [.72, .72],
+];
+
 function runWebgazerCalibration(attempt) {
   return new Promise((done) => {
     const cleanup = [];
@@ -1084,67 +1107,74 @@ function runWebgazerCalibration(attempt) {
     ov.tabIndex = -1;
     ov.setAttribute("role", "dialog");
     ov.setAttribute("aria-label", "Eye tracking calibration");
-    ov.innerHTML = `<div class="aura-cal-hint" role="status" aria-live="polite"></div><button type="button" class="aura-cal-dot" aria-label="Start calibration"></button>`;
+    ov.innerHTML = `<div class="aura-cal-hint" role="status" aria-live="polite"></div><button type="button" class="aura-cal-dot" aria-label="Capture this calibration point"></button>`;
     document.body.appendChild(ov);
     ov.focus({ preventScroll: true });
     const dot  = ov.querySelector(".aura-cal-dot");
     const hint = ov.querySelector(".aura-cal-hint");
-    let cancelled = false;
+    let i = 0, trained = 0;
 
     state.calibrating = true;
     state.calibrated = false;
     setFocus(null, 0);
     bus.emit("STATE", { calibrating: true });
 
-    const place = (x, y) => { dot.style.left = x + "px"; dot.style.top = y + "px"; };
-    const say = (text) => { hint.textContent = text; };
-
-    const run = async () => {
-      for (let k = 0; k < FIX_POINTS.length; k++) {
-        if (cancelled) return false;
-        const [fx, fy] = FIX_POINTS[k];
-        const px = fx * innerWidth, py = fy * innerHeight;
-        place(px, py);
-        dot.classList.remove("armed");
-        say(`Look at the dot · ${k + 1} / ${FIX_POINTS.length}`);
-        setTimeout(() => dot.classList.add("armed"), TIMING.settle);
-        await sleep(TIMING.settle);
-        const until = performance.now() + TIMING.hold;
-        while (performance.now() < until && !cancelled) {
-          eyes.recordScreenPosition(px, py);
-          await sleep(120);
-        }
-      }
-      return !cancelled;
-    };
-
-    const finish = (ok) => {
+    const finish = () => {
+      removeEventListener("keydown", onKey, true);
+      cleanup.forEach((fn) => fn());
+      dot.disabled = true;
+      ov.remove();
       state.calibrating = false;
+      // At least half the points genuinely trained, not just walked through.
+      const ok = trained >= WEBGAZER_TRAIN.length / 2;
       state.calibrated = ok;
       bus.emit("STATE", { calibrated: ok, accuracy: null });
       done(ok);
     };
 
-    let started = false;
-    const begin = () => {
-      if (started) return;
-      started = true;
-      removeEventListener("keydown", onKey, true);
-      dot.disabled = true;
-      run().then(finish).finally(() => {
-        cleanup.forEach((fn) => fn());
-        if (cancelCalibration === cancel) cancelCalibration = null;
-        ov.remove();
-      });
+    const show = () => {
+      if (i >= WEBGAZER_TRAIN.length) { finish(); return; }
+      const [fx, fy] = WEBGAZER_TRAIN[i];
+      dot.style.left = fx * innerWidth + "px";
+      dot.style.top  = fy * innerHeight + "px";
+      dot.classList.remove("armed");
+      const again = attempt > 1 ? `  ·  attempt ${attempt}` : "";
+      hint.textContent = `Look at the dot. Press SPACE, tap it, or say “Cue, next” · ${i + 1} / ${WEBGAZER_TRAIN.length}${again}`;
+      if (hint.dataset) hint.dataset.pos = fy > 0.6 ? "top" : "bottom";
     };
+
+    let recording = false, captureId = 0;
+    const capture = () => {
+      if (recording || i >= WEBGAZER_TRAIN.length) return;
+      recording = true;
+      const myId = ++captureId;
+      const [fx, fy] = WEBGAZER_TRAIN[i];
+      const px = fx * innerWidth, py = fy * innerHeight;
+      dot.classList.add("armed");
+      hint.textContent = `Hold your gaze — capturing point ${i + 1} / ${WEBGAZER_TRAIN.length}`;
+      let n = 0, got = false;
+      const tick = setInterval(() => {
+        if (myId !== captureId) { clearInterval(tick); return; }
+        if (eyes.recordScreenPosition(px, py)) got = true;
+        // 14 ticks matches this project's own calibration test timing
+        // elsewhere (tests/calibration.test.mjs advances 800ms per point).
+        if (++n >= 14) {
+          clearInterval(tick); captureId++;
+          recording = false;
+          if (got) { trained++; i++; show(); return; }
+          dot.classList.remove("armed");
+          hint.textContent = "Couldn't capture your eyes. Face the camera, then press SPACE or say “Cue, next” to retry.";
+        }
+      }, 55);
+    };
+
     const onKey = (e) => {
       if ((e.code !== "Space" && e.key !== " ") || e.repeat) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      begin();
+      capture();
     };
     const cancel = () => {
-      cancelled = true;
       removeEventListener("keydown", onKey, true);
       cleanup.forEach((fn) => fn());
       ov.remove();
@@ -1155,17 +1185,15 @@ function runWebgazerCalibration(attempt) {
     cancelCalibration = cancel;
 
     const stopVoice = bus.on("UTTERANCE", ({ text, final }) => {
-      if (final && /^(next|ready|start|begin|go|ok|okay|done)\b/i.test(text.trim())) begin();
+      if (final && /^(next|ready|capture|ok|okay|go|done)\b/i.test(text.trim())) capture();
     });
     cleanup.push(stopVoice);
-    dot.addEventListener("click", begin);
-    cleanup.push(() => dot.removeEventListener("click", begin));
+    dot.addEventListener("click", capture);
+    cleanup.push(() => dot.removeEventListener("click", capture));
     addEventListener("keydown", onKey, true);
 
-    place(innerWidth / 2, innerHeight / 2);
-    const again = attempt > 1 ? " · attempt " + attempt : "";
-    say(`Keep your head still and follow the dot with your eyes. Press SPACE, tap the dot, or say “Cue, ready”${again}`);
-    if (attempt === 1) bus.emit("SAY", { text: "Keep your head still and follow the dot with your eyes. Say ready when you're set." });
+    if (attempt === 1) bus.emit("SAY", { text: "Look at each dot and press space, or say Cue, next." });
+    show();
   });
 }
 

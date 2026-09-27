@@ -381,7 +381,9 @@ function frame() {
 
   if (ui.reticle) {
     ui.reticle.style.transform = `translate3d(${render.x.toFixed(1)}px, ${render.y.toFixed(1)}px, 0)`;
-    ui.reticle.style.opacity = (0.18 + render.drawnConf * 0.4).toFixed(3);
+    // 0.18 floor read as invisible in practice — translucent should still
+    // mean clearly visible, not barely-there. Confidence still adds on top.
+    ui.reticle.style.opacity = (0.45 + render.drawnConf * 0.4).toFixed(3);
     // A wide, soft reticle when the signal is poor reads as honest rather than
     // broken: it shows the user how sure Cue is instead of faking precision.
     const s = 1 + (1 - render.drawnConf) * 0.9;

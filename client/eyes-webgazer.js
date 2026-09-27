@@ -72,4 +72,23 @@ export function showPreview() {}
 // also how gaze.js knows which calibration path to run at all
 // (runWebgazerCalibration), rather than a second CONFIG.injected check
 // living in two files.
-export function recordScreenPosition(x, y) { window.webgazer?.recordScreenPosition(x, y); }
+//
+// Verified, not assumed — adapted from commit 86286b5, the last gaze.js
+// before the MediaPipe rewrite, still the proven reference for this engine.
+// recordScreenPosition silently no-ops when eye features are not ready yet
+// (face briefly out of frame, a blink), so a calibration that never checks
+// whether anything was actually recorded can walk through all 13 points,
+// report success, and have trained on nothing. Diff the regression's own
+// data before and after the call and return whether it actually grew.
+export function recordScreenPosition(x, y) {
+  const wg = window.webgazer;
+  if (!wg) return false;
+  try {
+    const regression = wg.getRegression()[0];
+    const before = regression.getData().slice();
+    wg.recordScreenPosition(x, y, "click");
+    return regression.getData().some((pair, i) => pair !== before[i]);
+  } catch {
+    return false;
+  }
+}
