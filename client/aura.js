@@ -1,5 +1,6 @@
 import { bus } from "./bus.js";
 import * as gaze from "./gaze.js";
+import * as eyesBridge from "./eyes-bridge.js";
 import "./attention-hint.js";
 import * as voice from "./voice.js";
 import { scan, scanAll, nth, invalidate, controls, controlName, findControl, fields, findField, setText,
@@ -1874,6 +1875,13 @@ export async function exitCue() {
 
 export async function boot() {
   exited = false;
+  // The extension on a real site cannot run MediaPipe in its own content
+  // script (docs/GAZE.md, "Known limits") — the camera and inference move to
+  // an offscreen document instead, and this swap is the only thing that
+  // changes; gaze.js's own logic, the per-user model, and the calibration UI
+  // are all identical either way. The demo store never sets CONFIG.injected,
+  // so it keeps talking to the camera directly, no extra message hop.
+  if (CONFIG.injected) gaze.setEngine(eyesBridge);
   mountUI();
   requestAnimationFrame(frame);
   const splash = CONFIG.injected && CONFIG.autoCal && !CONFIG.resuming

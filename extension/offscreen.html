@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<!--
+  An extension-owned page with no tab, kept alive only to run the camera and
+  MediaPipe in one consistent JS world. See extension/offscreen.js and
+  docs/GAZE.md's "Known limits": MediaPipe's WASM loader inserts a <script>
+  tag, and when a content script does that on a third-party page, the tag
+  runs in the PAGE's world, not the content script's isolated one — the two
+  halves of MediaPipe's own startup can't see each other. This page has no
+  such split; it is just a normal page the extension fully owns.
+-->
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+<script type="module" src="offscreen.js"></script>
+</body>
+</html>

@@ -15,13 +15,14 @@ FILES = [
     'extension/background.js', 'extension/content.js', 'extension/extract.js', 'extension/demo-analytics.js',
     'extension/popup.html', 'extension/popup.css', 'extension/popup.js',
     'extension/privacy.html', 'extension/assets/cue-splash.jpg',
+    'extension/offscreen.html', 'extension/offscreen.js',
     'client/aura.js', 'client/analytics.js', 'client/analytics.css', 'client/analytics-store.js',
     'client/analytics-transport.js', 'client/avatar.js', 'client/bus.js',
     'client/config.js', 'client/details.js', 'client/gaze.js', 'client/intent.js', 'client/knowledge.js', 'client/mic.js', 'client/overlay.css',
     'client/resolver.js', 'client/search.js', 'client/shopper.js', 'client/site.js',
     'client/speech.js', 'client/splash.js',
     'client/voice.js', 'client/product-memory.js',
-    'client/eyes.js', 'client/gaze-features.js', 'client/gaze-model.js', 'client/fixation.js',
+    'client/eyes.js', 'client/eyes-bridge.js', 'client/gaze-features.js', 'client/gaze-model.js', 'client/fixation.js',
     'client/gaze-debug.js', 'client/attention.js', 'client/attention-hint.js',
 ]
 

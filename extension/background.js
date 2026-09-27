@@ -20,6 +20,34 @@ const sessionKey = tabId => `cue.session.${tabId}`;
 const sessionWrites = new Map();
 let analyticsWrites = Promise.resolve();
 
+// ── Gaze on a real site (docs/GAZE.md, "Known limits") ──────────────────────
+// MediaPipe's WASM loader inserts a <script> tag; run that from a content
+// script on a third-party page and the tag executes in the PAGE's world, not
+// the content script's isolated one, so the two halves of MediaPipe's own
+// startup cannot see each other. The camera and MediaPipe run in this
+// offscreen document instead — a page the extension fully owns, one
+// consistent world — and hand extracted features back over messaging. Only
+// one gaze-using tab at a time, which matches the camera itself: one physical
+// device, and only one shopper is ever actually looking at it.
+const OFFSCREEN_URL = 'extension/offscreen.html';
+let gazeTabId = null;
+
+async function ensureOffscreen() {
+  if (await chrome.offscreen.hasDocument()) return;
+  await chrome.offscreen.createDocument({
+    url: OFFSCREEN_URL,
+    reasons: ['USER_MEDIA'],
+    justification: 'Camera-based gaze tracking, extracted in one JS world MediaPipe can run in.',
+  });
+}
+
+async function endGaze() {
+  if (!(await chrome.offscreen.hasDocument())) { gazeTabId = null; return; }
+  await chrome.runtime.sendMessage({ type: 'cue:gaze:end' }).catch(() => {});
+  await chrome.offscreen.closeDocument().catch(() => {});
+  gazeTabId = null;
+}
+
 async function analyticsEvents() {
   const value = (await chrome.storage.local.get(ANALYTICS_KEY))[ANALYTICS_KEY];
   if (value == null) return [];
@@ -211,8 +239,29 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     start(message.tab).then(respond, () => respond({ ok: false, error: 'Cue could not start.' }));
     return true;
   }
+  // From the offscreen document, which has no sender.tab of its own — relay
+  // to whichever tab actually asked for gaze.
+  if (sender.url === chrome.runtime.getURL(OFFSCREEN_URL) && message?.type === 'cue:gaze:sample') {
+    if (Number.isInteger(gazeTabId)) chrome.tabs.sendMessage(gazeTabId, message).catch(() => {});
+    return;
+  }
   const tabId = sender.tab?.id;
   if (!Number.isInteger(tabId)) return;
+  if (message?.type === 'cue:gaze:start') {
+    (async () => {
+      await ensureOffscreen();
+      gazeTabId = tabId;
+      const res = await chrome.runtime.sendMessage({ type: 'cue:gaze:begin' }).catch((e) =>
+        ({ ok: false, error: String(e?.message || e) }));
+      if (!res?.ok) gazeTabId = null;
+      return res;
+    })().then(respond, (e) => respond({ ok: false, error: String(e?.message || e) }));
+    return true;
+  }
+  if (message?.type === 'cue:gaze:stop') {
+    endGaze().then(() => respond({ ok: true }), () => respond({ ok: false }));
+    return true;
+  }
   if (['cue:analytics:event', 'cue:analytics:summary', 'cue:analytics:export'].includes(message?.type)) {
     (async () => {
       const demo = new URL(sender.url).origin === SERVER.origin;
@@ -234,6 +283,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   }
   if (message?.type === 'cue:exit' || message?.type === 'cue:stop') {
     updateSession(tabId, async () => {
+      if (tabId === gazeTabId) await endGaze();
       await setPaused(tabId, true);
       await chrome.storage.session.remove(sessionKey(tabId));
       await Promise.allSettled([
@@ -276,6 +326,9 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 });
 
 chrome.tabs.onRemoved.addListener(tabId => {
+  // Closing the tab that had the camera running must not leave it running,
+  // pointed at nothing, with no shopper left to say "Cue, end".
+  if (tabId === gazeTabId) endGaze().catch(() => {});
   updateSession(tabId, () => chrome.storage.session.remove([
     `cue.product-memory.${tabId}`, pauseKey(tabId), sessionKey(tabId),
   ])).catch(() => {});
