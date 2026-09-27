@@ -32,13 +32,23 @@ export async function begin() {
   if (state.running) return true;
   const wg = window.webgazer;
   if (!wg) throw new Error("webgazer did not load");
-  await wg.setRegression("ridge").setGazeListener(onGaze)
-    .saveDataAcrossSessions(false)
+  // Split from the cosmetic chain below on purpose (commit 0ad25e9, this
+  // project's first working WebGazer integration, proven from day one):
+  // regression, tracker and the gaze listener are what actually gets the
+  // camera running, chained into begin() itself. The .show*() calls one
+  // chained call earlier here threw and took the whole thing down with it —
+  // "version drift in the show* chain is not fatal" was the exact lesson,
+  // and it wasn't being honored.
+  await wg.setRegression("ridge").setTracker("TFFacemesh")
+    .setGazeListener(onGaze).saveDataAcrossSessions(false).begin();
+  try {
     // Our own reticle is the visible indicator; WebGazer's built-ins would
-    // draw a second, uncoordinated one on top of it.
-    .showVideoPreview(false).showPredictionPoints(false)
-    .showFaceOverlay(false).showFaceFeedbackBox(false)
-    .begin();
+    // draw a second, uncoordinated one on top of it, and a live face-cam
+    // feed is off everywhere in this app (client/eyes.js matches).
+    wg.showVideoPreview(false).showPredictionPoints(false)
+      .showFaceOverlay(false).showFaceFeedbackBox(false)
+      .applyKalmanFilter(true);
+  } catch { /* cosmetic only; the camera is already running without it */ }
   state.running = true;
   return true;
 }
