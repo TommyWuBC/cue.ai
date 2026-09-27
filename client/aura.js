@@ -297,9 +297,12 @@ bus.on("GAZE", ({ x, y, confidence }) => {
 const FOLLOW = 0.32;     // per-frame easing toward the target
 const now = () => performance.now();
 let exited = false;
+// Reversible, unlike exited: the mic stays live while paused, listening for
+// exactly the resume phrase (client/voice.js's isResume). See pauseCue().
+let paused = false;
 
 function frame() {
-  if (exited || globalThis.__cueEnded) return;
+  if (exited || globalThis.__cueEnded || paused) return;
   render.x += (render.tx - render.x) * FOLLOW;
   render.y += (render.ty - render.y) * FOLLOW;
   render.drawnConf += (render.conf - render.drawnConf) * 0.12;
@@ -724,6 +727,10 @@ function stopAutoScroll(announce = true) {
 }
 
 bus.on("UTTERANCE", ({ text, final }) => {
+  // voice.js already withholds everything but the resume phrase while
+  // paused, and RESUME (not this event) is what actually wakes Cue back up —
+  // this is defense in depth, not the primary gate.
+  if (paused) return;
   // While the page is moving, "stop" means stop scrolling, not stop Cue. Acted
   // on from the partial transcript so the page halts the moment it is said.
   if (autoScroll.dir && STOP_SCROLL.test(text)) {
@@ -749,7 +756,7 @@ bus.on("UTTERANCE", ({ text, final }) => {
     }
   }
   if (final && HALT.test(text.trim().toLowerCase().replace(/[.!?,]+/g, "").replace(/\s+/g, " "))) {
-    void exitCue();
+    pauseCue();
     return;
   }
   if (voice.isPrivateMode?.()) return;
@@ -1842,6 +1849,44 @@ export async function exitCue() {
   try { await voice.speak("Cue is off."); } catch {}
 }
 
+// The opposite of exitCue, and now what "Cue, quit" actually triggers: stops
+// everything the same way — gaze off, HUD gone, nothing sent to the server —
+// but the mic stays live. voice.js withholds every transcript except the
+// resume phrase while paused (client/voice.js's isResume), so this is
+// reversible by voice; exitCue's hard stop only ever came back from the
+// toolbar icon. Still reachable directly as window.cue.exit() for a real,
+// non-resumable stop.
+export async function pauseCue() {
+  if (paused || exited) return;
+  paused = true;
+  pendingConfirm = null;
+  analytics.close();
+  voice.exitPrivateMode?.();
+  gaze.stop();
+  document.querySelectorAll("#aura-root,.cue-splash,.aura-cal,.cue-modal").forEach((el) => el.remove());
+  voice.setPaused(true);
+  try { await voice.speak("Cue is paused. Say “Cue, start” to bring me back."); } catch {}
+}
+
+async function resumeCue() {
+  if (!paused || exited) return;
+  paused = false;
+  mountUI();
+  requestAnimationFrame(frame);
+  if (CONFIG.gazeMode !== "mouse") {
+    // Best-effort, the same call boot() makes the first time. Voice was
+    // already working before pause and keeps working either way, so a
+    // camera that declines to restart is not fatal here the way it would be
+    // on first boot.
+    try {
+      await gaze.start({ mode: CONFIG.gazeMode, sigma: CONFIG.sigma,
+                          tune: CONFIG.tune, keepData: CONFIG.keepData });
+    } catch (e) { console.warn("[cue] gaze did not restart after resume", e); }
+  }
+  try { await voice.speak("Cue is back. What are you after?"); } catch {}
+}
+bus.on("RESUME", resumeCue);
+
 export async function boot() {
   exited = false;
   mountUI();
@@ -1974,14 +2019,16 @@ bus.on("GAZE", ({ confidence }) => {
 const say = (text) => { if (!voice.isPrivateMode?.()) bus.emit("UTTERANCE", { text, final: true }); };
 
 function stopCue() {
-  void exitCue();
+  void pauseCue();
 }
 bus.on("STOP", stopCue);
 
-window.cue = { bus, gaze, voice, context, perform, boot, say, recalibrate, exit: exitCue, CONFIG,
+window.cue = { bus, gaze, voice, context, perform, boot, say, recalibrate,
+               exit: exitCue, pause: pauseCue, CONFIG,
                measure: (...a) => gaze.measure(...a),
                experiment: (...a) => gaze.experiment(...a),
                head: () => gaze.getHead(),
+               get paused() { return paused; },
                get pending() { return pendingConfirm; } };
 window.aura = window.cue;          // nothing that already says aura.* breaks
 

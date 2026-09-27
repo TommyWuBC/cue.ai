@@ -33,6 +33,12 @@ const state = {
   rec: null, listening: false, speaking: false, provider: "none",
   mutedUntil: 0, pttUntil: 0, wakeUntil: 0,
   calibrating: false, ttsMode: "browser", micError: null, privateMode: false,
+  // "Cue, quit" used to release the mic outright — the only way back was the
+  // toolbar icon. Paused keeps the mic live and listening for exactly one
+  // thing; everything else this module or aura.js would normally do is
+  // skipped below, the same way isHalt already bypasses wake-word and
+  // private-mode gating so "stop" works no matter what state Cue is in.
+  paused: false,
 };
 let listenGeneration = 0;
 let audio = null;
@@ -70,11 +76,29 @@ function isHalt(text) {
   return /^(?:end|cue end|stop cue|pause cue|exit|quit|stop|go away|shut down|turn(?: yourself)? off|disable)(?: cue)?$/.test(n);
 }
 
+// The opposite of isHalt, same shape: stripWake so "Cue, start" and a bare
+// "start" both work — a paused Cue is listening for nothing else, so a bare
+// word is exactly as safe here as it is for "stop".
+function isResume(text) {
+  const n = norm(stripWake(norm(text)));
+  return /^(?:start|resume|wake up|come back|i'?m back)(?: cue)?$/.test(n);
+}
+
 function handleTranscript(text, final, alternatives = null) {
   text = (text || "").trim();
   // "Cue, end" stops immediately, including mid-calibration and private payment.
   if (text && (isHalt(text) || (alternatives || []).some(isHalt))) {
     bus.emit("STOP");
+    return;
+  }
+  // While paused, this is the only thing being listened for — checked before
+  // privateMode/calibrating the same way isHalt is, so it works regardless
+  // of whatever state Cue was in when it was paused.
+  if (state.paused) {
+    if (final && (isResume(text) || (alternatives || []).some(isResume))) {
+      state.paused = false;
+      bus.emit("RESUME");
+    }
     return;
   }
   if (state.privateMode) return;
@@ -321,6 +345,14 @@ export function exitPrivateMode() {
 }
 
 export const isPrivateMode = () => state.privateMode;
+
+// aura.js flips this on when Cue pauses (mic stays live; see handleTranscript
+// above for what "paused" actually gates) and off again once RESUME fires.
+export function setPaused(on) {
+  state.paused = !!on;
+  bus.emit("STATE", { paused: state.paused });
+}
+export const isPaused = () => state.paused;
 
 // ── Autoplay unlock ─────────────────────────────────────────────────────────
 // Browsers refuse to play audio before the user has interacted with the page,
