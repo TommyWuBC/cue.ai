@@ -65,9 +65,14 @@ export function calibrationCommand(text) {
   return CAL_DOT.test(n) || CAL_CHOICE.test(n) ? n : null;
 }
 
+// The second copy of this rule. aura.js has the other one, and only that one
+// had bare "stop" removed — so "Hey Cue, stop" still quit, because stripWake
+// turns it into exactly "stop" and this runs before anything reaches the
+// server. Ending Cue takes a word that means only that; "stop" belongs to the
+// scroll. Keep the two lists the same.
 function isHalt(text) {
   const n = norm(stripWake(norm(text)));
-  return /^(?:end|cue end|stop cue|pause cue|exit|quit|stop|go away|shut down|turn(?: yourself)? off|disable)(?: cue)?$/.test(n);
+  return /^(?:end|cue end|stop cue|quit cue|pause cue|exit|quit|go away|shut down|turn(?: yourself)? off|disable)(?: cue)?$/.test(n);
 }
 
 function handleTranscript(text, final, alternatives = null) {

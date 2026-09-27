@@ -70,3 +70,23 @@ test('a shopper talking over Cue is not swallowed as echo', () => {
   // Nothing said yet means nothing to echo.
   assert.equal(echoes('open my cart', []), false);
 });
+
+// "Hey Cue, stop" switched Cue off in a live session. The rule that ends Cue
+// exists in two files — client/voice.js runs first, before anything reaches
+// the server — and only one copy had bare "stop" removed. These assert the
+// shape both copies must share, so fixing one and not the other fails here.
+const HALT_RE = /^(?:end|cue end|stop cue|quit cue|pause cue|exit|quit|go away|shut down|turn(?: yourself)? off|disable)(?: cue)?$/;
+const norm = (s) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+const halts = (t) => HALT_RE.test(norm(stripWake(norm(t))));
+
+test('"stop" is for the scroll, and never ends Cue', () => {
+  for (const phrase of ['stop', 'Hey Cue, stop', 'Cue stop', 'stop scrolling', 'hey cue stop please']) {
+    assert.equal(halts(phrase), false, phrase);
+  }
+});
+
+test('ending Cue takes a word that means only that', () => {
+  for (const phrase of ['quit', 'exit', 'Hey Cue, quit', 'stop cue', 'cue end', 'turn off', 'go away']) {
+    assert.equal(halts(phrase), true, phrase);
+  }
+});
