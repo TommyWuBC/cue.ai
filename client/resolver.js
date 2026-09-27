@@ -2,6 +2,8 @@
 // data-cue-product / data-cue-action (or the legacy data-aura-* spelling) are
 // ever considered — that is what makes a few centimetres of gaze error harmless.
 
+import { bestMatch, norm } from "./speech.js";
+
 const MAX_DIST = 320;        // px; beyond this, gaze resolves to nothing
 
 const PRODUCT_SEL = "[data-cue-product],[data-aura-product]";
@@ -109,21 +111,76 @@ export function controls() {
   return out;
 }
 
-/** Best control for a spoken phrase. Exact, then prefix, then contains. */
-export function findControl(phrase) {
-  const q = String(phrase || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-  if (!q) return null;
-  const list = controls();
-  const norm = (n) => n.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-  return list.find((c) => norm(c.name) === q)
-      ?? list.find((c) => norm(c.name).startsWith(q))
-      ?? list.find((c) => norm(c.name).includes(q))
-      ?? list.find((c) => q.includes(norm(c.name)) && norm(c.name).length > 2)
+// Everything a spoken "click" may reach: the controls above plus checkboxes,
+// radios, options and labels, anywhere in the document. controls() stays the
+// on-screen list because badges and the agent's context are built from it.
+const CLICKABLE_SEL = CONTROL_SEL + "," + [
+  "[role=checkbox]", "[role=radio]", "[role=option]", "[role=switch]", "[role=menuitemradio]",
+  "[role=menuitemcheckbox]", "input[type=checkbox]", "input[type=radio]", "label[for]",
+].join(",");
+
+export function clickables(limit = 400) {
+  const out = [];
+  const seen = new Set();
+  for (const el of document.querySelectorAll(CLICKABLE_SEL)) {
+    if (el.closest("#aura-root") || el.disabled) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4) continue;
+    const name = controlName(el) || (el.labels?.[0]?.innerText ?? "").trim().slice(0, 60);
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    out.push({ name, el, rect: r, href: el.getAttribute("href") || null });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function literal(list, q) {
+  const n = (c) => norm(c.name);
+  return list.find((c) => n(c) === q)
+      ?? list.find((c) => n(c).startsWith(q))
+      ?? list.find((c) => n(c).includes(q))
+      ?? list.find((c) => q.includes(n(c)) && n(c).length > 2)
       ?? null;
 }
 
+/**
+ * Best control for a spoken phrase. What is on screen wins, then the rest of
+ * the page, and only then a sound-alike match ("the card" for "Cart").
+ */
+export function findControl(phrase) {
+  const q = norm(phrase);
+  if (!q) return null;
+  const onScreen = controls();
+  const hit = literal(onScreen, q);
+  if (hit) return hit;
+  const all = clickables();
+  const anywhere = literal(all, q);
+  if (anywhere) return anywhere;
+  const fuzzy = bestMatch(q, onScreen.map((c) => c.name));
+  if (fuzzy) return onScreen[fuzzy.index];
+  const far = bestMatch(q, all.map((c) => c.name));
+  return far ? all[far.index] : null;
+}
+
+/** A native <select> option by its visible text: "select price low to high". */
+export function findOption(phrase) {
+  const q = norm(phrase);
+  if (!q) return null;
+  const options = [];
+  for (const select of document.querySelectorAll("select")) {
+    if (select.closest("#aura-root") || select.disabled) continue;
+    for (const option of select.options) {
+      if (!option.disabled && option.text.trim()) options.push({ select, option, name: option.text.trim() });
+    }
+  }
+  const exact = options.find((o) => norm(o.name) === q) ?? options.find((o) => norm(o.name).includes(q));
+  if (exact) return exact;
+  const fuzzy = bestMatch(q, options.map((o) => o.name));
+  return fuzzy ? options[fuzzy.index] : null;
+}
+
 // ── Typing and reading: what lets Cue act on a page nobody tagged ───────────
-const norm = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 
 function visible(el) {
   const r = el.getBoundingClientRect();
@@ -164,8 +221,16 @@ export function findField(phrase) {
   const q = norm(phrase);
   const all = fields();
   if (!q) return all[0]?.el ?? null;
-  return (all.find((f) => norm(f.name) === q) ?? all.find((f) => norm(f.name).includes(q)) ??
-    all.find((f) => q.includes(norm(f.name)) && norm(f.name).length > 2))?.el ?? null;
+  const literal = all.find((f) => norm(f.name) === q) ?? all.find((f) => norm(f.name).includes(q)) ??
+    all.find((f) => q.includes(norm(f.name)) && norm(f.name).length > 2);
+  if (literal) return literal.el;
+  // A field is also known by its placeholder and type: the newsletter box is
+  // labelled with a sentence, but people call it "the email field".
+  const aliases = all.map((f) => norm([f.el.placeholder, f.el.name, f.el.id, f.el.type].filter(Boolean).join(" ")));
+  const alias = aliases.findIndex((a) => a && (a.includes(q) || q.split(" ").every((w) => a.includes(w))));
+  if (alias >= 0) return all[alias].el;
+  const fuzzy = bestMatch(q, all.map((f) => f.name));
+  return fuzzy ? all[fuzzy.index].el : null;
 }
 
 /** Type like a person: framework-controlled inputs ignore a bare `.value =`. */

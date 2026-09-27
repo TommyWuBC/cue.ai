@@ -2,7 +2,8 @@ import { bus } from "./bus.js";
 import * as gaze from "./gaze.js";
 import * as voice from "./voice.js";
 import { scan, nth, invalidate, controls, controlName, findControl, fields, findField, setText,
-  findText, COMMITS_MONEY } from "./resolver.js";
+  findText, COMMITS_MONEY, findOption, searchBox, submitField } from "./resolver.js";
+import { correctUtterance, isWakeOnly, norm } from "./speech.js";
 import * as badges from "./badges.js";
 import { CONFIG, url } from "./config.js";
 import { productMemory } from "./product-memory.js";
@@ -421,6 +422,14 @@ let inflight = false;
 let turnId = 0;
 let pendingSay = "";
 let settleTimer = 0;
+let lastTyped = null;
+let actionSayTimer = 0;
+// Typing and submitting announce themselves after the dispatch loop, so
+// "type X and press enter" is one line, and a reply from the model replaces it.
+function actionSay(text) {
+  clearTimeout(actionSayTimer);
+  actionSayTimer = setTimeout(() => bus.emit("SAY", { text }), 0);
+}
 const QUICK = /^(?:yes|yeah|no|nope|cancel|end|cue end|[1-9]|one|two|three|four|five|six|seven|eight|nine)$/i;
 const HALT = /^(?:exit|quit|stop|go away|shut down|turn(?: yourself)? off|disable|end|cue end|stop cue|pause cue)(?: cue)?$/i;
 
@@ -446,7 +455,7 @@ bus.on("UTTERANCE", ({ text, final }) => {
   settleTimer = setTimeout(() => {
     const full = pendingSay.trim();
     pendingSay = "";
-    if (!full || /^(?:cue|q|queue|kew|cu|aura|ora|aurora)$/i.test(full)) return;
+    if (!full || isWakeOnly(full)) return;
     beginTurn(full);
   }, 900);
 });
@@ -457,6 +466,17 @@ async function beginTurn(text) {
   // shopping command, and echoing it into the HUD just looks like a bug.
   if (gaze.getState().calibrating) return;
   const mine = ++turnId;
+  // Correct the transcript against what is on this page before anything reads
+  // it: "clique the cart" is "click the cart" only if there is a Cart to click.
+  const heard = text;
+  const fixed = correctUtterance(text, {
+    controls: controls().map((c) => c.name),
+    fields: fields().map((f) => f.name).filter(Boolean),
+  });
+  if (fixed.changed) {
+    text = fixed.text;
+    console.log(`[cue] heard "${heard}" -> "${text}"`);
+  }
   // Naming an item and then talking about it must not let gaze quietly take
   // the focus back. The lock used to expire on a 3.5s timer, so "two" ... two
   // questions ... "add it" added whatever the eyes had drifted onto — and at
@@ -505,7 +525,7 @@ async function beginTurn(text) {
   try {
     const res = await fetch(url("/utterance"), {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text, context: context(text) }),
+      body: JSON.stringify({ text, context: { ...context(text), heard: heard !== text ? heard : null } }),
     });
     const out = await res.json();
     // They kept talking, or entered private payment, while this request was out.
@@ -547,7 +567,10 @@ async function beginTurn(text) {
       rememberSpokenOptions(text);
     }
     window.cue.lastActionUtterance = null;
-    if (completed && out.say) bus.emit("SAY", { text: out.say });
+    if (completed && out.say) {
+      clearTimeout(actionSayTimer);
+      bus.emit("SAY", { text: out.say });
+    }
   } catch (e) {
     bus.emit("SAY", { text: "Sorry, I lost my connection." });
     console.error(e);
@@ -636,6 +659,15 @@ function productOn(card) {
   try {
     return briefProduct(JSON.parse(card.dataset.cueProduct ?? card.dataset.auraProduct ?? "{}"));
   } catch { return null; }
+}
+
+const OPTION_WORDS = /\b(?:extra small|extra large|xxl|xs|xl|small|medium|large|s|m|l|size|colou?r|in|the)\b/g;
+
+/** True when a phrase names nothing but a size and/or color. */
+function onlyOptions(phrase, color) {
+  let rest = norm(phrase).replace(OPTION_WORDS, " ");
+  if (color) rest = rest.replace(norm(color), " ");
+  return !rest.trim();
 }
 
 function productData(card) {
@@ -1051,7 +1083,38 @@ function perform(verb, args, opts = {}) {
     }
     case "click_named":
     case "open_named": {
-      const c = findControl(args.name ?? args.text ?? "");
+      const spoken = String(args.name ?? args.text ?? "");
+      // "select medium" on a product is a size, not a button called Medium.
+      // On a product page with nothing focused, the page's own product is meant.
+      if (!scope()) {
+        const main = scan().filter((t) => t.kind === "product" && t.rect.width >= innerWidth * 0.5);
+        if (main.length === 1) { gaze.setFocus(main[0]); gaze.holdFocus(); }
+      }
+      const product = productData(scope());
+      const opt = product ? matchOptions(spoken, product) : {};
+      if ((opt.size || opt.color) && onlyOptions(spoken, opt.color)) {
+        if (opt.size && perform("select_variant", { value: opt.size }, opts) === false) return false;
+        if (opt.color && perform("select_color", { value: opt.color }, opts) === false) return false;
+        rememberSpokenOptions(spoken);
+        break;
+      }
+      // A native dropdown: "select price low to high". An exact option beats
+      // a sound-alike button; otherwise buttons win.
+      const choice = findOption(spoken);
+      if (choice && (norm(choice.name) === norm(spoken) || !findControl(spoken))) {
+        choice.select.value = choice.option.value;
+        choice.select.dispatchEvent(new Event("input", { bubbles: true }));
+        choice.select.dispatchEvent(new Event("change", { bubbles: true }));
+        bus.emit("SAY", { text: `${choice.name}.` });
+        break;
+      }
+      // Home is usually the logo, which is named after the shop, not "home".
+      const home = /^(?:the )?home(?: ?page)?$/i.test(spoken.trim()) && !findControl(spoken)
+        ? [...document.querySelectorAll("a[href]")].find((a) => !a.closest("#aura-root") &&
+            new URL(a.href, location.href).origin === location.origin &&
+            new URL(a.href, location.href).pathname === "/")
+        : null;
+      const c = home ? { name: "the home page", el: home } : findControl(spoken);
       const page = c ? null : matchPage(args.name ?? args.text ?? "", site);
       if (!c && page?.url) {
         const link = [...document.querySelectorAll("a[href]")].find((a) => a.href === page.url);
@@ -1080,13 +1143,21 @@ function perform(verb, args, opts = {}) {
       // Say what is about to happen before it happens — on a page the user
       // cannot see well, a silent navigation is disorienting.
       bus.emit("SAY", { text: `Opening ${c.name}.` });
+      const r = c.el.getBoundingClientRect();
+      if (r.bottom <= 0 || r.top >= innerHeight) c.el.scrollIntoView({ block: "center", behavior: "instant" });
       c.el.click();
       break;
     }
-    // "type john into the name field" — fills a field, never submits, never
-    // touches passwords or card numbers (resolver.fields() filters those out).
+    // "type john into the name field" — fills a field, never touches
+    // passwords or card numbers (resolver.fields() filters those out). With no
+    // field named it types where a person would: a field the shopper put the
+    // cursor in, then the search box. Focus Cue left behind from its own last
+    // typing does not count, or "type desk top" lands in the email box.
     case "fill": {
-      const el = findField(args.field ?? "");
+      const named = String(args.field ?? "").trim();
+      const active = document.activeElement;
+      const focusedField = active !== lastTyped?.el ? fields().find((f) => f.el === active)?.el ?? null : null;
+      const el = named ? findField(named) : (focusedField ?? searchBox() ?? findField(""));
       if (!el) {
         const names = fields().map((f) => f.name).filter(Boolean).slice(0, 3);
         bus.emit("SAY", { text: names.length
@@ -1094,7 +1165,25 @@ function perform(verb, args, opts = {}) {
           : "I don't see anything to type into here." });
         return false;
       }
-      setText(el, String(args.text ?? "").slice(0, 200));
+      const typed = String(args.text ?? "").slice(0, 200);
+      setText(el, typed);
+      lastTyped = { el, text: typed };
+      actionSay(`Typed ${typed}.`);
+      break;
+    }
+    // "press enter" after typing, or "type X and search".
+    case "submit": {
+      const active = document.activeElement;
+      const el = (lastTyped?.el?.isConnected ? lastTyped.el : null) ??
+        (fields().find((f) => f.el === active)?.el ?? null) ?? searchBox();
+      if (!el) {
+        bus.emit("SAY", { text: "There's nothing typed to submit." });
+        return false;
+      }
+      const text = lastTyped?.el === el ? lastTyped.text : el.value;
+      actionSay(text ? `Entering ${text}.` : "Pressing enter.");
+      submitField(el);
+      invalidate();
       break;
     }
     case "find_on_page":

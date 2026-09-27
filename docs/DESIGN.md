@@ -473,6 +473,51 @@ matched the ordinal rule and was silently executed as a selection — the user
 asked something and got silence. `can/could/would you …` are deliberately
 excluded; those are polite commands.
 
+## Clicking and typing by voice
+
+"Click / open / select / choose / go to X", "search for / find me X", "type X
+(into the Y field) (and press enter)", "press enter" and "find X on this page"
+are router rules, so they work without the model and in ~0ms. The router
+declines anything deictic ("click it", "type that") and "find me the cheapest
+…" — those need the model or the page catalog. Typed text is matched against
+the original casing, so an email address survives.
+
+On the page, `click_named` tries, in order: a size or colour of the product in
+scope ("select medium" is the M button, not a button called Medium; on a
+product page with nothing focused, the page's product is the scope), an option
+in a native `<select>`, then `findControl()`. That searches the on-screen
+controls, then `clickables()` — the whole document including checkboxes,
+radios and labels — then the same two lists by sound (`bestMatch`). Off-screen
+targets are scrolled into view first. `controls()` is still viewport-only
+because badges and the agent context are built from it.
+
+`fill` with no field named types into a field the shopper focused, then the
+search box. Focus Cue left behind from its own last typing does not count, or
+"type desk top" after filling the newsletter box lands in the newsletter box.
+`submit` presses enter on the field Cue last typed into. Both announce after
+the dispatch loop, so "type X and press enter" is one line, and a reply from
+the model replaces it.
+
+## Misheard speech is corrected against the page
+
+`client/speech.js`, three layers, each conservative:
+
+1. **Bias the recogniser.** `stt.py` always sends `Cue` and `Hey Cue` as
+   keyterms on top of `STT_KEYTERMS`. Keyterms are fixed when the socket
+   opens, so page-specific words cannot be added per page.
+2. **Correct on the client, only where the page makes sense of it.**
+   `findWake()` accepts "q", "queue", "kew" etc. as the first word, a
+   sound-alike ("cute", "cool") only when a command follows it, and never a
+   word that is itself a command ("go" keys the same as "Cue"; "go to
+   checkout" is not "Cue, to checkout"). `correctVerb()` fixes the first word
+   ("clique" → click, "serch for" → search for) only if the rest then matches a
+   control or field on this page. Names match by a coarse phonetic key plus
+   edit distance, and a near tie between two names returns nothing rather than
+   a guess ("bak" could be Bag or Back).
+3. **Tell the model.** The prompt says `said` is a noisy transcript to read
+   against `controls`, `fields` and products; when the client corrected it,
+   `heard` carries the raw text. The server logs `[stt] corrected "…" -> "…"`.
+
 ---
 
 ## Cue on any site: the browser extension

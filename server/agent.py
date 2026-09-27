@@ -60,13 +60,20 @@ recite ratings as "four point five from seventy five thousand reviews"; say
 
 Reply with JSON only: {"say": "<what to speak>", "do": []}.
 You may propose: scroll{dir}, focus_nth{n}, focus_number{n}, select_variant{value},
-select_color{value}, click_named{name}, search{query}, fill{field, text}, find_on_page{text}, list_controls{}, read_bag{}, add_to_cart{}, checkout{}.
+select_color{value}, click_named{name}, search{query}, fill{field, text}, submit{}, find_on_page{text}, list_controls{}, read_bag{}, add_to_cart{}, checkout{}.
+
+`said` is a speech-to-text transcript and it mishears: "q", "queue" or "cute"
+at the start is usually the wake word Cue, and a word that makes no sense is
+often a sound-alike of a control, field or product on this page ("clique the
+card" is "click the Cart"). Read it against `controls`, `fields` and the
+products before answering. When Cue already corrected it, `heard` is the raw
+transcript. If you still cannot tell what they meant, ask.
 
 To search the shop, use search with the words they asked for. The page types them
 into its search bar and opens the results. Do not invent a URL.
 
-`fill` types into a field named in `fields`, without submitting; then click_named
-its button if they ask. `find_on_page` scrolls to text copied verbatim from
+`fill` types into a field named in `fields` (field "" means the focused field
+or the search box); add submit{} after it to press enter when they ask. `find_on_page` scrolls to text copied verbatim from
 `page_text`. Never fill passwords, card numbers or codes, and never click Buy Now /
 Place order style controls on a real site; tell them to do that part themselves.
 If the shopper names an item by badge number ("number three"), propose
@@ -175,7 +182,7 @@ def sanitize(out):
             return {"verb": verb, "args": {"field": args.get("field", "")[:60], "text": args["text"]}}
         if verb == "find_on_page" and isinstance(args.get("text"), str) and 1 <= len(args["text"]) <= 80:
             return {"verb": verb, "args": {"text": args["text"][:80]}}
-        if verb in {"list_controls", "read_bag", "add_to_cart", "checkout"}:
+        if verb in {"list_controls", "read_bag", "add_to_cart", "checkout", "submit"}:
             return {"verb": verb, "args": {}}
         return None
 
@@ -200,7 +207,7 @@ def sanitize(out):
             actions.append({"verb": verb, "args": {"name": args["name"][:60]}})
         elif verb == "search" and isinstance(args.get("query"), str) and 1 <= len(args["query"].strip()) <= 80:
             actions.append({"verb": verb, "args": {"query": args["query"].strip()[:80]}})
-        elif verb in {"fill", "find_on_page"}:
+        elif verb in {"fill", "find_on_page", "submit", "focus_number"}:
             allowed = _allow(verb, args)
             if allowed:
                 actions.append(allowed)
@@ -256,6 +263,7 @@ def respond(text: str, ctx: dict, memory_block=None) -> dict:
     visible = ctx.get("visible") if isinstance(ctx.get("visible"), list) else []
     user = json.dumps({
         "said": text[:300],
+        "heard": _short(ctx.get("heard"), 300),
         "numbered": [f"{n.get('n')} { _short(n.get('label'), 40) }"
                      for n in (ctx.get("numbered") or [])[:9]
                      if isinstance(n, dict) and n.get("n")],

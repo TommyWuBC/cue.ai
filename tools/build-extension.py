@@ -17,7 +17,7 @@ FILES = [
     'extension/privacy.html', 'extension/assets/cue-splash.jpg',
     'client/aura.js', 'client/avatar.js', 'client/badges.js', 'client/bus.js',
     'client/config.js', 'client/gaze.js', 'client/intent.js', 'client/mic.js', 'client/overlay.css',
-    'client/resolver.js', 'client/shopper.js', 'client/site.js', 'client/splash.js',
+    'client/resolver.js', 'client/shopper.js', 'client/site.js', 'client/speech.js', 'client/splash.js',
     'client/voice.js', 'client/product-memory.js', 'vendor/webgazer.js',
 ]
 

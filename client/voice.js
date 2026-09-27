@@ -1,10 +1,12 @@
 import { bus } from "./bus.js";
 import * as mic from "./mic.js";
 import { url } from "./config.js";
+import { findWake, stripWake } from "./speech.js";
 
-// STT mishears the wake word constantly. Accept the near-misses it actually
-// produces, and keep the old name working so nothing breaks mid-demo.
-const WAKE = /\b(cue|q|queue|kew|cu|coo|aura|ora|aurora)\b/i;
+// STT mishears the wake word constantly ("q", "queue", "cute"). findWake()
+// decides from context: a bare "q" counts at the start of a sentence, a
+// sound-alike like "cute" only when a command follows it, and neither counts
+// mid-sentence, so "a cute dress" never wakes Cue.
 
 // Once you have said the wake word you get a window to keep talking without
 // repeating it. Real conversation is "Cue, is this wool?" ... "does it run
@@ -52,13 +54,13 @@ const CAL_DOT = /^(?:next|ready|capture|ok|okay|go|done)\b/;
 const CAL_CHOICE = /\b(?:continue|carry on|keep going|proceed|skip|good enough|leave it|fine|try again|again|retry|redo|recalibrat\w*)\b/;
 
 export function calibrationCommand(text) {
-  const n = norm(text).replace(/^(?:cue|q|queue|kew|cu|coo|aura|ora|aurora)\s+/, "");
+  const n = norm(stripWake(norm(text)));
   if (!n) return null;
   return CAL_DOT.test(n) || CAL_CHOICE.test(n) ? n : null;
 }
 
 function isHalt(text) {
-  const n = norm(text).replace(/^(?:cue|q|queue|kew|cu|coo|aura|ora|aurora)\s+/, "");
+  const n = norm(stripWake(norm(text)));
   return /^(?:end|cue end|stop cue|pause cue|exit|quit|stop|go away|shut down|turn(?: yourself)? off|disable)(?: cue)?$/.test(n);
 }
 
@@ -110,7 +112,7 @@ function handleTranscript(text, final, alternatives = null) {
   // Push-to-talk, or still inside the wake window: take it verbatim.
   if (pttArmed() || now() < state.wakeUntil) {
     state.wakeUntil = now() + WAKE_WINDOW_MS;     // keep the conversation open
-    bus.emit("UTTERANCE", { text: strip(text), final: true });
+    bus.emit("UTTERANCE", { text: stripWake(text), final: true });
     return;
   }
 
@@ -119,12 +121,12 @@ function handleTranscript(text, final, alternatives = null) {
   const cands = alternatives?.length ? alternatives : [text];
   let hit = null;
   for (const alt of cands) {
-    const m = (alt || "").match(WAKE);
-    if (m) { hit = { alt, m }; break; }
+    hit = findWake(alt || "");
+    if (hit) break;
   }
   if (!hit) return;
 
-  const rest = hit.alt.slice(hit.m.index + hit.m[0].length).replace(/^[,.\s]+/, "").trim();
+  const rest = hit.rest;
   state.wakeUntil = now() + WAKE_WINDOW_MS;
   if (rest) bus.emit("UTTERANCE", { text: rest, final: true });
   else bus.emit("STATE", { awake: true });        // just the name: open the window
@@ -146,16 +148,6 @@ function isEcho(text) {
     if (shared >= Math.max(2, Math.ceil(words.length * 0.6))) return true;
   }
   return false;
-}
-
-// Strip a leading wake word if push-to-talk picked it up anyway.
-function strip(text) {
-  const m = text.match(WAKE);
-  if (m && m.index <= 2) {
-    const rest = text.slice(m.index + m[0].length).replace(/^[,.\s]+/, "").trim();
-    if (rest) return rest;
-  }
-  return text;
 }
 
 bus.on("STT", ({ text, final }) => handleTranscript(text, final));

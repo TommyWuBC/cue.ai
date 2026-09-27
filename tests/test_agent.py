@@ -50,6 +50,16 @@ class AgentBoundaryTests(unittest.TestCase):
         self.assertEqual(result['do'], [{'verb': 'select_variant', 'args': {'value': 'M'}},
                                         {'verb': 'select_color', 'args': {'value': 'Black'}}])
 
+    def test_the_agent_can_type_and_press_enter(self):
+        result = agent.sanitize({'say': 'Searching', 'do': [
+            {'verb': 'fill', 'args': {'field': '', 'text': 'desk top'}},
+            {'verb': 'submit', 'args': {}},
+            {'verb': 'focus_number', 'args': {'n': 3}},
+        ]})
+        self.assertEqual(result['do'], [{'verb': 'fill', 'args': {'field': '', 'text': 'desk top'}},
+                                        {'verb': 'submit', 'args': {}},
+                                        {'verb': 'focus_number', 'args': {'n': 3}}])
+
     def test_page_evidence_is_bounded(self):
         product = {'id': 'j1', 'title': 'A' * 1000, 'price': 4,
                    'attrs': {'material': 'wool' * 1000},

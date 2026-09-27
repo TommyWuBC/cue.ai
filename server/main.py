@@ -155,6 +155,9 @@ def merchant_orders():
 @app.post("/utterance")
 def utterance(u: Utterance):
     session = (u.context or {}).get("session") if isinstance(u.context, dict) else None
+    heard = (u.context or {}).get("heard") if isinstance(u.context, dict) else None
+    if isinstance(heard, str) and heard and heard != u.text:
+        print(f'[stt] corrected "{heard[:120]}" -> "{u.text[:120]}"', flush=True)
     fast = router.route(u.text)
     if fast:
         shopper.note(session, u.text, fast)
