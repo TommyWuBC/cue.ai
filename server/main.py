@@ -156,6 +156,11 @@ def merchant_orders():
     return {"orders": checkout.orders()}
 
 
+@app.get("/analytics")
+def analytics_page():
+    return FileResponse(ROOT / "store" / "analytics.html")
+
+
 @app.post("/utterance")
 def utterance(u: Utterance):
     session = (u.context or {}).get("session") if isinstance(u.context, dict) else None
@@ -184,7 +189,15 @@ def utterance(u: Utterance):
     if os.getenv("ANTHROPIC_API_KEY"):
         try:
             import agent
-            out = agent.respond(u.text, u.context, shopper.prompt_block(session))
+            profile = shopper.prompt_block(session)
+            interests = ctx.get("shopping_interests")
+            if isinstance(interests, dict):
+                profile["shopping_interests"] = {
+                    key: [str(value)[:120] for value in interests.get(key, [])[:3] if isinstance(value, str)]
+                    for key in ("searched", "added", "purchased")
+                    if isinstance(interests.get(key), list)
+                }
+            out = agent.respond(u.text, u.context, profile)
             shopper.note(session, u.text, out)
             return _trace(u.text, out, ctx)
         except Exception as e:

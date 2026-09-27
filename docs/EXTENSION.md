@@ -38,6 +38,20 @@ verification currently run. The extension supports product questions,
 comparisons, gaze focus, and page controls on live sites; it does not map live
 merchant products into a Northfield order.
 
+Say **“Cue, show me my analytics”** to open the shopping insights page over the
+current store. Any phrase containing **“close”** closes it while it is open.
+Cue records searches, confirmed Northfield cart additions, add requests on
+other stores, and approved Northfield checkouts while it is active. The journal
+stays in Chrome extension storage. The Northfield demo store shares that
+journal when the extension is loaded; without the extension, it uses the
+browser's storage for that site. The insights page downloads a CSV from that
+data and is also available at `http://localhost:4173/analytics`.
+The analytics view and CSV export do not call the Cue server. Cue still needs
+its backend for speech, product answers, and the demo checkout.
+External-store additions are shown as requests because a click alone cannot
+prove that the retailer accepted the item. Repeated interests can inform Cue's
+suggestions, while the shopper's current request always takes priority.
+
 The build writes an unpacked directory for local testing and
 `dist/cue-extension-0.1.0.zip` for upload. Both are ignored by Git. The ZIP has
 the manifest at its root and bundles WebGazer, its models, the Cue client,

@@ -1,4 +1,5 @@
 import { SERVER_URL } from './runtime.js';
+import { ANALYTICS_KEY, addActivity, summarizeActivity, activityCSV } from '../client/analytics-store.js';
 
 const SERVER = new URL(SERVER_URL);
 
@@ -17,6 +18,24 @@ function sitePattern(url) {
 const pauseKey = tabId => `cue.paused.${tabId}`;
 const sessionKey = tabId => `cue.session.${tabId}`;
 const sessionWrites = new Map();
+let analyticsWrites = Promise.resolve();
+
+async function analyticsEvents() {
+  const value = (await chrome.storage.local.get(ANALYTICS_KEY))[ANALYTICS_KEY];
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new Error('The local shopping journal is invalid.');
+  return value;
+}
+
+function recordAnalytics(event, options) {
+  const next = analyticsWrites.catch(() => {}).then(async () => {
+    const result = addActivity(await analyticsEvents(), event, options);
+    if (result.recorded) await chrome.storage.local.set({ [ANALYTICS_KEY]: result.events });
+    return { recorded: result.recorded };
+  });
+  analyticsWrites = next;
+  return next;
+}
 
 function updateSession(tabId, action) {
   const previous = sessionWrites.get(tabId) ?? Promise.resolve();
@@ -103,7 +122,7 @@ async function start(tab) {
       },
       args: [SERVER.origin, models, splashImage, session, GAZE_MODE],
     });
-    await chrome.scripting.insertCSS({ target, files: ['client/overlay.css'] });
+    await chrome.scripting.insertCSS({ target, files: ['client/overlay.css', 'client/analytics.css'] });
     // WebGazer bundles TensorFlow.js, which registers its WebGL kernels on the
     // page's own global. Evaluating it twice in one page re-registers every
     // kernel and floods the console. Inject it only if it is not already there.
@@ -203,6 +222,25 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   }
   const tabId = sender.tab?.id;
   if (!Number.isInteger(tabId)) return;
+  if (['cue:analytics:event', 'cue:analytics:summary', 'cue:analytics:export'].includes(message?.type)) {
+    (async () => {
+      const demo = new URL(sender.url).origin === SERVER.origin;
+      if (!demo && (!supported(sender.url) || await paused(tabId) ||
+          !(await sessionFor({ id: tabId, url: sender.url })))) return { ok: false };
+      if (message.type === 'cue:analytics:event') {
+        if (!message.event || JSON.stringify(message.event).length > 3000) return { ok: false };
+        const data = await recordAnalytics(message.event, {
+          site: demo ? 'Northfield demo' : new URL(sender.url).hostname, allowPurchase: demo,
+        });
+        return { ok: true, data };
+      }
+      await analyticsWrites.catch(() => {});
+      const events = await analyticsEvents();
+      return { ok: true, data: message.type === 'cue:analytics:export'
+        ? activityCSV(events) : summarizeActivity(events) };
+    })().then(respond, error => respond({ ok: false, error: error.message }));
+    return true;
+  }
   if (message?.type === 'cue:exit' || message?.type === 'cue:stop') {
     updateSession(tabId, async () => {
       await setPaused(tabId, true);
