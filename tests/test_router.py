@@ -90,3 +90,8 @@ if __name__ == '__main__':
             self.assertEqual(router.route(phrase)['do'], [{'verb': 'scroll_stop', 'args': {}}], phrase)
         for phrase in ('quit', 'exit', 'stop cue', 'quit cue', 'end'):
             self.assertEqual(router.route(phrase)['do'], [{'verb': 'stop_cue', 'args': {}}], phrase)
+
+    def test_spend_summary_has_a_spoken_way_in(self):
+        for phrase in ('how much have i spent this month', 'how much did i spend',
+                       "what's my budget", 'show me my spending this month'):
+            self.assertEqual(router.route(phrase)['do'], [{'verb': 'spend_summary', 'args': {}}], phrase)

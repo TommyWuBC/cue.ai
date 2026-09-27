@@ -1,0 +1,39 @@
+.cue-budget {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(380px, calc(100vw - 40px)); pointer-events: auto;
+  padding: 20px 22px 18px; border-radius: 24px;
+  background: var(--cue-surface); backdrop-filter: blur(30px) saturate(1.7);
+  -webkit-backdrop-filter: blur(30px) saturate(1.7);
+  box-shadow: inset 0 1px 0 var(--cue-sheen), 0 0 0 1px var(--cue-hairline),
+              0 28px 70px -14px var(--cue-shadow);
+  animation: bg-in .4s var(--cue-ease) both;
+}
+@keyframes bg-in { from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)) scale(.98); } }
+
+.bg-head { display: flex; align-items: center; margin-bottom: 14px; }
+.bg-head h2 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -.02em; }
+.bg-close { margin-left: auto; width: 28px; height: 28px; padding: 0; font-size: 16px;
+  line-height: 1; border-radius: 999px; border: 1px solid var(--cue-hairline);
+  background: var(--cue-pill); color: var(--cue-muted); cursor: pointer; }
+
+.bg-body { display: flex; align-items: center; gap: 18px; }
+.bg-pie { width: 140px; height: 140px; flex: none; }
+.bg-track { fill: none; }
+.bg-slice { stroke: var(--cue-surface); stroke-width: 1.5; }
+.bg-spent { fill: var(--cue); }
+.bg-cart { fill: color-mix(in srgb, var(--cue) 45%, transparent); }
+.bg-hole { fill: var(--cue-surface); }
+.bg-center-amt { font: 650 15px/1 var(--cue-font); fill: var(--cue-ink); }
+.bg-center-of { font: 500 10px/1 var(--cue-font); fill: var(--cue-muted); }
+
+.bg-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.bg-legend li { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--cue-muted); }
+.bg-legend b { margin-left: auto; font-weight: 650; color: var(--cue-ink); font-size: 13px; }
+.bg-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.bg-dot-spent { background: var(--cue); }
+.bg-dot-cart { background: color-mix(in srgb, var(--cue) 45%, transparent); }
+.bg-dot-room { background: var(--cue-hairline); }
+
+.bg-line { margin: 16px 0 0; font-size: 13.5px; line-height: 1.45; letter-spacing: -.01em; }
+
+@media (prefers-reduced-motion: reduce) { .cue-budget { animation: none; } }

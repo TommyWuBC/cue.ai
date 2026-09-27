@@ -183,7 +183,7 @@ function learnPage() {
   knowledge.observe(items.map((t) => ({ product: t.product, el: t.el })));
 }
 // Bumped by hand when the client changes, so the server log shows which build is running.
-const CLIENT_BUILD = "2026-09-27 voices";
+const CLIENT_BUILD = "2026-09-27 budget-pie";
 
 const PRODUCT_VERBS = new Set(["add_to_cart", "select_variant", "select_color"]);
 
@@ -694,7 +694,7 @@ function context(utterance = "") {
     // "close the comparison" with no way to know one was open: it either said
     // "I don't see what's open to close" or narrated closing it and proposed
     // nothing.
-    panel: compare.isOpen() ? "comparison" : null,
+    panel: compare.isOpen() ? "comparison" : budget.isOpen() ? "budget" : null,
     // What Cue has open over the page. Without this the model was asked to
     // "close the comparison" with no way to know one was open: it either said
     // "I don't see what's open to close" or narrated closing it and proposed
@@ -980,20 +980,65 @@ function stageCheckout() {
   if (window.cueCheckout?.prepare) { window.cueCheckout.prepare(); return; }
   const store = window.cueStore;
   if (!store) {
-    // Both globals above are the demo store's. On a real site this used to be
-    // the only branch left, so Cue said "There's no cart on this page" while
-    // the shopper was looking at seven items on Amazon's own cart. The shop's
-    // own control is the real rail; it goes through the money confirmation.
-    const money = clickables().find((c) => COMMITS_MONEY.test(c.name || ""))
-      || findControl("proceed to checkout") || findControl("checkout");
-    if (money) { confirmMoney(money.el, money.name); return; }
-    bus.emit("SAY", { text: "I don't see a checkout button on this page." });
+    // Both globals above are the demo store's. On a real site this is the only
+    // branch left. "Let's check out" from the cart means walk every step —
+    // address, shipping, payment review — and stop only at the page that
+    // actually spends money, not one click at a time asking each time.
+    void autoAdvanceCheckout();
     return;
   }
   const s = store.summary();
   if (!s.count) { bus.emit("SAY", { text: "Your cart is empty." }); return; }
   pendingConfirm = { kind: "checkout", at: Date.now() };
   bus.emit("SAY", { text: s.readback });
+}
+
+// Controls that move to the next step without spending anything. Deliberately
+// excludes COMMITS_MONEY — the money control is the one place this loop must
+// stop and ask, never click through.
+const NEXT_STEP = /(continue|proceed to checkout|proceed|next|use this (?:address|card|payment method)|deliver to this address|continue to (?:delivery|shipping|payment)|review (?:your )?order)/i;
+
+/**
+ * "Let's check out" from the cart, walked all the way to the page that spends
+ * money. Amazon's checkout is several pages — cart, address, shipping,
+ * payment review — each with its own "Continue"; asking after every one would
+ * make a single spoken instruction take five turns. Stops the moment a control
+ * that actually charges appears, and asks there instead of pressing it.
+ */
+async function autoAdvanceCheckout(steps = 6) {
+  for (let i = 0; i < steps; i++) {
+    if (globalThis.__cueEnded) return;
+    const money = clickables().find((c) => COMMITS_MONEY.test(c.name || ""));
+    if (money) {
+      pendingConfirm = { kind: "money", el: money.el, name: money.name };
+      const amount = pageTotal();
+      const canChangeDelivery = /delivery/i.test(document.body?.innerText || "");
+      bus.emit("SAY", { text:
+        `${amount ? `${amount}. ` : ""}You're at ${money.name}.` +
+        (canChangeDelivery ? " Want to change the delivery time, or place the order?" : " Place the order?") });
+      return;
+    }
+    const next = clickables().find((c) => NEXT_STEP.test(c.name || "") && !COMMITS_MONEY.test(c.name || ""));
+    if (!next) {
+      bus.emit("SAY", { text: i === 0
+        ? "I don't see a checkout or place order button on this page."
+        : "I've gone as far as I can — I don't see a next step here." });
+      return;
+    }
+    const before = location.href;
+    await sayAndWait(i === 0 ? `Going to ${speakableName(next.name)}.` : "");
+    pressControl(next.el);
+    // Amazon's checkout steps are separate page loads. Poll rather than a
+    // fixed delay: a slow step should not be cut short, and a fast one should
+    // not cost a second of dead air.
+    const start = now();
+    while (now() - start < 4000) {
+      await new Promise((r) => setTimeout(r, 200));
+      if (location.href !== before || globalThis.__cueEnded) break;
+    }
+    await new Promise((r) => setTimeout(r, 250));   // let the new page's controls render
+  }
+  bus.emit("SAY", { text: "I've gone through several steps but haven't reached the order page yet." });
 }
 
 function resolveConfirm(ok) {
@@ -1676,9 +1721,14 @@ function perform(verb, args, opts = {}) {
       void compare.open(a, b);
       break;
     }
+    case "spend_summary":
+      if (!opts.narrated) bus.emit("SAY", { text: "Here's this month." });
+      void budget.open();
+      break;
     case "dismiss": {
       // Cue's own panel is a dialog like any other, but closing it by guessing
       // at our own markup is silly when we hold the handle.
+      if (budget.isOpen()) { budget.close(); if (!opts.narrated) bus.emit("SAY", { text: "Closed it." }); break; }
       if (compare.isOpen()) {
         compare.close();
         if (!opts.narrated) bus.emit("SAY", { text: "Closed it." });

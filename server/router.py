@@ -85,6 +85,9 @@ def route(text: str):
     # Declining something that popped up. A bare "no" stays with cancel_checkout
     # above, which now falls through to dismissing an overlay when nothing was
     # actually waiting to be confirmed.
+    if re.fullmatch(lead + r"how much (?:have i|did i) spen[dt](?: this month)?(?: so far)?|"
+                    r"(?:what.?s|show me) my (?:budget|spending|spend)(?: this month)?", t):
+        return result(actions=[action("spend_summary")])
     if re.fullmatch(lead + r"(?:no thanks|no thank you|not now|not interested|maybe later|"
                     r"remind me later|close (?:that|it|this)(?: popup| dialog| window)?|"
                     r"get rid of (?:that|it|this)|dismiss (?:that|it|this)|"

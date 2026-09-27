@@ -100,7 +100,7 @@ Say "a lot of people rate it highly" when you want to convey popularity.
 
 Reply with JSON only: {"say": "<what to speak>", "do": []}.
 You may propose: scroll{dir}, scroll_start{dir, speed}, scroll_stop{}, focus_nth{n}, select_variant{value},
-select_color{value}, click_named{name}, open_link{target, part}, back{}, forward{}, dismiss{}, compare{a, b}, search{query}, fill{field, text}, find_on_page{text}, submit{}, list_controls{}, read_bag{}, add_to_cart{item}, checkout{}.
+select_color{value}, click_named{name}, open_link{target, part}, back{}, forward{}, dismiss{}, compare{a, b}, spend_summary{}, search{query}, fill{field, text}, find_on_page{text}, submit{}, list_controls{}, read_bag{}, add_to_cart{item}, checkout{}.
 
 `said` is a speech-to-text transcript and it mishears: "q", "queue" or "cute"
 at the start is usually the wake word Cue, and a word that makes no sense is
@@ -226,6 +226,11 @@ which of two is better, or to compare, or to see them side by side. Say one
 short line — "Putting them side by side." — and let the panel do the rest: do
 not recite the comparison, and never state the verdict yourself, because the
 panel decides it.
+
+spend_summary{} opens a panel showing this month's spend against the budget,
+with the current cart added on top. Propose it when they ask how much they
+have spent, or what their budget looks like. Say nothing beyond "Here's this
+month." — the panel states the numbers.
 
 dismiss{} closes whatever is covering the page — a warranty or protection-plan
 upsell after an add, a newsletter or cookie sheet, an interstitial. Propose it
@@ -387,7 +392,7 @@ def sanitize(out):
             return {"verb": verb, "args": (
                 {"item": str(item)[:80]} if isinstance(item, (str, int)) and str(item).strip() else {})}
         if verb in {"list_controls", "read_bag", "checkout", "back", "forward",
-                    "scroll_stop", "submit", "dismiss"}:
+                    "scroll_stop", "submit", "dismiss", "spend_summary"}:
             return {"verb": verb, "args": {}}
         return None
 
@@ -416,7 +421,7 @@ def sanitize(out):
             allowed = _allow(verb, args)
             if allowed:
                 actions.append(allowed)
-        elif verb in {"list_controls", "read_bag", "back", "forward", "scroll_stop", "dismiss"}:
+        elif verb in {"list_controls", "read_bag", "back", "forward", "scroll_stop", "dismiss", "spend_summary"}:
             actions.append({"verb": verb, "args": {}})
         elif verb == "scroll_start":
             allowed = _allow(verb, args)
