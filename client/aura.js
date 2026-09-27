@@ -668,9 +668,9 @@ const HALT = /^(?:exit|quit|stop|go away|shut down|turn(?: yourself)? off|disabl
 
 // "scroll down" keeps going, slowly, until they say stop. Reading pace, not a
 // jump: someone who cannot scroll themselves needs to see the page pass by.
-// Each reading pace is 1.5x the original speed. The steps remain far enough
+// Each reading pace is 1.8x the original speed. The steps remain far enough
 // apart for "slower" and "faster" to make an obvious, predictable change.
-const SCROLL_SPEEDS = [33, 57, 90, 142.5, 225];   // px per second
+const SCROLL_SPEEDS = [39.6, 68.4, 108, 171, 270];   // px per second
 const STOP_SCROLL = /\b(?:stop|pause|wait|hold on|hold it|halt|freeze|enough|that's good|right there|okay stop)\b/i;
 const autoScroll = { dir: 0, speed: 2, raf: 0, last: 0, carry: 0, stuck: 0 };
 
