@@ -8,6 +8,7 @@ const memory = new Map();
 const allowedOrigins = new Set();
 let active = false;
 let healthy = true;
+const fetchCalls = [];
 
 globalThis.chrome = {
   action: {
@@ -52,7 +53,10 @@ globalThis.chrome = {
     },
   } },
 };
-globalThis.fetch = async () => ({ ok: healthy, json: async () => ({ ok: healthy }) });
+globalThis.fetch = async (url, options) => {
+  fetchCalls.push({ url: String(url), options });
+  return { ok: healthy, json: async () => ({ ok: healthy }) };
+};
 
 await import('../extension/background.js');
 
@@ -78,6 +82,8 @@ test('with gaze off, WebGazer and its models are never injected', async () => {
   const result = await send({ type: 'cue:start', tab }, popup);
   assert.equal(result.ok, true);
   assert.equal(calls.filter(([kind]) => kind === 'css').length, 1);
+  assert.deepEqual(calls.find(([kind]) => kind === 'css')[1].files,
+    ['client/overlay.css', 'client/analytics.css']);
   assert.deepEqual(calls.filter(([kind, options]) => kind === 'script' && options.files)
     .map(([, options]) => options.files), [
       ['extension/extract.js', 'extension/content.js'],
@@ -90,6 +96,22 @@ test('with gaze off, WebGazer and its models are never injected', async () => {
   active = true;
   assert.equal((await send({ type: 'cue:start', tab }, popup)).ok, true);
   assert.equal(calls.filter(([kind]) => kind === 'css').length, 1);
+});
+
+test('shopping activity uses the background proxy and takes the site from the sender', async () => {
+  const result = await send({ type: 'cue:analytics:event', event: {
+    event_id: 'search-123', kind: 'search', query: 'wool coat', site: 'spoofed.example',
+  } }, content);
+  assert.equal(result.ok, true);
+  const request = fetchCalls.at(-1);
+  assert.match(request.url, /\/api\/analytics\/event$/);
+  assert.equal(JSON.parse(request.options.body).site, 'store.example');
+  assert.equal((await send({ type: 'cue:analytics:summary' }, content)).ok, true);
+  assert.equal((await send({ type: 'cue:analytics:summary' },
+    { ...content, id: 'another-extension' })), null);
+  assert.equal((await send({ type: 'cue:analytics:event', event: {
+    event_id: 'bad-12345', kind: 'purchase', product_title: 'fake',
+  } }, content)).ok, false);
 });
 
 test('toolbar action starts Cue directly and reports status on its badge', async () => {

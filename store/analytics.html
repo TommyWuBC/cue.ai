@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f5f1">
+  <title>Your insights · Cue</title>
+  <link rel="stylesheet" href="/client/analytics.css">
+</head>
+<body style="margin:0">
+  <div id="aura-root"><div class="cue-analytics"><div class="cue-analytics-loading" role="status">Gathering your insights…</div></div></div>
+  <script type="module">
+    import { dashboardHTML } from "/client/analytics.js";
+    const panel = document.querySelector(".cue-analytics");
+    try {
+      const response = await fetch("/api/analytics/summary", { cache: "no-store" });
+      if (!response.ok) throw new Error("The journal is unavailable.");
+      panel.innerHTML = dashboardHTML(await response.json(), { exportUrl: "/api/analytics/export" });
+    } catch {
+      panel.innerHTML = `<div class="cue-analytics-loading" role="alert">Could not load your shopping insights.</div>`;
+    }
+    panel.addEventListener("click", event => {
+      if (event.target.closest(".cue-analytics-close")) {
+        if (history.length > 1) history.back();
+        else location.assign("/");
+      }
+    });
+  </script>
+</body>
+</html>

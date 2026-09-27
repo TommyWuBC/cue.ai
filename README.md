@@ -61,6 +61,17 @@ Check what is actually live: `curl localhost:4173/health`
 
 Same code path as speech — only the wake word and STT are bypassed.
 
+## Shopping insights
+
+With Cue active, say “Cue, show me my analytics” to see searches, frequent
+interests, confirmed demo-store additions, approved demo orders, and recent
+activity. Say “close table” or another phrase containing “close” to return to
+the store. The same view is available at `http://localhost:4173/analytics`.
+Events stay in the local CSV file `server/data/shopping_analytics.csv` (or the
+path set by `CUE_ANALYTICS_CSV`). The page has a CSV download. On live stores,
+an add click is recorded as a request because the merchant cart cannot be
+verified by Cue.
+
 ## How the pieces fit
 
     client/bus.js       one event bus, everything crosses it

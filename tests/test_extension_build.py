@@ -31,6 +31,8 @@ class ExtensionBuildTests(unittest.TestCase):
             self.assertIn('vendor/models/facemesh/model.json', names)
             self.assertIn('vendor/models/facemesh/group1-shard1of1.bin', names)
             self.assertIn('client/aura.js', names)
+            self.assertIn('client/analytics.js', names)
+            self.assertIn('client/analytics.css', names)
             self.assertIn('client/avatar.js', names)
             self.assertIn('client/splash.js', names)
             self.assertIn('extension/assets/cue-splash.jpg', names)

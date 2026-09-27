@@ -36,6 +36,10 @@ export function add(p, size, color) {
   cart.push(item);
   changed(true);
   toast(item);
+  document.dispatchEvent(new CustomEvent("cue:cart-added", { detail: {
+    id: item.id, title: item.title, size: item.size, color: item.color,
+    price_cents: item.unit_price_cents ?? cents(item),
+  } }));
   say(`Added ${p.title}, ${color}, size ${size}.`);
   return true;
 }

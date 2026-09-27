@@ -1,0 +1,108 @@
+/* A self-contained editorial page inside Cue's overlay, including on retail sites. */
+#aura-root .cue-analytics { position: fixed; inset: 0; z-index: 2147483645; overflow: auto;
+  pointer-events: auto; background: #f6f5f1; color: #292b28;
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: normal; text-align: left; -webkit-font-smoothing: antialiased; }
+#aura-root .cue-analytics, #aura-root .cue-analytics * { box-sizing: border-box; }
+#aura-root .cue-analytics-shell { min-height: 100vh; }
+#aura-root .cue-analytics-top { height: 82px; padding: 0 clamp(24px,5vw,84px); display:flex;
+  align-items:center; justify-content:space-between; gap:20px; border-bottom:1px solid #deded7;
+  background:#f6f5f1; }
+#aura-root .cue-analytics-brand { display:flex; gap:15px; align-items:center; font-size:17px;
+  font-weight:620; letter-spacing:-.04em; white-space:nowrap; }
+#aura-root .cue-analytics-brand i { color:#b4b4ac; font-style:normal; padding:0 5px; font-weight:300; }
+#aura-root .cue-analytics-symbol { width:36px; height:36px; display:grid; place-items:center; border-radius:11px;
+  background:#303a32; color:#f6f5f1; font-size:24px; font-weight:300; line-height:1; }
+#aura-root .cue-analytics-symbol svg { width:29px; height:29px; }
+#aura-root .cue-analytics-top-actions { display:flex; gap:25px; align-items:center; }
+#aura-root .cue-analytics-local { color:#69716b; font-size:12px; white-space:nowrap; }
+#aura-root .cue-analytics-local i { display:inline-block; width:7px; height:7px; border-radius:50%; background:#75a58a; margin-right:7px; }
+#aura-root .cue-analytics-close { border:1px solid #d2d4cc; border-radius:100px; background:transparent;
+  color:#29302b; min-height:38px; padding:6px 11px 6px 17px; font:inherit; font-size:12px;
+  display:inline-flex; gap:16px; align-items:center; cursor:pointer; }
+#aura-root .cue-analytics-close span { font-size:22px; line-height:.8; font-weight:300; }
+#aura-root .cue-analytics-close:hover { background:#e9eae3; }
+#aura-root .cue-analytics-main { max-width:1500px; margin:auto; padding:0 clamp(24px,5vw,84px) 35px; }
+#aura-root .cue-analytics-intro { display:flex; justify-content:space-between; align-items:flex-end;
+  padding:clamp(48px,6vw,90px) 0 45px; gap:25px; }
+#aura-root .cue-analytics-eyebrow, #aura-root .cue-analytics-card-head p,
+#aura-root .cue-analytics-insight > p:first-child { margin:0 0 18px; color:#667e6d;
+  font-size:10px; line-height:1.2; font-weight:700; letter-spacing:.18em; }
+#aura-root .cue-analytics-intro h1 { font:400 clamp(54px,6.3vw,96px)/.98 Georgia,"Times New Roman",serif;
+  letter-spacing:-.065em; margin:0; }
+#aura-root .cue-analytics-intro h1 em { font-weight:400; color:#7c8e7d; }
+#aura-root .cue-analytics-intro p:last-child { color:#777b74; font-size:15px; margin:26px 0 0; }
+#aura-root .cue-analytics-index { color:#9b9d95; font-size:11px; white-space:nowrap; }
+#aura-root .cue-analytics-metrics { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid #dfe1d8;
+  border-radius:3px; background:#fffefa; margin-bottom:18px; }
+#aura-root .cue-analytics-metric { padding:25px clamp(18px,2.5vw,36px); display:flex; flex-direction:column; min-height:133px; }
+#aura-root .cue-analytics-metric + .cue-analytics-metric { border-left:1px solid #e7e9e1; }
+#aura-root .cue-analytics-metric span { font-size:12px; color:#777d75; }
+#aura-root .cue-analytics-metric strong { font:400 clamp(32px,3vw,48px)/1.05 Georgia,"Times New Roman",serif;
+  letter-spacing:-.05em; margin:14px 0 6px; }
+#aura-root .cue-analytics-metric small { color:#9a9e96; font-size:11px; }
+#aura-root .cue-analytics-grid { display:grid; grid-template-columns:1.15fr .85fr; gap:18px; }
+#aura-root .cue-analytics-card { position:relative; min-height:290px; padding:31px clamp(22px,2.5vw,36px);
+  border:1px solid #dfe1d8; border-radius:3px; background:#fffefa; }
+#aura-root .cue-analytics-card-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:35px; }
+#aura-root .cue-analytics-card-head p { margin:0 0 9px; }
+#aura-root .cue-analytics-card-head h2, #aura-root .cue-analytics-insight h2 { font:400 29px/1.15 Georgia,"Times New Roman",serif;
+  letter-spacing:-.04em; margin:0; }
+#aura-root .cue-analytics-card-head > span { font-size:11px; color:#9a9e96; white-space:nowrap; }
+#aura-root .cue-analytics-term { display:grid; grid-template-columns:26px minmax(90px,1fr) minmax(40px,35%) 26px;
+  align-items:center; gap:15px; min-height:39px; border-bottom:1px solid #eff0e9; font-size:13px; }
+#aura-root .cue-analytics-rank { color:#a6aca1; font-size:10px; }
+#aura-root .cue-analytics-term-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#aura-root .cue-analytics-term-bar { display:block; height:4px; background:#e7ebe3; border-radius:5px; }
+#aura-root .cue-analytics-term-bar i { display:block; height:100%; background:#789783; border-radius:5px; }
+#aura-root .cue-analytics-term b { font-size:11px; font-weight:500; text-align:right; color:#68766b; }
+#aura-root .cue-analytics-bars { height:169px; display:grid; grid-template-columns:repeat(7,1fr); gap:13px; align-items:end; }
+#aura-root .cue-analytics-day { height:100%; display:flex; flex-direction:column; align-items:center; gap:12px; color:#9a9e96; font-size:10px; }
+#aura-root .cue-analytics-column { width:100%; flex:1; display:flex; align-items:end; background:linear-gradient(to top,#f1f4ed 1px,transparent 1px) 0 100%/100% 25%; }
+#aura-root .cue-analytics-column i { width:100%; display:block; background:#a8bcaa; border-radius:2px 2px 0 0; }
+#aura-root .cue-analytics-insight { background:#e8ede6; border-color:#d7e2d7; min-height:255px; overflow:hidden; }
+#aura-root .cue-analytics-insight > p:first-child { margin-bottom:46px; }
+#aura-root .cue-analytics-insight h2 { max-width:490px; font-size:clamp(28px,2.6vw,40px); }
+#aura-root .cue-analytics-insight > p:last-child { max-width:490px; color:#58665a; font-size:13px; margin:18px 0 0; line-height:1.6; }
+#aura-root .cue-analytics-spark { position:absolute; right:30px; top:47px; color:#97b29c; font-size:84px; line-height:1; font-weight:200; }
+#aura-root .cue-analytics-activity { min-height:255px; }
+#aura-root .cue-analytics-activity .cue-analytics-card-head { margin-bottom:15px; }
+#aura-root .cue-analytics-activity ol { list-style:none; margin:0; padding:0; max-height:250px; overflow:auto; }
+#aura-root .cue-analytics-activity li { display:flex; align-items:center; gap:13px; min-height:53px; border-bottom:1px solid #eff0e9; }
+#aura-root .cue-analytics-event-icon { width:28px; height:28px; flex:none; border-radius:50%; background:#edf2eb;
+  display:grid; place-items:center; color:#5d7d65; font-size:17px; }
+#aura-root .cue-analytics-activity li > div { min-width:0; flex:1; display:flex; gap:6px; align-items:baseline; }
+#aura-root .cue-analytics-activity li b { font-size:11px; font-weight:600; color:#6b7e6c; }
+#aura-root .cue-analytics-activity li span:not(.cue-analytics-event-icon) { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:12px; }
+#aura-root .cue-analytics-activity li small { display:none; }
+#aura-root .cue-analytics-activity time { color:#a0a59c; font-size:10px; white-space:nowrap; }
+#aura-root .cue-analytics-items { list-style:none; margin:0; padding:0; }
+#aura-root .cue-analytics-items li { border-bottom:1px solid #eff0e9; display:flex; justify-content:space-between;
+  gap:12px; min-height:43px; align-items:center; font-size:13px; }
+#aura-root .cue-analytics-items li span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+#aura-root .cue-analytics-items li b { flex:none; font-size:11px; color:#728775; font-weight:500; }
+#aura-root .cue-analytics-empty { color:#8b9388; font-size:13px; line-height:1.6; margin:22px 0; }
+#aura-root .cue-analytics-footer { padding:23px 0; display:flex; justify-content:space-between; gap:16px;
+  font-size:11px; color:#999e95; }
+#aura-root .cue-analytics-footer a { color:#526c59; text-decoration:none; font-weight:600; }
+#aura-root .cue-analytics-loading { min-height:100vh; display:grid; place-items:center; text-align:center;
+  color:#617064; font:400 25px/1.3 Georgia,"Times New Roman",serif; padding:40px; }
+#aura-root .cue-analytics-loading button { margin:15px; }
+@media(max-width:760px) {
+  #aura-root .cue-analytics-top { height:68px; }
+  #aura-root .cue-analytics-local, #aura-root .cue-analytics-index { display:none; }
+  #aura-root .cue-analytics-intro { padding:48px 0 35px; }
+  #aura-root .cue-analytics-metrics { grid-template-columns:repeat(2,1fr); }
+  #aura-root .cue-analytics-metric:nth-child(3) { border-left:0; border-top:1px solid #e7e9e1; }
+  #aura-root .cue-analytics-metric:nth-child(4) { border-top:1px solid #e7e9e1; }
+  #aura-root .cue-analytics-grid { grid-template-columns:1fr; }
+  #aura-root .cue-analytics-card { min-height:250px; }
+}
+@media(max-width:480px) {
+  #aura-root .cue-analytics-brand { font-size:15px; }
+  #aura-root .cue-analytics-intro h1 { font-size:54px; }
+  #aura-root .cue-analytics-metric { min-height:118px; padding:19px; }
+  #aura-root .cue-analytics-metric strong { font-size:34px; }
+  #aura-root .cue-analytics-term { grid-template-columns:20px minmax(70px,1fr) 50px 19px; gap:8px; }
+  #aura-root .cue-analytics-footer { flex-direction:column; }
+}

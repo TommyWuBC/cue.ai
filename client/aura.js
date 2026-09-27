@@ -12,6 +12,79 @@ import { crawlNear, matchPage, pageText } from "./site.js";
 import { createDetails } from "./details.js";
 import { createKnowledge } from "./knowledge.js";
 import { parseSearch, amazonSearchUrl, describeFilters } from "./search.js";
+import { analyticsCommand, createAnalytics } from "./analytics.js";
+
+async function analyticsRequest(kind, event = null) {
+  if (CONFIG.injected && globalThis.chrome?.runtime?.sendMessage) {
+    const response = await chrome.runtime.sendMessage({
+      type: kind === "summary" ? "cue:analytics:summary" : "cue:analytics:event", event,
+    });
+    if (!response?.ok) throw new Error(response?.error || "Analytics are unavailable.");
+    return response.data;
+  }
+  const response = await fetch(url(kind === "summary" ? "/api/analytics/summary" : "/api/analytics/event"), {
+    method: kind === "summary" ? "GET" : "POST",
+    headers: event ? { "content-type": "application/json" } : {},
+    body: event ? JSON.stringify(event) : undefined,
+  });
+  if (!response.ok) throw new Error(`Analytics request failed (${response.status}).`);
+  return response.json();
+}
+
+const analytics = createAnalytics({ request: analyticsRequest,
+  exportUrl: url("/api/analytics/export") });
+function recordActivity(kind, fields) {
+  if (globalThis.__cueEnded) return Promise.resolve();
+  return analyticsRequest("event", {
+    event_id: crypto.randomUUID(), kind, site: location.hostname, ...fields,
+  }).catch(error => console.warn("[cue] Could not save shopping activity:", error));
+}
+
+let pendingSearch = null;
+function recordSearch(query, source = "route") {
+  const clean = String(query || "").trim().slice(0, 120);
+  if (!clean) return Promise.resolve();
+  const now = Date.now();
+  if (source !== "voice" && pendingSearch?.query === clean.toLowerCase() &&
+      now - pendingSearch.at < 30000 &&
+      (pendingSearch.source === "voice" || (pendingSearch.source === "submit" && source === "route"))) {
+    if (source === "route") pendingSearch = null;
+    return Promise.resolve();
+  }
+  pendingSearch = { query: clean.toLowerCase(), source, at: now };
+  return recordActivity("search", { query: clean });
+}
+
+document.addEventListener("submit", event => {
+  const field = event.target?.querySelector?.('input[type="search"],input[name="q"],input[name="k"]');
+  if (field && !event.target.closest("#aura-root")) void recordSearch(field.value, "submit");
+}, true);
+document.addEventListener("routechange", () => {
+  if (location.pathname === "/search") void recordSearch(new URLSearchParams(location.search).get("q"));
+});
+document.addEventListener("cue:cart-added", ({ detail }) => {
+  if (!window.cue || globalThis.__cueEnded) return;
+  void recordActivity("cart_add", {
+    product_id: detail.id, product_title: detail.title, size: detail.size,
+    color: detail.color, price_cents: detail.price_cents,
+  });
+});
+document.addEventListener("click", event => {
+  if (!CONFIG.injected || globalThis.__cueEnded) return;
+  const button = event.target?.closest?.('button,input[type="submit"],[role="button"]');
+  if (!button || button.closest("#aura-root") ||
+      !/\badd\s+to\s+(?:cart|bag)\b/i.test(controlName(button))) return;
+  const card = button.closest("[data-cue-product],[data-aura-product]");
+  const product = productData(card) || discussed || {};
+  void recordActivity("add_request", {
+    product_id: product.id || "", product_title: product.title || "Item",
+    size: stated.size || "", color: stated.color || "",
+    price_cents: Number.isFinite(product.price) ? Math.round(product.price * 100) : null,
+  });
+}, true);
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && analytics.isOpen) { event.preventDefault(); analytics.close(); }
+});
 
 let memoryStorage;
 try { memoryStorage = CONFIG.injected ? window.CUE_MEMORY_STORAGE : sessionStorage; } catch {}
@@ -120,6 +193,7 @@ async function runSearch(q) {
     const target = amazonSearchUrl(parsed, location.href);
     if (target) {
       const applied = describeFilters(parsed);
+      await recordSearch(parsed.q, "voice");
       discussed = null;
       stated = { id: null, size: null, color: null };
       persistShopper();
@@ -145,6 +219,7 @@ async function runSearch(q) {
   }
   field.focus();
   writeField(field, q);
+  await recordSearch(q, "voice");
   discussed = null;
   stated = { id: null, size: null, color: null };
   invalidate();
@@ -658,6 +733,12 @@ async function beginTurn(text) {
   // shopping command, and echoing it into the HUD just looks like a bug.
   if (gaze.getState().calibrating) return;
   const mine = ++turnId;
+  const analyticsAction = analyticsCommand(text, analytics.isOpen);
+  if (analyticsAction) {
+    if (analyticsAction === "close") { analytics.close(); bus.emit("SAY", { text: "Closed analytics." }); }
+    else { void analytics.open(); bus.emit("SAY", { text: "Opening your analytics." }); }
+    return;
+  }
   remember("user", text);
   // Naming an item and then talking about it must not let gaze quietly take
   // the focus back. The lock used to expire on a 3.5s timer, so "two" ... two
@@ -1398,6 +1479,7 @@ export async function exitCue() {
   exited = true;
   globalThis.__cueEnded = true;
   pendingConfirm = null;
+  analytics.close();
   voice.exitPrivateMode?.();
   voice.stopListening();
   gaze.stop();

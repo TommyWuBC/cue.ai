@@ -15,7 +15,7 @@ FILES = [
     'extension/background.js', 'extension/content.js', 'extension/extract.js',
     'extension/popup.html', 'extension/popup.css', 'extension/popup.js',
     'extension/privacy.html', 'extension/assets/cue-splash.jpg',
-    'client/aura.js', 'client/avatar.js', 'client/bus.js',
+    'client/aura.js', 'client/analytics.js', 'client/analytics.css', 'client/avatar.js', 'client/bus.js',
     'client/config.js', 'client/details.js', 'client/gaze.js', 'client/intent.js', 'client/knowledge.js', 'client/mic.js', 'client/overlay.css',
     'client/resolver.js', 'client/search.js', 'client/shopper.js', 'client/site.js', 'client/splash.js',
     'client/voice.js', 'client/product-memory.js', 'vendor/webgazer.js',

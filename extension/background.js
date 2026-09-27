@@ -103,7 +103,7 @@ async function start(tab) {
       },
       args: [SERVER.origin, models, splashImage, session, GAZE_MODE],
     });
-    await chrome.scripting.insertCSS({ target, files: ['client/overlay.css'] });
+    await chrome.scripting.insertCSS({ target, files: ['client/overlay.css', 'client/analytics.css'] });
     // WebGazer bundles TensorFlow.js, which registers its WebGL kernels on the
     // page's own global. Evaluating it twice in one page re-registers every
     // kernel and floods the console. Inject it only if it is not already there.
@@ -203,6 +203,24 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   }
   const tabId = sender.tab?.id;
   if (!Number.isInteger(tabId)) return;
+  if (message?.type === 'cue:analytics:event' || message?.type === 'cue:analytics:summary') {
+    (async () => {
+      if (!supported(sender.url) || await paused(tabId) ||
+          !(await sessionFor({ id: tabId, url: sender.url }))) return { ok: false };
+      const event = message.type === 'cue:analytics:event';
+      if (event && (!message.event || JSON.stringify(message.event).length > 3000 ||
+          !['search', 'cart_add', 'add_request'].includes(message.event.kind))) return { ok: false };
+      const response = await fetch(new URL(event ? '/api/analytics/event' : '/api/analytics/summary', SERVER), {
+        method: event ? 'POST' : 'GET',
+        headers: event ? { 'content-type': 'application/json' } : {},
+        body: event ? JSON.stringify({ ...message.event, site: new URL(sender.url).hostname }) : undefined,
+        cache: 'no-store',
+      });
+      if (!response.ok) return { ok: false, error: `Analytics request failed (${response.status}).` };
+      return { ok: true, data: await response.json() };
+    })().then(respond, () => respond({ ok: false, error: 'Cue could not reach the analytics journal.' }));
+    return true;
+  }
   if (message?.type === 'cue:exit' || message?.type === 'cue:stop') {
     updateSession(tabId, async () => {
       await setPaused(tabId, true);

@@ -289,9 +289,11 @@ class Checkout:
         except Exception as exc:
             raise CheckoutError("Invalid passkey ID.") from exc
 
-    def orders(self):
+    def orders(self, limit=50):
         with self.db() as conn:
-            rows = conn.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 50").fetchall()
+            query = "SELECT * FROM orders ORDER BY created_at DESC"
+            rows = conn.execute(query + (" LIMIT ?" if limit is not None else ""),
+                                (limit,) if limit is not None else ()).fetchall()
         return [{"id": r["id"], "items": json.loads(r["items_json"]),
                  "total_cents": r["total_cents"], "customer_words": r["customer_words"],
                  "approved_with_passkey": True, "payment_mode": "demo_order_no_charge",
