@@ -55,7 +55,7 @@ function learnPage() {
   knowledge.observe(items.map((t) => ({ product: t.product, el: t.el })));
 }
 // Bumped by hand when the client changes, so the server log shows which build is running.
-const CLIENT_BUILD = "2026-09-26 whole-page";
+const CLIENT_BUILD = "2026-09-26 speak-first";
 
 const PRODUCT_VERBS = new Set(["add_to_cart", "select_variant", "select_color"]);
 
@@ -123,8 +123,8 @@ async function runSearch(q) {
       discussed = null;
       stated = { id: null, size: null, color: null };
       persistShopper();
-      bus.emit("SAY", { text: `Searching for ${parsed.q}${applied ? `, ${applied}` : ""}.` });
-      setTimeout(() => location.assign(target), 900);
+      sayThen(`Searching for ${parsed.q}${applied ? `, ${applied}` : ""}.`,
+        () => location.assign(target));
       return;
     }
   }
@@ -135,7 +135,7 @@ async function runSearch(q) {
       bus.emit("SAY", { text: "I don't see a search bar or a search button on this page." });
       return;
     }
-    bus.emit("SAY", { text: "Opening search." });
+    await sayAndWait("Opening search.");
     opener.el.click();
     field = await waitForSearch(1600);
   }
@@ -145,14 +145,16 @@ async function runSearch(q) {
   }
   field.focus();
   writeField(field, q);
-  const form = field.form;
-  if (form?.requestSubmit) form.requestSubmit();
-  else field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
   discussed = null;
   stated = { id: null, size: null, color: null };
   invalidate();
-  bus.emit("SAY", { text: `Searching for ${q}.` });
   persistShopper();
+  // Submitting reloads the page, so the sentence has to land first.
+  await sayAndWait(`Searching for ${q}.`);
+  if (globalThis.__cueEnded) return;
+  const form = field.form;
+  if (form?.requestSubmit) form.requestSubmit();
+  else field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
   setTimeout(() => {
     if (globalThis.__cueEnded) return;
     const found = scan().filter((t) => t.kind === "product");
@@ -172,7 +174,7 @@ function mountUI() {
     <div class="aura-reticle"></div>
     <div class="aura-outline"><span class="aura-outline-label"></span></div>
     <div class="aura-hud">
-      <div class="aura-hud-row"><span class="aura-dot"></span><b>Cue</b><span class="aura-chip aura-mode"></span></div>
+      <div class="aura-hud-row"><b>Cue</b><span class="aura-status"><span class="aura-dot"></span><span class="aura-chip aura-mode"></span></span></div>
       <div class="aura-hud-heard"></div>
       <div class="aura-hud-said"></div>
       <div class="aura-hud-drift">tracking has drifted · say &ldquo;recalibrate&rdquo;</div>
@@ -288,7 +290,22 @@ bus.on("STATE", (s) => {
   }
 });
 
-bus.on("SAY", ({ text }) => { ui.said.textContent = text; remember("assistant", text); voice.speak(text); });
+bus.on("SAY", ({ text }) => { void sayAndWait(text); });
+
+// Speaking and acting in the wrong order truncates the sentence: a click or a
+// navigation tears down the page mid-word. Everything that changes the page
+// waits for this to resolve first.
+async function sayAndWait(text) {
+  if (!text) return;
+  if (ui.said) ui.said.textContent = text;
+  remember("assistant", text);
+  try { await voice.speak(text); } catch { /* a failed line must not block the action */ }
+}
+
+// Say it, finish saying it, then do the thing that replaces the page.
+function sayThen(text, act) {
+  void sayAndWait(text).then(() => { if (!globalThis.__cueEnded) act(); });
+}
 
 // Scrolling moves every rect. Drop the resolver's cache immediately rather
 // than waiting for its own key check to notice.
@@ -689,6 +706,10 @@ async function beginTurn(text) {
       bus.emit("SAY", { text: `I can't see the ${discussed.title} on screen any more.` });
       completed = false;
     }
+    // Say it first. Actions used to run here, so "Opening the reviews" was cut
+    // off by the navigation it was announcing.
+    if (completed && out.say) await sayAndWait(out.say);
+    if (mine !== turnId || globalThis.__cueEnded) return;
     for (const a of completed ? (out.do ?? []) : []) {
       // Second lock. The server's allowlist already refuses these from the
       // model; this is the one that survives a jailbreak, because it is the
@@ -715,7 +736,6 @@ async function beginTurn(text) {
       rememberSpokenOptions(text);
     }
     window.cue.lastActionUtterance = null;
-    if (completed && out.say) bus.emit("SAY", { text: out.say });
   } catch (e) {
     bus.emit("SAY", { text: "Sorry, I lost my connection." });
     console.error(e);
@@ -1219,8 +1239,8 @@ function perform(verb, args, opts = {}) {
       }
       discussed = briefProduct({ ...item, url: item.url }) ?? discussed;
       persistShopper();
-      bus.emit("SAY", { text: args.part === "reviews" ? `Opening the reviews for ${item.title.slice(0, 50)}.` : `Opening ${item.title.slice(0, 60)}.` });
-      setTimeout(() => location.assign(link), 900);
+      sayThen(args.part === "reviews" ? `Opening the reviews for ${item.title.slice(0, 50)}.`
+        : `Opening ${item.title.slice(0, 60)}.`, () => location.assign(link));
       break;
     }
     case "click_named":
@@ -1229,9 +1249,8 @@ function perform(verb, args, opts = {}) {
       const page = c ? null : matchPage(args.name ?? args.text ?? "", site);
       if (!c && page?.url) {
         const link = [...document.querySelectorAll("a[href]")].find((a) => a.href === page.url);
-        bus.emit("SAY", { text: `Opening ${page.name || page.title}.` });
-        if (link) link.click();
-        else location.assign(page.url);
+        sayThen(`Opening ${page.name || page.title}.`,
+          () => (link ? link.click() : location.assign(page.url)));
         break;
       }
       if (!c) {
@@ -1253,8 +1272,7 @@ function perform(verb, args, opts = {}) {
       }
       // Say what is about to happen before it happens — on a page the user
       // cannot see well, a silent navigation is disorienting.
-      bus.emit("SAY", { text: `Opening ${c.name}.` });
-      c.el.click();
+      sayThen(`Opening ${c.name}.`, () => c.el.click());
       break;
     }
     // "type john into the name field" — fills a field, never submits, never
@@ -1277,8 +1295,8 @@ function perform(verb, args, opts = {}) {
         return false;
       }
       break;
-    case "back": history.back(); break;
-    case "forward": history.forward(); break;
+    case "back": sayThen("Going back.", () => history.back()); break;
+    case "forward": sayThen("Going forward.", () => history.forward()); break;
     case "history":
       if (args.dir === "back") history.back();
       else if (args.dir === "forward") history.forward();
