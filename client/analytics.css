@@ -42,6 +42,12 @@
 #aura-root .cue-analytics h1, #aura-root .cue-analytics h2, #aura-root .cue-analytics p { margin: 0; }
 #aura-root .cue-analytics b { font-weight: 600; font-variant-numeric: tabular-nums; }
 #aura-root .cue-analytics button { font-family: var(--font); }
+/* The overlay sits on other people's pages, whose own li/span/b rules would
+   otherwise tint our text (dark item names on the dark theme). Pin text to the
+   dashboard's ink; the muted rules below are more specific and still win. */
+#aura-root .cue-analytics :where(h1, h2, p, li, span, b, time, ol) { color: var(--ink); }
+#aura-root .ci .ci-items li span, #aura-root .ci .ci-event-text, #aura-root .ci .ci-rank-label,
+#aura-root .ci .ci-rank-value, #aura-root .ci .ci-step-label, #aura-root .ci .ci-step-head b { color: var(--ink); }
 
 /* Series swatches: one class per entity, used by keys, bars and sparklines. */
 #aura-root .ci .ci-search { background: var(--s-search); color: var(--s-search); }
@@ -241,3 +247,5 @@
 @media (forced-colors: active) {
   #aura-root .ci .ci-search, #aura-root .ci .ci-add, #aura-root .ci .ci-buy { forced-color-adjust: none; }
 }
+/* These inherit their muted colour from the parent, past the ink pin above. */
+#aura-root .ci .ci-figure-foot > span, #aura-root .ci .ci-foot > span { color: inherit; }
