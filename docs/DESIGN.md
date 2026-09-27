@@ -715,5 +715,5 @@ clears the "Cue, end" pause.
 - Visa Direct and PAAI 404 pending product approval. A prior hackathon team burned
   hours on it and demoed mocks. Stripe test mode behind the existing interface is the plan.
 - `curl localhost:4173/health` shows what is live: keys, provider, characters spent.
-- `A dead mic, a misheard wake word, and a router miss look identical from outside;
+- A dead mic, a misheard wake word, and a router miss look identical from outside;
   the `[stt]` and `[turn]` log lines tell them apart. `STT_LOG=0` silences `[stt]`.
