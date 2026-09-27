@@ -11,7 +11,7 @@ export function analyticsCommand(text, isOpen) {
   return null;
 }
 
-export function dashboardHTML(data, { exportUrl = null } = {}) {
+export function dashboardHTML(data, { hasExport = false } = {}) {
   const totals = data.totals || {};
   const searches = data.top_searches || [];
   const added = data.top_added || [];
@@ -37,7 +37,7 @@ export function dashboardHTML(data, { exportUrl = null } = {}) {
     `<li><span>${escapeHTML(item.label)}</span><b>× ${number(item.count)}</b></li>`).join("")}</ol>`
     : `<p class="cue-analytics-empty">${escapeHTML(empty)}</p>`;
   return `<div class="cue-analytics-shell">
-    <header class="cue-analytics-top"><div class="cue-analytics-brand"><span class="cue-analytics-symbol" aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><path d="M28.2 9.1A15 15 0 1 0 28.2 30.9M24.1 15.6A8 8 0 1 0 24.1 24.4" stroke="currentColor" stroke-width="2.8" stroke-linecap="square"/><circle cx="25" cy="20" r="2.5" fill="currentColor"/></svg></span><span>Cue <i>/</i> Insights</span></div><div class="cue-analytics-top-actions"><span class="cue-analytics-local"><i></i> Stored in Cue's journal</span><button class="cue-analytics-close" type="button" aria-label="Close analytics">Close <span>×</span></button></div></header>
+    <header class="cue-analytics-top"><div class="cue-analytics-brand"><span class="cue-analytics-symbol" aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><path d="M28.2 9.1A15 15 0 1 0 28.2 30.9M24.1 15.6A8 8 0 1 0 24.1 24.4" stroke="currentColor" stroke-width="2.8" stroke-linecap="square"/><circle cx="25" cy="20" r="2.5" fill="currentColor"/></svg></span><span>Cue <i>/</i> Insights</span></div><div class="cue-analytics-top-actions"><span class="cue-analytics-local"><i></i> Stored in your browser</span><button class="cue-analytics-close" type="button" aria-label="Close analytics">Close <span>×</span></button></div></header>
     <main class="cue-analytics-main"><div class="cue-analytics-intro"><div><p class="cue-analytics-eyebrow">YOUR SHOPPING, IN FOCUS</p><h1>What catches<br><em>your eye.</em></h1><p>A quieter look at the things you return to, add, and choose.</p></div><span class="cue-analytics-index">01 — Personal insights</span></div>
     <section class="cue-analytics-metrics" aria-label="Shopping totals">${row("Searches", number(totals.searches), "Ideas explored")}${row("Added to bag", number(totals.confirmed_adds), "Confirmed additions")}${row("Demo orders", number(totals.orders), "Approved checkouts")}${row("Demo spend", money(totals.demo_spend_cents), "No real charges")}</section>
     <div class="cue-analytics-grid"><section class="cue-analytics-card cue-analytics-searches"><div class="cue-analytics-card-head"><div><p>01 / INTEREST</p><h2>What you look for</h2></div><span>Most searched</span></div>${searchRows}</section>
@@ -46,10 +46,10 @@ export function dashboardHTML(data, { exportUrl = null } = {}) {
     <section class="cue-analytics-card cue-analytics-activity"><div class="cue-analytics-card-head"><div><p>04 / ACTIVITY</p><h2>Recent moments</h2></div><span>Latest first</span></div><ol>${events}</ol></section>
     <section class="cue-analytics-card cue-analytics-items-card"><div class="cue-analytics-card-head"><div><p>05 / CONSIDERED</p><h2>Added to bag</h2></div><span>Confirmed · demo store</span></div>${itemList(added, "Items you add to the demo store bag will appear here.")}</section>
     <section class="cue-analytics-card cue-analytics-items-card"><div class="cue-analytics-card-head"><div><p>06 / CHOSEN</p><h2>Checked out</h2></div><span>Approved demo orders</span></div>${itemList(purchased, "Items from approved demo checkouts will appear here.")}</section></div>
-    <footer class="cue-analytics-footer"><span>Your activity is recorded in a CSV file on the configured Cue server.</span>${exportUrl ? `<a href="${escapeHTML(exportUrl)}" target="_blank" rel="noopener">Download CSV <span>↗</span></a>` : ""}</footer></main></div>`;
+    <footer class="cue-analytics-footer"><span>Your activity stays in this browser. Download a CSV whenever you want a file.</span>${hasExport ? `<button class="cue-analytics-export" type="button">Download CSV <span>↗</span></button>` : ""}</footer></main></div>`;
 }
 
-export function createAnalytics({ request, exportUrl }) {
+export function createAnalytics({ request, onExport }) {
   let panel = null;
   let previousFocus = null;
   let opening = 0;
@@ -73,7 +73,12 @@ export function createAnalytics({ request, exportUrl }) {
     panel.setAttribute("aria-label", "Cue shopping analytics");
     panel.innerHTML = `<div class="cue-analytics-loading" role="status">Gathering your insights…</div>`;
     root.append(panel);
-    panel.addEventListener("click", event => { if (event.target.closest(".cue-analytics-close")) close(); });
+    panel.addEventListener("click", event => {
+      if (event.target.closest(".cue-analytics-close")) close();
+      if (event.target.closest(".cue-analytics-export")) {
+        void onExport().catch(error => console.warn("[cue] Could not export analytics:", error));
+      }
+    });
     panel.addEventListener("keydown", event => {
       if (event.key !== "Tab") return;
       const focusable = [...panel.querySelectorAll('button:not([disabled]),a[href]')];
@@ -87,11 +92,11 @@ export function createAnalytics({ request, exportUrl }) {
     try {
       const data = await request("summary");
       if (token !== opening || !panel) return;
-      panel.innerHTML = dashboardHTML(data, { exportUrl });
+      panel.innerHTML = dashboardHTML(data, { hasExport: Boolean(onExport) });
       panel.querySelector(".cue-analytics-close")?.focus();
     } catch (error) {
       if (token !== opening || !panel) return;
-      panel.innerHTML = `<div class="cue-analytics-loading" role="alert">Could not load your insights. Check that the Cue server is running. <button class="cue-analytics-close" type="button">Close</button></div>`;
+      panel.innerHTML = `<div class="cue-analytics-loading" role="alert">Could not open your browser's shopping journal. <button class="cue-analytics-close" type="button">Close</button></div>`;
     }
   }
   return { open, close, get isOpen() { return Boolean(panel); } };

@@ -67,8 +67,10 @@ With Cue active, say “Cue, show me my analytics” to see searches, frequent
 interests, confirmed demo-store additions, approved demo orders, and recent
 activity. Say “close table” or another phrase containing “close” to return to
 the store. The same view is available at `http://localhost:4173/analytics`.
-Events stay in the local CSV file `server/data/shopping_analytics.csv` (or the
-path set by `CUE_ANALYTICS_CSV`). The page has a CSV download. On live stores,
+Events stay in Chrome extension storage on live stores and in this browser's
+site storage when using the demo store without the extension. The page can
+download a CSV from that browser data; analytics does not call the Cue server.
+On live stores,
 an add click is recorded as a request because the merchant cart cannot be
 verified by Cue.
 

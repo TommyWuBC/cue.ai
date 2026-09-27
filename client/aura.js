@@ -13,26 +13,13 @@ import { createDetails } from "./details.js";
 import { createKnowledge } from "./knowledge.js";
 import { parseSearch, amazonSearchUrl, describeFilters } from "./search.js";
 import { analyticsCommand, createAnalytics } from "./analytics.js";
+import { analyticsRequest as browserAnalyticsRequest, downloadAnalyticsCSV } from "./analytics-transport.js";
 
-async function analyticsRequest(kind, event = null) {
-  if (CONFIG.injected && globalThis.chrome?.runtime?.sendMessage) {
-    const response = await chrome.runtime.sendMessage({
-      type: kind === "summary" ? "cue:analytics:summary" : "cue:analytics:event", event,
-    });
-    if (!response?.ok) throw new Error(response?.error || "Analytics are unavailable.");
-    return response.data;
-  }
-  const response = await fetch(url(kind === "summary" ? "/api/analytics/summary" : "/api/analytics/event"), {
-    method: kind === "summary" ? "GET" : "POST",
-    headers: event ? { "content-type": "application/json" } : {},
-    body: event ? JSON.stringify(event) : undefined,
-  });
-  if (!response.ok) throw new Error(`Analytics request failed (${response.status}).`);
-  return response.json();
-}
+const analyticsRequest = (kind, event = null) =>
+  browserAnalyticsRequest(kind, event, { injected: CONFIG.injected });
 
 const analytics = createAnalytics({ request: analyticsRequest,
-  exportUrl: url("/api/analytics/export") });
+  onExport: async () => downloadAnalyticsCSV(await analyticsRequest("export")) });
 function recordActivity(kind, fields) {
   if (globalThis.__cueEnded) return Promise.resolve();
   return analyticsRequest("event", {
@@ -67,6 +54,17 @@ document.addEventListener("cue:cart-added", ({ detail }) => {
   void recordActivity("cart_add", {
     product_id: detail.id, product_title: detail.title, size: detail.size,
     color: detail.color, price_cents: detail.price_cents,
+  });
+});
+document.addEventListener("cue:order-approved", ({ detail }) => {
+  if (!window.cue || globalThis.__cueEnded) return;
+  (detail.items || []).forEach((item, index) => {
+    void recordActivity("purchase", {
+      event_id: `purchase:${detail.order_id}:${index}`,
+      product_id: item.id, product_title: item.title, size: item.size, color: item.color,
+      price_cents: item.unit_price_cents, order_id: detail.order_id,
+      order_total_cents: detail.total_cents,
+    });
   });
 });
 document.addEventListener("click", event => {
@@ -524,7 +522,16 @@ async function withDetails(text) {
     const focused = f?.kind === "product" ? f.product : null;
     await details.ensure(detailUrls(focused).slice(0, 3).map((p) => p.url));
   }
-  return context(text);
+  const ctx = context(text);
+  try {
+    const summary = await analyticsRequest("summary");
+    ctx.shopping_interests = {
+      searched: (summary.top_searches || []).slice(0, 3).map(item => item.label),
+      added: (summary.top_added || []).slice(0, 3).map(item => item.label),
+      purchased: (summary.top_purchased || []).slice(0, 3).map(item => item.label),
+    };
+  } catch {}
+  return ctx;
 }
 
 function detailUrls(focused) {

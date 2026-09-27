@@ -150,6 +150,12 @@ const flow = setupCheckout({
     changed();
   },
   onPrepared: pending => review(pending.items, pending.total_cents),
+  onApproved: (order, intent) => {
+    document.dispatchEvent(new CustomEvent("cue:order-approved", { detail: {
+      order_id: order.order_id, total_cents: intent.total_cents,
+      items: intent.items,
+    } }));
+  },
 });
 const privatePayment = setupPrivatePayment({
   onApproved: () => {

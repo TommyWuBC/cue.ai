@@ -8,12 +8,9 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from pydantic import Field
-from typing import Literal
 
 import fallback, memory, router, stt, tts
 from checkout import Checkout, CheckoutError
-from analytics import AnalyticsJournal
 from trust import TrustError, MERCHANT_PATH, MAX_BODY
 import httpx
 
@@ -21,7 +18,6 @@ ROOT = pathlib.Path(__file__).parent.parent
 app = FastAPI(title="Cue")
 checkout = Checkout()
 shopper = memory.ShopperMemory()
-analytics = AnalyticsJournal()
 
 
 # Injected into a third-party page, every call to us is cross-origin. This is
@@ -77,25 +73,6 @@ class PasskeyResponse(BaseModel):
 
 class MerchantApproval(PasskeyResponse):
     intent: dict
-
-
-class AnalyticsEvent(BaseModel):
-    event_id: str = Field(min_length=8, max_length=120)
-    kind: Literal["search", "cart_add", "add_request"]
-    site: str = Field(default="", max_length=120)
-    query: str = Field(default="", max_length=120)
-    product_id: str = Field(default="", max_length=120)
-    product_title: str = Field(default="", max_length=200)
-    size: str = Field(default="", max_length=60)
-    color: str = Field(default="", max_length=60)
-    price_cents: int | None = Field(default=None, ge=0, le=10_000_000)
-
-
-def analytics_origin(request: Request):
-    """The local API should not expose shopping history to arbitrary sites."""
-    origin = request.headers.get("origin")
-    if origin and origin != str(request.base_url).rstrip("/") and not origin.startswith("chrome-extension://"):
-        raise HTTPException(403, "Analytics are available only to Cue.")
 
 
 def checkout_call(fn, *args, **kwargs):
@@ -155,13 +132,8 @@ async def merchant_approve(request: Request):
         body = MerchantApproval.model_validate_json(raw)
     except ValueError as exc:
         raise HTTPException(400, "Invalid signed approval payload.") from exc
-    result = checkout_call(checkout.approve, body.ceremony_id, body.credential,
-                           expected_intent=body.intent, agent_proof=proof)
-    try:
-        analytics.sync_orders(checkout.orders(limit=None))
-    except OSError as exc:
-        print(f"[analytics] Could not record approved order: {exc}", flush=True)
-    return result
+    return checkout_call(checkout.approve, body.ceremony_id, body.credential,
+                         expected_intent=body.intent, agent_proof=proof)
 
 
 @app.get("/.well-known/cue-agent-keys.json")
@@ -182,30 +154,6 @@ def checkout_cancel(intent_id: str):
 @app.get("/api/merchant/orders")
 def merchant_orders():
     return {"orders": checkout.orders()}
-
-
-@app.post("/api/analytics/event")
-def analytics_event(body: AnalyticsEvent, request: Request):
-    analytics_origin(request)
-    if body.kind == "search" and not body.query.strip():
-        raise HTTPException(400, "A search query is required.")
-    if body.kind != "search" and not body.product_title.strip():
-        raise HTTPException(400, "A product title is required.")
-    return {"recorded": analytics.record(**body.model_dump())}
-
-
-@app.get("/api/analytics/summary")
-def analytics_summary(request: Request):
-    analytics_origin(request)
-    return analytics.summary(checkout.orders(limit=None))
-
-
-@app.get("/api/analytics/export")
-def analytics_export(request: Request):
-    analytics_origin(request)
-    analytics.sync_orders(checkout.orders(limit=None))
-    return FileResponse(analytics.ensure_file(), media_type="text/csv",
-                        filename="cue-shopping-analytics.csv")
 
 
 @app.get("/analytics")
@@ -239,7 +187,13 @@ def utterance(u: Utterance):
         try:
             import agent
             profile = shopper.prompt_block(session)
-            profile["shopping_interests"] = analytics.interests()
+            interests = ctx.get("shopping_interests")
+            if isinstance(interests, dict):
+                profile["shopping_interests"] = {
+                    key: [str(value)[:120] for value in interests.get(key, [])[:3] if isinstance(value, str)]
+                    for key in ("searched", "added", "purchased")
+                    if isinstance(interests.get(key), list)
+                }
             out = agent.respond(u.text, u.context, profile)
             shopper.note(session, u.text, out)
             return _trace(u.text, out, ctx)

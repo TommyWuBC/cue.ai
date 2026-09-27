@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'server'))
 import main
-from analytics import AnalyticsJournal
 from checkout import Checkout
 
 
@@ -20,9 +19,6 @@ class ApiTests(unittest.TestCase):
         self.original = main.checkout
         main.checkout = Checkout(db_path=Path(self.tmp.name) / 'api.sqlite3')
         self.addCleanup(lambda: setattr(main, 'checkout', self.original))
-        self.original_analytics = main.analytics
-        main.analytics = AnalyticsJournal(Path(self.tmp.name) / 'activity.csv')
-        self.addCleanup(lambda: setattr(main, 'analytics', self.original_analytics))
         self.client = TestClient(main.app)
 
     def test_checkout_api_and_merchant_feed(self):
@@ -70,10 +66,6 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(proof['verified'])
         self.assertEqual(proof['trust_source'], 'local_demo_key')
         self.assertIn('content-digest', proof['covered_components'])
-        summary = self.client.get('/api/analytics/summary').json()
-        self.assertEqual(summary['totals']['orders'], 1)
-        self.assertEqual(summary['totals']['items_purchased'], 1)
-        self.assertEqual(summary['top_purchased'][0]['label'], order['items'][0]['title'])
         replay = self.client.post(str(signed[0].url), content=signed[0].content, headers=dict(signed[0].headers))
         self.assertEqual(replay.status_code, 409)
         self.assertEqual(self.client.get('/api/merchant/trust').json()['replays_rejected'], 1)

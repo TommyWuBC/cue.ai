@@ -5,6 +5,7 @@ let onActionClicked, onActivated, onMessage, onRemoved, onUpdated;
 const calls = [];
 const actionState = new Map();
 const memory = new Map();
+const localData = new Map();
 const allowedOrigins = new Set();
 let active = false;
 let healthy = true;
@@ -45,7 +46,10 @@ globalThis.chrome = {
     onRemoved: { addListener: listener => { onRemoved = listener; } },
     onUpdated: { addListener: listener => { onUpdated = listener; } },
   },
-  storage: { session: {
+  storage: { local: {
+    get: async key => ({ [key]: localData.get(key) }),
+    set: async record => { for (const [key, value] of Object.entries(record)) localData.set(key, value); },
+  }, session: {
     get: async key => ({ [key]: memory.get(key) }),
     set: async record => { for (const [key, value] of Object.entries(record)) memory.set(key, value); },
     remove: async key => {
@@ -98,20 +102,30 @@ test('with gaze off, WebGazer and its models are never injected', async () => {
   assert.equal(calls.filter(([kind]) => kind === 'css').length, 1);
 });
 
-test('shopping activity uses the background proxy and takes the site from the sender', async () => {
+test('shopping activity stays in extension storage and takes the site from the sender', async () => {
+  const callsBefore = fetchCalls.length;
   const result = await send({ type: 'cue:analytics:event', event: {
     event_id: 'search-123', kind: 'search', query: 'wool coat', site: 'spoofed.example',
   } }, content);
   assert.equal(result.ok, true);
-  const request = fetchCalls.at(-1);
-  assert.match(request.url, /\/api\/analytics\/event$/);
-  assert.equal(JSON.parse(request.options.body).site, 'store.example');
-  assert.equal((await send({ type: 'cue:analytics:summary' }, content)).ok, true);
+  const summary = await send({ type: 'cue:analytics:summary' }, content);
+  assert.equal(summary.ok, true);
+  assert.equal(summary.data.totals.searches, 1);
+  assert.equal(summary.data.recent[0].site, 'store.example');
+  assert.equal(fetchCalls.length, callsBefore, 'analytics must not call the server');
   assert.equal((await send({ type: 'cue:analytics:summary' },
     { ...content, id: 'another-extension' })), null);
   assert.equal((await send({ type: 'cue:analytics:event', event: {
     event_id: 'bad-12345', kind: 'purchase', product_title: 'fake',
   } }, content)).ok, false);
+  const demo = { id: 'cue-test', url: 'http://localhost:4173/', tab: { id: 9 } };
+  assert.equal((await send({ type: 'cue:analytics:event', event: {
+    event_id: 'purchase:order-1:0', kind: 'purchase', product_title: 'Wool Coat',
+    order_id: 'order-1', order_total_cents: 12900,
+  } }, demo)).ok, true);
+  const shared = await send({ type: 'cue:analytics:summary' }, content);
+  assert.equal(shared.data.totals.orders, 1);
+  assert.match((await send({ type: 'cue:analytics:export' }, demo)).data, /purchase:order-1:0/);
 });
 
 test('toolbar action starts Cue directly and reports status on its badge', async () => {

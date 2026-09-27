@@ -10,6 +10,11 @@
     "default_title": "Start Cue on this page"
   },
   "background": {"service_worker": "extension/background.js", "type": "module"},
+  "content_scripts": [{
+    "matches": ["http://localhost:4173/*"],
+    "js": ["extension/demo-analytics.js"],
+    "run_at": "document_start"
+  }],
   "web_accessible_resources": [{
     "resources": ["client/*.js", "extension/assets/cue-splash.jpg", "vendor/models/*/*"],
     "matches": ["http://*/*", "https://*/*"]

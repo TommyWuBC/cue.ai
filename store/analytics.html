@@ -11,15 +11,17 @@
   <div id="aura-root"><div class="cue-analytics"><div class="cue-analytics-loading" role="status">Gathering your insights…</div></div></div>
   <script type="module">
     import { dashboardHTML } from "/client/analytics.js";
+    import { analyticsRequest, downloadAnalyticsCSV } from "/client/analytics-transport.js";
     const panel = document.querySelector(".cue-analytics");
     try {
-      const response = await fetch("/api/analytics/summary", { cache: "no-store" });
-      if (!response.ok) throw new Error("The journal is unavailable.");
-      panel.innerHTML = dashboardHTML(await response.json(), { exportUrl: "/api/analytics/export" });
+      panel.innerHTML = dashboardHTML(await analyticsRequest("summary"), { hasExport: true });
     } catch {
-      panel.innerHTML = `<div class="cue-analytics-loading" role="alert">Could not load your shopping insights.</div>`;
+      panel.innerHTML = `<div class="cue-analytics-loading" role="alert">Could not open your browser's shopping journal.</div>`;
     }
     panel.addEventListener("click", event => {
+      if (event.target.closest(".cue-analytics-export")) {
+        void analyticsRequest("export").then(downloadAnalyticsCSV);
+      }
       if (event.target.closest(".cue-analytics-close")) {
         if (history.length > 1) history.back();
         else location.assign("/");
