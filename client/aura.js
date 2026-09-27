@@ -552,7 +552,7 @@ async function beginTurn(text) {
     bus.emit("SAY", { text: "Sorry, I lost my connection." });
     console.error(e);
   } finally { window.cue.lastActionUtterance = null; inflight = false; }
-});
+}
 
 // ── Confirmation ────────────────────────────────────────────────────────────
 // Nothing that spends money happens on one utterance. Checkout stages an
