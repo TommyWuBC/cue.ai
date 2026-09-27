@@ -82,10 +82,10 @@ async function serverReady() {
   finally { clearTimeout(timeout); }
 }
 
-// Eye tracking is off while voice is being debugged. 'mouse' needs no camera and
-// no calibration, and WebGazer (1.6 MB of TensorFlow.js) is not injected at all.
-// Set this back to 'webgazer' to restore gaze.
-const GAZE_MODE = 'mouse';
+// Eye tracking on. 'webgazer' now means "camera" — gaze v2 runs MediaPipe face
+// landmarks through a per-user model, loaded as a module by client/eyes.js.
+// 'mouse' needs no camera and no calibration.
+const GAZE_MODE = 'webgazer';
 
 async function activeOn(tabId) {
   const [frame] = await chrome.scripting.executeScript({
