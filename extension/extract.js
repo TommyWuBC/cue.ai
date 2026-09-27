@@ -18,9 +18,12 @@
     const types = Array.isArray(node['@type']) ? node['@type'] : [node['@type']];
     return types.some(type => /(^|\/)Product$/i.test(type || ''));
   };
-  const rectVisible = el => {
+  // Laid out, but not necessarily on screen. Someone who cannot scroll freely
+  // still needs Cue to know what is further down the page — reading only the
+  // viewport is why "what is in my cart" answered with the first two rows.
+  const laidOut = el => {
     const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth;
+    return r.width > 0 && r.height > 0;
   };
   const normalize = (node, el, highlight, pageUrl) => {
     const offer = Array.isArray(node.offers) ? node.offers[0] : node.offers || {};
@@ -61,7 +64,7 @@
     if (pageProduct) {
       const anchor = doc.querySelector('main h1, h1');
       const el = anchor?.closest('article, main') || anchor;
-      if (el && rectVisible(el)) {
+      if (el && laidOut(el)) {
         const item = normalize(pageProduct, el, anchor, pageUrl);
         if (item) { found.push(item); seen.add(item.product.id); }
       }
@@ -72,7 +75,7 @@
     const cards = doc.querySelectorAll(
       '[data-component-type="s-search-result"][data-asin], .product-item, [data-testid="product-card"]');
     for (const card of cards) {
-      if (!rectVisible(card)) continue;
+      if (!laidOut(card)) continue;
       // Amazon now puts the brand in the first h2 and the actual product title
       // in a second h2. The title's enclosing anchor is the product link.
       const amazonTitle = card.matches?.('[data-component-type="s-search-result"][data-asin]')
@@ -98,13 +101,27 @@
       if (seen.has(card.product.id)) continue;
       found.push(card);
       seen.add(card.product.id);
-      if (found.length >= 40) break;
+      if (found.length >= 60) break;
     }
-    return found.slice(0, 40);
+    return found.slice(0, 60);
   }
 
-  // Any shop: a visible card or a large linked image with a real title.
-  // A missing or ambiguous price stays missing. The card is still numbered.
+  // A link is only a product when the page gives a reason to think so: a
+  // product-shaped URL, or a price on the card. Without this, reading the whole
+  // page instead of the viewport turned "+1 other color/pattern" and
+  // "29,222 ratings" into products, and Cue then discussed them.
+  const PRODUCT_URL = /\/(?:dp|gp\/product|products?|items?|itm|ip|p)\//i;
+  const NOT_PRODUCT = new RegExp([
+    '^[+]?\\d[\\d,.]*\\s*(?:ratings?|reviews?|answered questions?|bought|stars?)',
+    '^[+]?\\d+\\s+other\\b', '^(?:see|shop|view|learn|compare|explore|discover)\\b',
+    '\\bout of \\d\\b', '^(?:sponsored|prime|best ?seller|amazon.s choice|overall pick)\\b',
+    '^(?:add to|buy |subscribe|sign in|log in|next page|previous page|back to)',
+    '^(?:customer reviews?|more buying choices|other sellers|visit the)\\b',
+    '^(?:free |save |get it|deal of|limited time|coupon|up to \\d)',
+  ].join('|'), 'i');
+
+  // Any shop: a card or a large linked image with a real title.
+  // A missing or ambiguous price stays missing.
   function genericCards(doc) {
     const out = [];
     const seen = new Set();
@@ -113,7 +130,7 @@
     for (const link of nodes) {
       if (link.closest?.('nav, header, footer, [role="navigation"], [role="banner"], [role="contentinfo"]')) continue;
       const card = link.closest?.('article, li, [role="listitem"]') || link;
-      if (!rectVisible(card)) continue;
+      if (!laidOut(card)) continue;
       const box = card.getBoundingClientRect?.() || link.getBoundingClientRect?.();
       if (!box || box.width < 80 || box.height < 80) continue;
       const href = link.href || '';
@@ -123,12 +140,15 @@
         link.querySelector?.('img[alt]')?.getAttribute?.('alt') || link.textContent);
       if (title.length < 6 || title.length > 140) continue;
       if (/^(search|sign in|log in|account|bag|cart|menu|home)$/i.test(title)) continue;
+      if (NOT_PRODUCT.test(title) || !/[a-z]{3}/i.test(title)) continue;
       const amount = price(card.textContent || '');
+      // Evidence, not just a link in a box.
+      if (amount === null && !PRODUCT_URL.test(href)) continue;
       seen.add(href);
       out.push({ el: card, product: {
         id: clean(href), title, price: amount, currency: 'USD', url: href, attrs: {},
       } });
-      if (out.length >= 40) break;
+      if (out.length >= 60) break;
     }
     return out;
   }

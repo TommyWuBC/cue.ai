@@ -774,3 +774,30 @@ clears the "Cue, end" pause.
 - `curl localhost:4173/health` shows what is live: keys, provider, characters spent.
 - A dead mic, a misheard wake word, and a router miss look identical from outside;
   the `[stt]` and `[turn]` log lines tell them apart. `STT_LOG=0` silences `[stt]`.
+
+## Session knowledge and conversation (client/knowledge.js)
+Every product Cue sees is kept for the visit with its card links (product, reviews,
+brand) and compact facts read from its page, in extension session storage, so a
+search that replaces the page does not erase what was discussed. Ad-redirect links
+(`/sspa/click?url=...`) are unwrapped to `/dp/ASIN` before the background reader
+sees them; before that 114 of 115 were rejected as "not product-looking". The
+client also keeps the full conversation, including lines only the page speaks, and
+sends it as `context.convo`; `agent._convo` prefers it over the server's history.
+`open_link{target, part}` opens a known item's page or reviews (same origin, never
+cart/checkout).
+
+## Numbering removed (2026-09-26)
+Badges numbered the few products nearest the gaze point, and the shopper picked one
+by saying its number. In live use the numbers drifted as the eyes moved, they were
+spoken back in long "Which one? 5 is the Sponsored ad..." lines, and the agent
+confused a badge number with a position in a list. Selection is now by name, which
+is what people said anyway. `client/badges.js`, `focus_number`/`describe_number` and
+the router's ordinal fast path are gone; `focus_nth` remains as the agent's own
+ordinal over products in reading order.
+
+## The page the shopper is on (context.page)
+The agent used to get only `page_text` on question-shaped utterances, so on a product
+page it answered from `looking_at` — a 250px guess that often landed on an ad — and
+said it could not see the page. `pageBrief()` now always sends kind (product /
+results / page), title, url, and on a single-product page that product's own facts.
+`agent._page` type-checks and caps it; it stays untrusted evidence.

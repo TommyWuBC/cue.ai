@@ -4,7 +4,11 @@
   display: block !important; visibility: visible !important; opacity: 1 !important;
   position: fixed !important; inset: 0 !important; z-index: 2147483000 !important;
   --cue: #2f6bff; --cue-soft: rgba(47,107,255,.14);
-  --cue-ink: #1d1d1f; --cue-muted: #6e6e73;
+  --cue-ink: #1d1d1f; --cue-muted: #6e6e73; --cue-faint: #a1a1a6;
+  --cue-surface: rgba(252,252,253,.86); --cue-hairline: rgba(0,0,0,.07);
+  --cue-sheen: rgba(255,255,255,.7); --cue-shadow: rgba(20,24,40,.22);
+  --cue-pill: rgba(120,120,128,.11); --cue-ring: rgba(47,107,255,.3);
+  --cue-warn: #b45309; --cue-warn-soft: rgba(245,158,11,.16);
   /* The Cue mark: an off-white C and dot on charcoal. */
   --cue-char: #202020; --cue-bone: #f4f3ef;
   --cue-font: var(--sans, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif);
@@ -13,6 +17,19 @@
   font: 13px/1.45 var(--cue-font); color: var(--cue-ink);
   -webkit-font-smoothing: antialiased;
 }
+/* The dock floats over someone else's page, so it follows the reader's own
+   light/dark setting rather than guessing from the site underneath. */
+@media (prefers-color-scheme: dark) {
+  #aura-root {
+    --cue: #5c8dff; --cue-soft: rgba(92,141,255,.2);
+    --cue-ink: #f2f2f7; --cue-muted: #9e9ea6; --cue-faint: #6f6f78;
+    --cue-surface: rgba(28,28,32,.84); --cue-hairline: rgba(255,255,255,.1);
+    --cue-sheen: rgba(255,255,255,.08); --cue-shadow: rgba(0,0,0,.6);
+    --cue-pill: rgba(255,255,255,.1); --cue-ring: rgba(92,141,255,.4);
+    --cue-warn: #fbbf24; --cue-warn-soft: rgba(251,191,36,.18);
+  }
+}
+
 /* avatar.js promotes the layer into the top layer as a popover; undo UA popover chrome. */
 #aura-root[popover] { inset: 0; width: auto; height: auto; max-width: none; max-height: none;
   margin: 0; padding: 0; border: 0; background: transparent; overflow: visible; }
@@ -21,11 +38,11 @@
    Everything Cue draws over the page has to be listed here or it floats on top
    of the dots the user is meant to be looking at. */
 body:has(.aura-cal) .aura-reticle, body:has(.aura-cal) .aura-outline,
-body:has(dialog:modal) .aura-outline, body:has(dialog:modal) .cue-badges { display: none; }
+body:has(dialog:modal) .aura-outline { display: none; }
 /* The avatar promotes this root into the browser's top layer, so z-index no
    longer applies and everything in here paints over the page. Hide the whole
    root during calibration rather than listing pieces: the HUD would cover the
-   lower-left training point and the number badges floated over the dots. */
+   lower-left training point floated over the dots. */
 body:has(.aura-cal) #aura-root,
 body:has(.cue-splash) #aura-root { display: none !important; visibility: hidden !important; }
 /* visibility:hidden was not enough: the dock's backdrop-filter still sampled
@@ -79,36 +96,56 @@ body:has(.cue-splash) #aura-root { visibility: hidden; }
   background: var(--cue); box-shadow: 0 0 0 3px rgba(47,107,255,.28); }
 
 /* ── Cue's dock ───────────────────────────────────────────────────────────── */
-.aura-hud { position: absolute; z-index: 2; left: 20px; bottom: 20px; width: 356px; pointer-events: auto;
-  display: grid; grid-template-columns: 64px 1fr; column-gap: 12px; align-items: start;
-  padding: 12px 16px 12px 10px; border-radius: 24px;
-  background: rgba(255,255,255,.84); backdrop-filter: blur(22px) saturate(1.8);
-  -webkit-backdrop-filter: blur(22px) saturate(1.8);
-  border: 1px solid rgba(0,0,0,.06);
-  box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 14px 44px rgba(20,24,40,.14); }
-.aura-hud > .cue-avatar { grid-row: 1 / span 5; width: 64px; height: 64px; cursor: pointer; }
+.aura-hud { position: absolute; z-index: 2; left: 20px; bottom: 20px; width: 372px; pointer-events: auto;
+  display: grid; grid-template-columns: 58px 1fr; column-gap: 14px; align-items: start;
+  padding: 14px 18px 14px 14px; border-radius: 26px;
+  background: var(--cue-surface); backdrop-filter: blur(30px) saturate(1.7);
+  -webkit-backdrop-filter: blur(30px) saturate(1.7);
+  box-shadow: inset 0 1px 0 var(--cue-sheen), 0 0 0 1px var(--cue-hairline),
+              0 18px 50px -12px var(--cue-shadow), 0 2px 8px -2px var(--cue-shadow);
+  animation: cue-dock-in .5s var(--cue-ease) both; }
+@keyframes cue-dock-in { from { opacity: 0; transform: translateY(10px) scale(.985); } }
+.aura-hud > .cue-avatar { grid-row: 1 / span 5; width: 58px; height: 58px; cursor: pointer;
+  transition: transform .3s var(--cue-ease); }
+.aura-hud > .cue-avatar:hover { transform: scale(1.06); }
 .aura-hud > :not(.cue-avatar) { grid-column: 2; }
 
-.aura-hud-row { display: flex; align-items: center; gap: 8px; min-height: 22px; margin-top: 2px; }
-.aura-hud-row b { font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
-.aura-chip { margin-left: auto; font-size: 11.5px; color: var(--cue-muted); }
-.aura-dot { order: 2; width: 7px; height: 7px; border-radius: 50%; background: #c7c7cc;
-  transition: background-color .2s, box-shadow .2s; }
-.aura-dot.live { background: #34c759; }
-.aura-dot.hot { background: var(--cue); box-shadow: 0 0 0 4px var(--cue-soft); animation: cue-hot 1.2s ease-in-out infinite; }
-@keyframes cue-hot { 50% { box-shadow: 0 0 0 7px rgba(47,107,255,.06); } }
-.aura-hud-row b { order: 1; }
-.aura-chip { order: 3; }
+.aura-hud-row { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.aura-hud-row b { font-size: 14.5px; font-weight: 650; letter-spacing: -.015em; }
+
+/* One status pill, not a bare dot plus a stray word in the corner. */
+.aura-status { margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  height: 21px; padding: 0 9px 0 8px; border-radius: 999px;
+  background: var(--cue-pill); color: var(--cue-muted);
+  font-size: 11px; font-weight: 550; letter-spacing: .01em;
+  transition: background-color .3s, color .3s; }
+.aura-status:has(.aura-chip:empty) { display: none; }
+.aura-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+  flex: none; transition: background-color .2s, box-shadow .2s; }
+.aura-dot.live { background: #30d158; }
+.aura-dot.hot { background: var(--cue); box-shadow: 0 0 0 3px var(--cue-soft);
+  animation: cue-hot 1.2s ease-in-out infinite; }
+@keyframes cue-hot { 50% { box-shadow: 0 0 0 6px transparent; } }
 
 .aura-hud-heard, .aura-hud-said { overflow-wrap: anywhere; }
-.aura-hud-heard { margin-top: 4px; color: var(--cue-muted); font-size: 12.5px; }
-.aura-hud-heard:not(:empty)::before { content: "You: "; color: #aeaeb2; }
-.aura-hud-said { margin-top: 3px; font-size: 14px; line-height: 1.4; letter-spacing: -.01em;
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.aura-hud-heard { margin-top: 7px; color: var(--cue-muted); font-size: 12px;
+  letter-spacing: -.005em; }
+.aura-hud-heard:not(:empty)::before { content: "You"; margin-right: 6px;
+  font-size: 9.5px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--cue-faint); }
+.aura-hud-said { margin-top: 5px; font-size: 15px; line-height: 1.42; letter-spacing: -.015em;
+  font-weight: 450;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .aura-hud-heard:empty, .aura-hud-said:empty { display: none; }
-.aura-hud-foot { margin-top: 8px; font-size: 11.5px; color: var(--cue-muted); }
-.aura-hud kbd { font: 500 10.5px/1 var(--cue-font); padding: 3px 6px; border-radius: 5px;
-  background: #fff; border: 1px solid rgba(0,0,0,.1); box-shadow: 0 1px 0 rgba(0,0,0,.08); }
+
+/* The keyboard hint is for someone who has not started yet. Once there is a
+   conversation on screen it is just noise, so it steps back. */
+.aura-hud-foot { margin-top: 10px; font-size: 11px; color: var(--cue-faint);
+  transition: opacity .4s; }
+.aura-hud:has(.aura-hud-said:not(:empty)) .aura-hud-foot { opacity: 0; height: 0;
+  margin: 0; overflow: hidden; }
+.aura-hud kbd { font: 550 10px/1 var(--cue-font); padding: 3px 5px; border-radius: 5px;
+  background: var(--cue-pill); border: 1px solid var(--cue-hairline); }
 
 .cue-avatar { display: block; }
 .cue-avatar svg { display: block; width: 100%; height: 100%; overflow: visible; }
@@ -174,34 +211,6 @@ body:has(.cue-splash) #aura-root { visibility: hidden; }
   .aura-dot.hot, .aura-cal-dot, .aura-quality { animation: none; }
   .cue-splash, .cue-splash[popover] { transition: none; }
 }
-
-/* ── Numbered selection badges ───────────────────────────────────────────── */
-/* Measured gaze error on a real face is 220–350px; a product tile is ~250px.
-   Gaze picks the neighbourhood, these pick the item, and an audience standing
-   behind the laptop can read them. How many appear scales with the measured
-   error — see badges.js setPrecision(). */
-.cue-badges { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
-.cue-badge { position: absolute; width: 34px; height: 34px; margin: -4px 0 0 -4px; border-radius: 50%;
-  display: grid; place-items: center;
-  background: var(--cue-char); color: var(--cue-bone);
-  font: 600 14px/1 var(--cue-font, -apple-system, sans-serif); letter-spacing: -.02em;
-  font-variant-numeric: tabular-nums;
-  box-shadow: 0 0 0 2px rgba(255,255,255,.92), 0 4px 14px rgba(0,0,0,.22);
-  will-change: transform; transition: opacity .14s ease, scale .22s var(--cue-ease); }
-/* The C: an arc around the number, open on the right like the mark. */
-.cue-badge::before { content: ""; position: absolute; inset: 4px; border-radius: 50%;
-  background: conic-gradient(from 65deg, transparent 0 50deg, var(--cue-bone) 50deg 360deg);
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.4px));
-          mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.4px));
-  opacity: .38; transition: opacity .2s ease; }
-/* The dot, sitting in the C's opening. */
-.cue-badge::after { content: ""; position: absolute; right: 3.2px; top: 50%; width: 3.5px; height: 3.5px;
-  margin-top: -1.75px; border-radius: 50%; background: var(--cue-bone); opacity: .38;
-  transition: background .2s ease, opacity .2s ease, box-shadow .2s ease; }
-.cue-badge[data-kind="control"] { width: 28px; height: 28px; font-size: 12.5px; margin: -2px 0 0 -2px; }
-.cue-badge[data-focused="true"] { scale: 1.12; box-shadow: 0 0 0 2px #fff, 0 6px 18px rgba(0,0,0,.3); }
-.cue-badge[data-focused="true"]::before { opacity: 1; }
-.cue-badge[data-focused="true"]::after { opacity: 1; background: var(--cue); box-shadow: 0 0 0 2px rgba(47,107,255,.35); }
 
 /* Gaze below the precision bar: the outline is a guess, not an assertion. At
    242px it lands on the wrong card two times in three. */
@@ -277,30 +286,6 @@ body:has(.cue-splash) #aura-root { visibility: hidden; }
    landed right on top of the dot the user was told to look at. */
 .aura-cal-hint[data-pos="top"] { top: 36px; bottom: auto; }
 
-/* Every numbered candidate is marked by four corner brackets in the gutter
-   around it. At 220-350px the honest signal is "somewhere around here", so show
-   the neighbourhood without washing over the product photos, and let the
-   focused one read strongest. */
-.cue-cand { position: absolute; left: 0; top: 0; pointer-events: none;
-  --arm: 12px; --w: 2px; --col: rgba(32,32,32,.32);
-  border: 9px solid transparent; margin: -9px 0 0 -9px; box-sizing: content-box;
-  background:
-    linear-gradient(var(--col) 0 0) top left / var(--arm) var(--w),
-    linear-gradient(var(--col) 0 0) top left / var(--w) var(--arm),
-    linear-gradient(var(--col) 0 0) top right / var(--arm) var(--w),
-    linear-gradient(var(--col) 0 0) top right / var(--w) var(--arm),
-    linear-gradient(var(--col) 0 0) bottom left / var(--arm) var(--w),
-    linear-gradient(var(--col) 0 0) bottom left / var(--w) var(--arm),
-    linear-gradient(var(--col) 0 0) bottom right / var(--arm) var(--w),
-    linear-gradient(var(--col) 0 0) bottom right / var(--w) var(--arm);
-  background-repeat: no-repeat; background-origin: border-box;
-  transition: opacity .14s ease; will-change: transform, width, height; }
-/* Buttons carry just their number; brackets around every control is noise. */
-.cue-cand[data-kind="control"] { display: none; }
-.cue-cand[data-focused="true"] { --arm: 20px; --col: var(--cue-char); }
-/* Below the precision bar a focused candidate is still only a guess. */
-#aura-root:has(.aura-outline[data-guess="true"]) .cue-cand[data-focused="true"] { --arm: 16px; --col: rgba(32,32,32,.5); }
-
 /* A visible cue that looking at the edge is doing something, so it never feels
    like the page is drifting on its own. */
 body.cue-edge-top::before, body.cue-edge-bottom::after {
@@ -312,18 +297,24 @@ body.cue-edge-bottom::after { bottom: 0;
   background: linear-gradient(to top, rgba(32,32,32,.10), transparent); }
 
 /* ── The dock answers the avatar's state (set by avatar.js) ───────────────── */
-.aura-hud { transition: border-color .35s var(--cue-ease), box-shadow .35s var(--cue-ease); }
-.aura-hud::after { content: ""; position: absolute; left: 22px; right: 22px; bottom: 0; height: 2px;
+.aura-hud::after { content: ""; position: absolute; left: 24px; right: 24px; bottom: 0; height: 2px;
   border-radius: 2px; opacity: 0; transition: opacity .3s;
   background: linear-gradient(90deg, transparent, var(--cue), transparent) no-repeat;
   background-size: 38% 100%; }
-.aura-hud[data-cue-state="listening"] { border-color: rgba(47,107,255,.32);
-  box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 14px 44px rgba(20,24,40,.14), 0 0 0 4px rgba(47,107,255,.10);
-  animation: cue-listening 1.8s ease-in-out infinite; }
+.aura-hud[data-cue-state="listening"] {
+  box-shadow: inset 0 1px 0 var(--cue-sheen), 0 0 0 1px var(--cue-ring),
+              0 18px 50px -12px var(--cue-shadow), 0 0 0 5px var(--cue-soft);
+  animation: cue-listening 2.2s ease-in-out infinite; }
 @keyframes cue-listening {
-  50% { box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 14px 44px rgba(20,24,40,.14), 0 0 0 7px rgba(47,107,255,.04); } }
-.aura-hud[data-cue-state="thinking"] { border-color: rgba(47,107,255,.2); }
-.aura-hud[data-cue-state="thinking"]::after { opacity: .75; animation: cue-thinking 1.1s linear infinite; }
+  50% { box-shadow: inset 0 1px 0 var(--cue-sheen), 0 0 0 1px var(--cue-ring),
+                    0 18px 50px -12px var(--cue-shadow), 0 0 0 9px transparent; } }
+.aura-hud[data-cue-state="listening"] .aura-status { background: var(--cue-soft); color: var(--cue); }
+.aura-hud[data-cue-state="thinking"]::after { opacity: .8; animation: cue-thinking 1.1s linear infinite; }
+/* The avatar's own vocabulary: listening, thinking, talking, concerned, curious,
+   happy, sleepy, idle. Only the ones worth reading at a glance are coloured. */
+.aura-hud[data-cue-state="thinking"] .aura-status,
+.aura-hud[data-cue-state="talking"] .aura-status { background: var(--cue-soft); color: var(--cue); }
+.aura-hud[data-cue-state="concerned"] .aura-status { background: var(--cue-warn-soft); color: var(--cue-warn); }
 @keyframes cue-thinking { from { background-position: -40% 0; } to { background-position: 140% 0; } }
 
 .aura-hud-said.cue-enter { animation: cue-reply .34s var(--cue-ease); }

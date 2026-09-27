@@ -12,8 +12,7 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(router.route('no')['do'][0]['verb'], 'cancel_checkout')
         self.assertEqual(router.route('check out')['do'][0]['verb'], 'checkout')
         self.assertEqual(router.route('end')['do'][0]['verb'], 'stop_cue')
-        self.assertEqual(router.route('two')['do'], [{'verb': 'focus_number', 'args': {'n': 2}}])
-        self.assertEqual(router.route("what's two")['do'], [{'verb': 'describe_number', 'args': {'n': 2}}])
+        self.assertIsNone(router.route('two'))
         self.assertEqual(router.route('set up passkey')['do'][0]['verb'], 'setup_passkey')
         self.assertEqual(router.route('please recalibrate')['do'][0]['verb'], 'recalibrate')
 
@@ -39,8 +38,9 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(router.route('Open my bag.')['do'], click('bag'))
         self.assertEqual(router.route('select medium')['do'], click('medium'))
         self.assertEqual(router.route('can you click on account and lists')['do'], click('account and lists'))
-        self.assertEqual(router.route('open number three')['do'], [{'verb': 'focus_number', 'args': {'n': 3}}])
-        self.assertEqual(router.route('select the second one')['do'], [{'verb': 'focus_number', 'args': {'n': 2}}])
+        # Nothing is numbered on screen: ordinals go to the agent, which has focus_nth.
+        self.assertIsNone(router.route('open number three'))
+        self.assertIsNone(router.route('select the second one'))
         # Money controls keep their own verbs, which are confirmed on the page.
         self.assertEqual(router.route('click add to cart')['do'][0]['verb'], 'add_to_cart')
         self.assertEqual(router.route('go to checkout')['do'][0]['verb'], 'checkout')
@@ -64,3 +64,13 @@ class RouterTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+    def test_stop_scrolling_is_caught_however_it_is_asked(self):
+        for phrase in ('stop scrolling', 'could you stop scrolling', 'hey cue please stop',
+                       'cue stop scrolling please'):
+            self.assertEqual(router.route(phrase)['do'], [{'verb': 'scroll_stop', 'args': {}}], phrase)
+
+    def test_an_agreement_is_a_yes_however_it_is_said(self):
+        for phrase in ('yes', 'yeah', 'yep', 'sure', 'go ahead', 'do it', 'okay', 'add it'):
+            self.assertEqual(router.route(phrase)['do'], [{'verb': 'approve_checkout', 'args': {}}], phrase)
+        self.assertIsNone(router.route('yeah but what about the other one'))

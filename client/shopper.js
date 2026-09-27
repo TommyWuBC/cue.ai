@@ -9,7 +9,7 @@ export function shopperStore(storage) {
     load() {
       const item = data.discussed;
       return {
-        discussed: item?.id && item?.title ? { id: item.id, title: item.title, price: item.price ?? null } : null,
+        discussed: item?.id && item?.title ? { id: item.id, title: item.title, price: item.price ?? null, url: item.url ?? null } : null,
         size: data.size || null,
         color: data.color || null,
       };
@@ -17,7 +17,8 @@ export function shopperStore(storage) {
     save({ discussed, size, color } = {}) {
       data = {
         discussed: discussed?.id && discussed?.title
-          ? { id: String(discussed.id).slice(0, 300), title: String(discussed.title).slice(0, 180), price: discussed.price ?? null }
+          ? { id: String(discussed.id).slice(0, 300), title: String(discussed.title).slice(0, 180), price: discussed.price ?? null,
+              url: discussed.url ? String(discussed.url).slice(0, 600) : null }
           : null,
         size: size || null,
         color: color || null,

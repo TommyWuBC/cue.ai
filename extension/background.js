@@ -63,6 +63,11 @@ async function serverReady() {
   finally { clearTimeout(timeout); }
 }
 
+// Eye tracking is off while voice is being debugged. 'mouse' needs no camera and
+// no calibration, and WebGazer (1.6 MB of TensorFlow.js) is not injected at all.
+// Set this back to 'webgazer' to restore gaze.
+const GAZE_MODE = 'mouse';
+
 async function activeOn(tabId) {
   const [frame] = await chrome.scripting.executeScript({
     target: { tabId }, func: () => Boolean(globalThis.__cueExternalActive),
@@ -82,22 +87,34 @@ async function start(tab) {
     }
     const session = await sessionFor(tab);
 
-    const models = Object.fromEntries(['blazeface', 'facemesh', 'iris'].map(name =>
-      [name, chrome.runtime.getURL(`vendor/models/${name}/model.json`)]));
+    const models = GAZE_MODE === 'webgazer'
+      ? Object.fromEntries(['blazeface', 'facemesh', 'iris'].map(name =>
+          [name, chrome.runtime.getURL(`vendor/models/${name}/model.json`)]))
+      : null;
     const splashImage = chrome.runtime.getURL('extension/assets/cue-splash.jpg');
     await chrome.scripting.executeScript({
       target,
-      func: (server, urls, image, previous) => {
+      func: (server, urls, image, previous, mode) => {
         globalThis.__cueEnded = false;
         globalThis.CUE_MODELS = urls;
-        globalThis.CUE_CONFIG = { server, gazeMode: 'webgazer', autoCal: true,
+        globalThis.CUE_CONFIG = { server, gazeMode: mode, autoCal: mode === 'webgazer',
           keepData: false, models: urls, splashImage: image,
           resuming: Boolean(previous?.started), calibration: previous?.calibration ?? null };
       },
-      args: [SERVER.origin, models, splashImage, session],
+      args: [SERVER.origin, models, splashImage, session, GAZE_MODE],
     });
     await chrome.scripting.insertCSS({ target, files: ['client/overlay.css'] });
-    await chrome.scripting.executeScript({ target, files: ['vendor/webgazer.js'] });
+    // WebGazer bundles TensorFlow.js, which registers its WebGL kernels on the
+    // page's own global. Evaluating it twice in one page re-registers every
+    // kernel and floods the console. Inject it only if it is not already there.
+    if (GAZE_MODE === 'webgazer') {
+      const [loaded] = await chrome.scripting.executeScript({
+        target, func: () => Boolean(globalThis.webgazer),
+      });
+      if (!loaded?.result) {
+        await chrome.scripting.executeScript({ target, files: ['vendor/webgazer.js'] });
+      }
+    }
     await chrome.scripting.executeScript({ target, files: ['extension/extract.js', 'extension/content.js'] });
     await updateSession(tab.id, async () => {
       const key = sessionKey(tab.id);

@@ -1,5 +1,5 @@
 """Three live conversation cases. They call the real model, so they skip without
-XAI_API_KEY. Grading is mechanical: short, answers first, no assistant-speak,
+ANTHROPIC_API_KEY. Grading is mechanical: short, answers first, no assistant-speak,
 uses what was said earlier, and never claims an action it did not propose."""
 import os
 import re
@@ -33,7 +33,7 @@ def sentences(text):
     return [s for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s]
 
 
-@unittest.skipUnless(os.getenv("XAI_API_KEY"), "needs XAI_API_KEY")
+@unittest.skipUnless(os.getenv("ANTHROPIC_API_KEY"), "needs ANTHROPIC_API_KEY")
 class ConversationTests(unittest.TestCase):
     def reply(self, said, **ctx):
         out = agent.respond(said, {"visible": PAGE, "controls": ["Cart", "Sign in"], **ctx})

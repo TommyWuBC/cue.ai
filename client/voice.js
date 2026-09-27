@@ -11,7 +11,7 @@ import { findWake, stripWake } from "./speech.js";
 // Once you have said the wake word you get a window to keep talking without
 // repeating it. Real conversation is "Cue, is this wool?" ... "does it run
 // small?" — not the wake word every single time.
-const WAKE_WINDOW_MS = 10 * 60 * 1000;   // say "Hey Cue" once; stays open while you keep talking
+const WAKE_WINDOW_MS = 2 * 60 * 1000;   // say "Hey Cue" once; stays open while you keep talking
 
 // Chrome (and Grok) deliver a final transcript some hundreds of ms AFTER
 // speech stops — which is after the user has let go of the key. Reading an
@@ -52,6 +52,12 @@ const pttArmed = () => now() < state.pttUntil;
 // both gates, and only while a calibration screen is up.
 const CAL_DOT = /^(?:next|ready|capture|ok|okay|go|done)\b/;
 const CAL_CHOICE = /\b(?:continue|carry on|keep going|proceed|skip|good enough|leave it|fine|try again|again|retry|redo|recalibrat\w*)\b/;
+
+/** Keep listening without the wake word, e.g. while the page is scrolling and
+ *  a bare "stop" has to work. */
+export function keepAwake(ms = WAKE_WINDOW_MS) {
+  state.wakeUntil = Math.max(state.wakeUntil, now() + ms);
+}
 
 export function calibrationCommand(text) {
   const n = norm(stripWake(norm(text)));

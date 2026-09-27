@@ -39,6 +39,19 @@ function key() {
          `${document.querySelectorAll(ACTION_SEL).length}`;
 }
 
+/** Every tagged product on the page, on screen or not. */
+export function scanAll() {
+  const out = [];
+  for (const el of document.querySelectorAll(PRODUCT_SEL)) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) continue;
+    let product;
+    try { product = JSON.parse(productJson(el)); } catch { continue; }
+    out.push({ kind: "product", id: product.id, label: product.title, el, rect: r, product });
+  }
+  return out;
+}
+
 export function scan() {
   const k = key();
   if (cache && k === cacheKey) return cache;

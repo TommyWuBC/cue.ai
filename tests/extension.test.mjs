@@ -72,3 +72,26 @@ test('ambiguous prices are not presented as fact', () => {
   assert.equal(price('$120 $80'), null);
   assert.equal(price('$99.00$99.00'), 99);
 });
+
+test('page furniture is not a product, however large its box', () => {
+  const make = (text, href) => {
+    const card = { ...visible, textContent: text, closest: () => null,
+      querySelector: (sel) => (sel.startsWith('h') ? { textContent: text } : null) };
+    return { href, closest: (sel) => (sel.includes('nav') ? null : card),
+      getAttribute: () => null, querySelector: () => null, textContent: text,
+      getBoundingClientRect: visible.getBoundingClientRect };
+  };
+  // Every one of these was extracted as a product on a live Amazon page and
+  // then discussed back to the shopper as if it were an item.
+  const junk = [
+    make('+1 other color/pattern', 'https://www.amazon.com/dp/B0ABCDEFGH'),
+    make('29,222 ratings', 'https://www.amazon.com/product-reviews/B0ABCDEFGH'),
+    make('4.5 out of 5 stars', 'https://www.amazon.com/dp/B0ABCDEFGH?th=1'),
+    make('See more choices', 'https://www.amazon.com/gp/offer-listing/B0ABCDEFGH'),
+    // A real link with no price and no product-shaped URL is not evidence either.
+    make('Handwoven throw blanket', 'https://shop.example/collections/winter'),
+  ];
+  const doc = { querySelectorAll: (sel) => (sel.includes('a[href]') && !sel.startsWith('script') ? junk : []),
+    querySelector: () => null };
+  assert.deepEqual(extract(doc, 'https://www.amazon.com/s?k=headphones'), []);
+});

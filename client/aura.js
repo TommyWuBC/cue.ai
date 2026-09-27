@@ -1,16 +1,18 @@
 import { bus } from "./bus.js";
 import * as gaze from "./gaze.js";
 import * as voice from "./voice.js";
-import { scan, nth, invalidate, controls, controlName, findControl, fields, findField, setText,
+import { scan, scanAll, nth, invalidate, controls, controlName, findControl, fields, findField, setText,
   findText, COMMITS_MONEY, findOption, searchBox, submitField } from "./resolver.js";
 import { correctUtterance, isWakeOnly, norm } from "./speech.js";
-import * as badges from "./badges.js";
 import { CONFIG, url } from "./config.js";
 import { productMemory } from "./product-memory.js";
 import { playSplash } from "./splash.js";
 import { matchCandidates, matchOptions, missingChoices, optionPrompt } from "./intent.js";
 import { shopperStore } from "./shopper.js";
 import { crawlNear, matchPage, pageText } from "./site.js";
+import { createDetails } from "./details.js";
+import { createKnowledge } from "./knowledge.js";
+import { parseSearch, amazonSearchUrl, describeFilters } from "./search.js";
 
 let memoryStorage;
 try { memoryStorage = CONFIG.injected ? window.CUE_MEMORY_STORAGE : sessionStorage; } catch {}
@@ -31,12 +33,36 @@ function persistShopper() {
   shopper.save({ discussed, size: stated.size, color: stated.color });
 }
 let site = null;
+const details = createDetails();
+const knowledge = createKnowledge({ storage: memoryStorage });
+
+// Everything said this visit, by either side, including lines only this page
+// speaks ("Which one?"). Kept across page loads so the agent never starts a
+// search results page with no idea what was just being discussed.
+const CONVO_KEY = "cue.convo.v1";
+let convo = [];
+try { convo = JSON.parse(memoryStorage?.getItem(CONVO_KEY) || "[]").slice(-24); } catch { convo = []; }
+function remember(role, content) {
+  const line = String(content || "").trim().slice(0, 400);
+  if (!line) return;
+  if (convo.length && convo[convo.length - 1].role === role && convo[convo.length - 1].content === line) return;
+  convo.push({ role, content: line });
+  convo = convo.slice(-24);
+  try { memoryStorage?.setItem(CONVO_KEY, JSON.stringify(convo)); } catch {}
+}
+
+function learnPage() {
+  const items = scanAll();
+  knowledge.observe(items.map((t) => ({ product: t.product, el: t.el })));
+}
+// Bumped by hand when the client changes, so the server log shows which build is running.
+const CLIENT_BUILD = "2026-09-26 real-products";
 
 const PRODUCT_VERBS = new Set(["add_to_cart", "select_variant", "select_color"]);
 
 function briefProduct(product) {
   if (!product?.id || !product.title) return null;
-  return { id: product.id, title: product.title, price: product.price };
+  return { id: product.id, title: product.title, price: product.price, url: product.url };
 }
 
 function productTarget(id) {
@@ -87,6 +113,22 @@ function writeField(field, q) {
 }
 
 async function runSearch(q) {
+  // Filters said out loud ("under a hundred dollars", "four stars", "cheapest
+  // first") are applied by the shop itself where we know how; otherwise they
+  // stay in the search words.
+  if (CONFIG.injected) {
+    const parsed = parseSearch(q);
+    const target = amazonSearchUrl(parsed, location.href);
+    if (target) {
+      const applied = describeFilters(parsed);
+      discussed = null;
+      stated = { id: null, size: null, color: null };
+      persistShopper();
+      sayThen(`Searching for ${parsed.q}${applied ? `, ${applied}` : ""}.`,
+        () => location.assign(target));
+      return;
+    }
+  }
   let field = findSearchField();
   if (!field) {
     const opener = searchOpener();
@@ -94,7 +136,7 @@ async function runSearch(q) {
       bus.emit("SAY", { text: "I don't see a search bar or a search button on this page." });
       return;
     }
-    bus.emit("SAY", { text: "Opening search." });
+    await sayAndWait("Opening search.");
     opener.el.click();
     field = await waitForSearch(1600);
   }
@@ -104,21 +146,22 @@ async function runSearch(q) {
   }
   field.focus();
   writeField(field, q);
-  const form = field.form;
-  if (form?.requestSubmit) form.requestSubmit();
-  else field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
   discussed = null;
   stated = { id: null, size: null, color: null };
   invalidate();
-  bus.emit("SAY", { text: `Searching for ${q}.` });
   persistShopper();
+  // Submitting reloads the page, so the sentence has to land first.
+  await sayAndWait(`Searching for ${q}.`);
+  if (globalThis.__cueEnded) return;
+  const form = field.form;
+  if (form?.requestSubmit) form.requestSubmit();
+  else field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
   setTimeout(() => {
     if (globalThis.__cueEnded) return;
-    const numbered = badges.getShown().filter((b) => !String(b.id).startsWith("ctl:")).slice(0, 3);
-    const count = scan().filter((t) => t.kind === "product").length;
-    if (!count) return;
-    const names = numbered.map((b) => `${b.n}, ${b.label}`).join(". ");
-    bus.emit("SAY", { text: names ? `${count} results. ${names}.` : `${count} results.` });
+    const found = scan().filter((t) => t.kind === "product");
+    if (!found.length) return;
+    const names = found.slice(0, 3).map((t) => String(t.label || "").slice(0, 60)).filter(Boolean).join(". ");
+    bus.emit("SAY", { text: names ? `${found.length} results. ${names}.` : `${found.length} results.` });
   }, 700);
 }
 
@@ -132,7 +175,7 @@ function mountUI() {
     <div class="aura-reticle"></div>
     <div class="aura-outline"><span class="aura-outline-label"></span></div>
     <div class="aura-hud">
-      <div class="aura-hud-row"><span class="aura-dot"></span><b>Cue</b><span class="aura-chip aura-mode"></span></div>
+      <div class="aura-hud-row"><b>Cue</b><span class="aura-status"><span class="aura-dot"></span><span class="aura-chip aura-mode"></span></span></div>
       <div class="aura-hud-heard"></div>
       <div class="aura-hud-said"></div>
       <div class="aura-hud-drift">tracking has drifted · say &ldquo;recalibrate&rdquo;</div>
@@ -154,7 +197,6 @@ function mountUI() {
   ui.foot    = root.querySelector(".aura-hud-foot");
   ui.quality = root.querySelector(".aura-quality");
   ui.quality.querySelector("button").addEventListener("click", () => recalibrate());
-  badges.mount(root);
 }
 
 // Tracking has gone bad enough that focus was dropped. Offer the way out.
@@ -166,9 +208,8 @@ addEventListener("resize", () => gaze.refreshFocus());
 // GAZE arrives at ~25Hz and in bursts. Writing transform straight from the
 // event gave visible stair-stepping even once the signal itself was clean, so
 // the event only ever moves a TARGET and a rAF loop eases the drawn position
-// toward it. That loop also keeps the outline and badges glued to their
-// elements while the page scrolls — a rect captured at FOCUS time goes stale
-// instantly.
+// toward it. That loop also keeps the outline glued to its element while the
+// page scrolls — a rect captured at FOCUS time goes stale instantly.
 const render = {
   x: innerWidth / 2, y: innerHeight / 2,
   tx: innerWidth / 2, ty: innerHeight / 2,
@@ -180,9 +221,7 @@ bus.on("GAZE", ({ x, y, confidence }) => {
 });
 
 const FOLLOW = 0.32;     // per-frame easing toward the target
-const BADGE_MS = 180;    // how often the numbered set is recomputed
 const now = () => performance.now();
-let lastBadge = 0;
 let exited = false;
 
 function frame() {
@@ -207,26 +246,13 @@ function frame() {
     ui.outline.style.height = r.height + "px";
   }
 
-  // Badges follow the gaze neighbourhood. Recomputing which products are
-  // numbered is throttled; repositioning the ones already up is not, or they
-  // detach from their cards the moment the page scrolls.
   edgeScrollTick();
-
-  if (gaze.getState().calibrating) {
-    badges.clear();               // the dots on screen are the calibration's
-  } else if (now() - lastBadge > BADGE_MS) {
-    lastBadge = now();
-    badges.update(render.x, render.y, gaze.getFocus()?.id ?? null);
-  } else {
-    badges.reposition();
-  }
   requestAnimationFrame(frame);
 }
 
 // When gaze is too coarse to be trusted, a bold outline on one card is a lie:
-// measured at 242px error it highlights the WRONG card two times in three.
-// Below the precision bar we soften it to a guess and let the numbered badges
-// carry the interaction — the intended card is among them 6 times out of 6.
+// measured at 242px error it highlights the WRONG card two times in three. Below
+// the precision bar it is drawn as a guess, and the words carry the interaction.
 let precise = true;
 
 bus.on("FOCUS", ({ target }) => {
@@ -248,7 +274,6 @@ function paintChip() {
 }
 
 bus.on("STATE", (s) => {
-  if (s.calibrating !== undefined) badges.setEnabled(!s.calibrating);
   if (s.mode) { chip.mode = s.mode; paintChip(); }
   if (s.sttProvider) { chip.stt = s.sttProvider; paintChip(); }
   if (s.ptt !== undefined) ui.dot.classList.toggle("hot", s.ptt);
@@ -256,21 +281,32 @@ bus.on("STATE", (s) => {
   if (s.listening === false) ui.dot.classList.remove("live");
   if (s.accuracy) {
     console.log("[cue] gaze accuracy", s.accuracy);
-    // How coarse the signal turned out to be decides how many items get
-    // numbered. At 341px, numbering only the nearest few can miss the one
-    // they want, which defeats the point.
-    badges.setPrecision(s.accuracy.after_px);
   }
   if (s.precise !== undefined) {
     precise = s.precise;
     ui.outline.dataset.guess = String(!precise);
     ui.foot.innerHTML = precise
       ? 'hold <kbd>space</kbd> to talk · say &ldquo;Cue, &hellip;&rdquo;'
-      : 'say the <b>number</b> on an item or button · hold <kbd>space</kbd> to talk';
+      : 'say what you want · hold <kbd>space</kbd> to talk';
   }
 });
 
-bus.on("SAY", ({ text }) => { ui.said.textContent = text; voice.speak(text); });
+bus.on("SAY", ({ text }) => { void sayAndWait(text); });
+
+// Speaking and acting in the wrong order truncates the sentence: a click or a
+// navigation tears down the page mid-word. Everything that changes the page
+// waits for this to resolve first.
+async function sayAndWait(text) {
+  if (!text) return;
+  if (ui.said) ui.said.textContent = text;
+  remember("assistant", text);
+  try { await voice.speak(text); } catch { /* a failed line must not block the action */ }
+}
+
+// Say it, finish saying it, then do the thing that replaces the page.
+function sayThen(text, act) {
+  void sayAndWait(text).then(() => { if (!globalThis.__cueEnded) act(); });
+}
 
 // Scrolling moves every rect. Drop the resolver's cache immediately rather
 // than waiting for its own key check to notice.
@@ -367,6 +403,34 @@ async function readSiteCart() {
   }
 }
 
+// The name of something seen this visit, or "it" for what was last discussed.
+// The agent names items by their full title, which rarely survives word-for-word
+// ("the Beat Solo" for "Beats Solo 4 Wireless On-Ear"), so an exact single match
+// is too strict — it refused items that were right there on the page.
+function resolveKnown(target) {
+  const t = String(target ?? "").trim();
+  if (!t || /^(?:it|this|that|this one|that one)$/i.test(t)) {
+    return discussed ? knowledge.get(discussed.id) : null;
+  }
+  // What is on this page as well as what was seen earlier, so "open its page"
+  // works for something Cue has only just laid eyes on.
+  const here = scanAll().map((p) => knowledge.get(p.product.id) ?? p.product);
+  const pool = [...here, ...knowledge.recent(40)]
+    .filter((p, i, all) => p?.title && all.findIndex((q) => q.id === p.id) === i);
+  const hits = matchCandidates(t, pool);
+  if (hits.length) return hits[0];
+  // Last resort: the longest title that shares a distinctive run of words.
+  const words = t.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3);
+  if (!words.length) return null;
+  let best = null, bestScore = 0;
+  for (const p of pool) {
+    const title = p.title.toLowerCase();
+    const score = words.filter((w) => title.includes(w)).length;
+    if (score > bestScore) { best = p; bestScore = score; }
+  }
+  return bestScore >= Math.min(2, words.length) ? best : null;
+}
+
 function bagBrief() {
   if (CONFIG.injected && !window.cueBag) return siteCart?.items?.length ? siteCart.items.slice(0, 5) : null;
   const items = window.cueBag?.items?.() || [];
@@ -380,6 +444,60 @@ function budgetBrief() {
   return { remaining: b.remaining, order: b.order };
 }
 
+async function withDetails(text) {
+  if (CONFIG.injected) {
+    const f = gaze.getFocus();
+    const focused = f?.kind === "product" ? f.product : null;
+    await details.ensure(detailUrls(focused).slice(0, 3).map((p) => p.url));
+  }
+  return context(text);
+}
+
+function detailUrls(focused) {
+  const seen = new Set();
+  const list = [focused, comparisons.remember(focused), discussed,
+    ...scan().filter((t) => t.kind === "product").slice(0, 5).map((t) => t.product),
+    ...knowledge.recent(8)];
+  const known = (p) => knowledge.get(p?.id)?.url || p?.url;
+  return list.map((p) => (p ? { ...p, url: known(p) } : p)).filter((p) => p?.url && !seen.has(p.url) && seen.add(p.url));
+}
+
+function detailsBrief(focused) {
+  return detailUrls(focused).map((p) => ({ title: p.title, facts: details.peek(p.url) || knowledge.factsFor(p.url) }))
+    .filter((d) => d.facts).slice(0, 6);
+}
+
+// What page the shopper is actually on. `looking_at` is a 250px guess; this is
+// not, and it is what "this product" and "this page" mean.
+function pageBrief() {
+  const products = scanAll();
+  const here = location.href.split("?")[0].slice(0, 140);
+  const cart = /\/(?:cart|basket|gp\/cart)\b/i.test(location.pathname);
+  const onePage = products.length === 1 && /\/(?:dp|gp\/product|product|products|item|ip)\//i.test(location.pathname);
+  const only = onePage ? products[0].product : null;
+  const brief = {
+    kind: cart ? "cart" : only ? "product" : products.length > 1 ? "results" : "page",
+    title: String(document.title || "").replace(/\s+/g, " ").trim().slice(0, 140),
+    url: here,
+    // Always sent. Gating this on question-shaped wording meant "I thought we
+    // added the sunscreen" arrived with no page at all, and Cue guessed.
+    // Measured: an Amazon results page is ~44k characters of text and has all 60
+    // results in the DOM before any scrolling. The structured list is the high
+    // signal half, so it carries every item and the raw text stays a summary.
+    text: pageText(document, 6000),
+    products: products.slice(0, 60).map((t) => ({
+      title: t.product.title, price: t.product.price,
+      onScreen: t.rect.bottom > 0 && t.rect.top < innerHeight,
+    })),
+  };
+  if (only) {
+    const facts = details.peek(only.url) || knowledge.factsFor(only.url);
+    brief.product = { title: only.title, ...(facts || {}),
+      ...(Number.isFinite(only.price) ? { price: `$${only.price}` } : {}) };
+  }
+  return brief;
+}
+
 function context(utterance = "") {
   const f = gaze.getFocus();
   const focused = f?.kind === "product" ? f.product : null;
@@ -390,15 +508,22 @@ function context(utterance = "") {
     previous: comparisons.remember(focused),
     focusedAction: f?.kind === "action" ? { verb: f.verb, label: f.label } : null,
     visible: scan().filter((t) => t.kind === "product").slice(0, 6).map((t) => t.product),
-    numbered: badges.getShown().slice(0, 9).map((b) => ({ n: b.n, label: b.label })),
     discussed: discussed ? { id: discussed.id, title: discussed.title } : null,
+    known: knowledge.brief(10),
+    convo: convo.slice(-14),
     chosen: stated.size || stated.color ? { size: stated.size, color: stated.color } : null,
     bag: bagBrief(),
     budget: budgetBrief(),
     controls: controls().slice(0, 12).map((c) => c.name),
+    // Facts read from each product's own page, so questions about an item can be
+    // answered without opening it. Extension only; the demo store carries its own.
+    product_details: CONFIG.injected ? detailsBrief(focused) : [],
+    client_build: CLIENT_BUILD,
+    details_stats: CONFIG.injected ? { ...details.stats(), products: detailUrls(focused).length,
+      injected: true } : { injected: false },
     fields: fields().slice(0, 8).map((f) => f.name).filter(Boolean),
     site: site ? { title: site.title, pages: (site.pages || []).slice(0, 6).map((p) => p.title).filter(Boolean) } : null,
-    page: asking ? pageText(document).slice(0, 480) : "",
+    page: pageBrief(),
     nearby: asking ? nearby.map((p) => ({ title: p.title, text: (p.text || "").slice(0, 180) }))
       : nearby.map((p) => ({ title: p.title })),
     pending: pendingConfirm?.kind ?? null,
@@ -433,7 +558,83 @@ function actionSay(text) {
 const QUICK = /^(?:yes|yeah|no|nope|cancel|end|cue end|[1-9]|one|two|three|four|five|six|seven|eight|nine)$/i;
 const HALT = /^(?:exit|quit|stop|go away|shut down|turn(?: yourself)? off|disable|end|cue end|stop cue|pause cue)(?: cue)?$/i;
 
+// "scroll down" keeps going, slowly, until they say stop. Reading pace, not a
+// jump: someone who cannot scroll themselves needs to see the page pass by.
+const SCROLL_SPEEDS = [22, 38, 60, 95, 150];   // px per second
+const STOP_SCROLL = /\b(?:stop|pause|wait|hold on|hold it|halt|freeze|enough|that's good|right there|okay stop)\b/i;
+const autoScroll = { dir: 0, speed: 2, raf: 0, last: 0, carry: 0, stuck: 0 };
+
+function scrollTick(t) {
+  if (!autoScroll.dir || globalThis.__cueEnded) return stopAutoScroll(false);
+  const dt = Math.min(0.1, (t - (autoScroll.last || t)) / 1000);
+  autoScroll.last = t;
+  autoScroll.carry += autoScroll.dir * SCROLL_SPEEDS[autoScroll.speed] * dt;
+  const whole = Math.trunc(autoScroll.carry);
+  if (whole) {
+    autoScroll.carry -= whole;
+    const box = scrollerAt(innerWidth / 2, innerHeight / 2, false);
+    const el = box || document.scrollingElement || document.documentElement;
+    const before = el.scrollTop;
+    if (box) box.scrollBy({ top: whole, behavior: "instant" });
+    else window.scrollBy({ top: whole, behavior: "instant" });
+    // Lazy-loading pages grow as we go; only give up after a real stall.
+    autoScroll.stuck = el.scrollTop === before ? autoScroll.stuck + 1 : 0;
+    if (autoScroll.stuck > 90) {
+      const dir = autoScroll.dir;
+      stopAutoScroll(false);
+      bus.emit("SAY", { text: dir > 0 ? "That's the bottom." : "That's the top." });
+      return;
+    }
+  }
+  voice.keepAwake?.(15000);
+  autoScroll.raf = requestAnimationFrame(scrollTick);
+}
+
+function startAutoScroll(dir, speed) {
+  autoScroll.dir = dir;
+  if (Number.isInteger(speed)) autoScroll.speed = Math.max(0, Math.min(SCROLL_SPEEDS.length - 1, speed));
+  autoScroll.last = 0; autoScroll.carry = 0; autoScroll.stuck = 0;
+  cancelAnimationFrame(autoScroll.raf);
+  autoScroll.raf = requestAnimationFrame(scrollTick);
+  document.body.classList.toggle("cue-edge-top", dir < 0);
+  document.body.classList.toggle("cue-edge-bottom", dir > 0);
+}
+
+function stopAutoScroll(announce = true) {
+  const was = autoScroll.dir;
+  autoScroll.dir = 0;
+  cancelAnimationFrame(autoScroll.raf);
+  document.body.classList.remove("cue-edge-top", "cue-edge-bottom");
+  invalidate();
+  if (announce && was) bus.emit("SAY", { text: "Stopped." });
+  return Boolean(was);
+}
+
 bus.on("UTTERANCE", ({ text, final }) => {
+  // While the page is moving, "stop" means stop scrolling, not stop Cue. Acted
+  // on from the partial transcript so the page halts the moment it is said.
+  if (autoScroll.dir && STOP_SCROLL.test(text)) {
+    stopAutoScroll(false);
+    // The final transcript of this same "stop" follows; swallow it so it does
+    // not reach the exit handler and switch Cue off.
+    autoScroll.swallowUntil = final ? 0 : Date.now() + 2500;
+    ui.heard.textContent = text;
+    return;
+  }
+  if (final && autoScroll.swallowUntil > Date.now() && STOP_SCROLL.test(text)) {
+    autoScroll.swallowUntil = 0;
+    ui.heard.textContent = text;
+    return;
+  }
+  if (autoScroll.dir && final) {
+    const speedUp = /\b(?:faster|speed up|quicker)\b/i.test(text);
+    const slowDown = /\b(?:slower|slow down)\b/i.test(text);
+    if (speedUp || slowDown) {
+      startAutoScroll(autoScroll.dir, autoScroll.speed + (speedUp ? 1 : -1));
+      bus.emit("SAY", { text: speedUp ? "Faster." : "Slower." });
+      return;
+    }
+  }
   if (final && HALT.test(text.trim().toLowerCase().replace(/[.!?,]+/g, "").replace(/\s+/g, " "))) {
     void exitCue();
     return;
@@ -455,7 +656,7 @@ bus.on("UTTERANCE", ({ text, final }) => {
   settleTimer = setTimeout(() => {
     const full = pendingSay.trim();
     pendingSay = "";
-    if (!full || isWakeOnly(full)) return;
+    if (!full || isWakeOnly(full) || /^(?:hey |hi |ok |okay )?(?:cue|q|queue|kew|cu|coo|aura|ora|aurora)[.?!]?$/i.test(full)) return;
     beginTurn(full);
   }, 900);
 });
@@ -477,6 +678,7 @@ async function beginTurn(text) {
     text = fixed.text;
     console.log(`[cue] heard "${heard}" -> "${text}"`);
   }
+  remember("user", text);
   // Naming an item and then talking about it must not let gaze quietly take
   // the focus back. The lock used to expire on a 3.5s timer, so "two" ... two
   // questions ... "add it" added whatever the eyes had drifted onto — and at
@@ -486,16 +688,14 @@ async function beginTurn(text) {
   voiceNamed = false;
   lookedThisTurn = gazedProduct();
   const aboutGaze = /\bthis one\b|\bthe one i(?:'?m|m| am) looking at\b/i.test(text);
-  const hits = aboutGaze ? [] : matchCandidates(text, visibleProducts());
+  let hits = aboutGaze ? [] : matchCandidates(text, visibleProducts());
+  // "tell me more about it" after naming something is about that thing, not a
+  // fresh question of which of several cards they meant.
+  if (hits.length > 1 && discussed && /\b(?:it|its|that one|that|them)\b/i.test(text)) hits = [];
   if (hits.length > 1) {
-    const shown = badges.getShown();
-    const line = hits.slice(0, 3).map((p) => {
-      const title = p.title || p.product?.title;
-      const id = p.id || p.product?.id;
-      const badge = shown.find((b) => b.id === id);
-      return badge ? `${badge.n} is the ${title}` : title;
-    }).join(". ");
-    bus.emit("SAY", { text: `Which one? ${line}.` });
+    const line = hits.slice(0, 3).map((p) => String(p.title || p.product?.title || "").slice(0, 60))
+      .filter(Boolean).join(", or the ");
+    bus.emit("SAY", { text: `Which one — the ${line}?` });
     return;
   }
   const named = hits[0];
@@ -525,22 +725,29 @@ async function beginTurn(text) {
   try {
     const res = await fetch(url("/utterance"), {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text, context: { ...context(text), heard: heard !== text ? heard : null } }),
+      body: JSON.stringify({ text, context: { ...(await withDetails(text)), heard: heard !== text ? heard : null } }),
     });
     const out = await res.json();
     // They kept talking, or entered private payment, while this request was out.
     if (mine !== turnId || voice.isPrivateMode?.() || globalThis.__cueEnded) return;
     window.cue.lastActionUtterance = text;
     let completed = true;
-    const fromModel = out.source === "grok";
+    // The router is the only deterministic path — it fires on the shopper's own
+    // words. Everything else is a model and may not commit. Keyed on "not the
+    // router" rather than a model name, so renaming the model cannot open this.
+    const fromModel = out.source !== "router";
     const staged = Array.isArray(out.ask) ? out.ask : (out.ask?.verb ? [out.ask] : null);
     const plan = (out.do?.length ? out.do : staged) ?? [];
-    const namesItem = plan.some((a) => a.verb === "focus_nth" || a.verb === "focus_number");
+    const namesItem = plan.some((a) => a.verb === "focus_nth");
     const touchesProduct = plan.some((a) => PRODUCT_VERBS.has(a.verb));
     if (completed && !namesItem && touchesProduct && discussed && !pinDiscussed()) {
       bus.emit("SAY", { text: `I can't see the ${discussed.title} on screen any more.` });
       completed = false;
     }
+    // Say it first. Actions used to run here, so "Opening the reviews" was cut
+    // off by the navigation it was announcing.
+    if (completed && out.say) await sayAndWait(out.say);
+    if (mine !== turnId || globalThis.__cueEnded) return;
     for (const a of completed ? (out.do ?? []) : []) {
       // Second lock. The server's allowlist already refuses these from the
       // model; this is the one that survives a jailbreak, because it is the
@@ -562,15 +769,11 @@ async function beginTurn(text) {
     // Adopt the gazed card only when nothing has been named yet. A later look
     // does not replace the item the words already picked.
     if (!voiceNamed && !discussed && lookedThisTurn
-        && (out.source === "grok" || out.source === "fallback" || touchesProduct)) {
+        && (out.source !== "router" || touchesProduct)) {
       discussed = lookedThisTurn;
       rememberSpokenOptions(text);
     }
     window.cue.lastActionUtterance = null;
-    if (completed && out.say) {
-      clearTimeout(actionSayTimer);
-      bus.emit("SAY", { text: out.say });
-    }
   } catch (e) {
     bus.emit("SAY", { text: "Sorry, I lost my connection." });
     console.error(e);
@@ -637,12 +840,6 @@ function resolveConfirm(ok) {
 }
 
 // ── Actions the page can perform ────────────────────────────────────────────
-
-// Badges win when they are on screen, because that is what the user can see.
-// Otherwise fall back to counting every product in reading order.
-function pickNumbered(n) {
-  return badges.byNumber(n) ?? nth(n);
-}
 
 // Size and add use the item that was said. Gaze fills in only when nothing
 // has been discussed, or that card is no longer on screen.
@@ -845,7 +1042,18 @@ function perform(verb, args, opts = {}) {
     return false;
   }
   switch (verb) {
+    case "scroll_start": {
+      if (!["up", "down"].includes(args.dir)) return false;
+      const speed = args.speed === "fast" ? 3 : args.speed === "slow" ? 1 : autoScroll.dir ? autoScroll.speed : 2;
+      startAutoScroll(args.dir === "down" ? 1 : -1, speed);
+      bus.emit("SAY", { text: `Scrolling ${args.dir}.` });
+      break;
+    }
+    case "scroll_stop":
+      if (!stopAutoScroll(true)) return false;
+      break;
     case "scroll":
+      stopAutoScroll(false);
       if (!["up", "down", "left", "right", "top", "bottom"].includes(args.dir)) return false;
       if (args.dir === "top" || args.dir === "bottom") {
         const box = pageScroller();
@@ -862,31 +1070,19 @@ function perform(verb, args, opts = {}) {
       }
       break;
     case "history":
+      stopAutoScroll(false);
       if (args.dir === "back") history.back();
       else if (args.dir === "forward") history.forward();
       else return false;
       break;
-    // "two" and "the second one" MUST mean the same item. Badges are numbered
-    // locally (the few near your gaze) while nth() counts every product on the
-    // page, so resolving them differently would make the two phrasings disagree
-    // — and the user has no way to know which one Cue is using.
-    case "describe_number": {
-      const item = badges.byNumber(args.n);
-      bus.emit("SAY", { text: item ? `${args.n} is ${item.label}.` : "That number isn't on screen." });
-      break;
-    }
-    case "focus_nth":
-    case "focus_number": {
-      const t = pickNumbered(args.n);
+    // "the second one" still counts products in reading order; nothing is
+    // numbered on screen any more, so this is the agent's own ordinal.
+    case "focus_nth": {
+      const t = nth(args.n);
       if (!t) {
-        const shown = badges.getShown().length;
-        bus.emit("SAY", { text: shown
-          ? `I only have ${shown} things numbered.`
-          : "I don't see anything numbered yet." });
+        bus.emit("SAY", { text: "I don't see that many items here." });
         return false;
       }
-      // A number on a button opens it. A number on a product only focuses it,
-      // so "two" cannot add to the bag by itself. Money buttons stay the same.
       if (t.kind === "control") {
         gaze.setFocus(t);
         if (/add to|checkout|check out|buy now|\bpay\b|place order/i.test(t.label)) {
@@ -949,7 +1145,7 @@ function perform(verb, args, opts = {}) {
       if (!el) {
         bus.emit("SAY", { text: named
           ? `I heard ${named}, but I don't see an add button for it on this page.`
-          : "Which one? Say its number." });
+          : "Which one do you mean?" });
         return false;
       }
 
@@ -1073,12 +1269,28 @@ function perform(verb, args, opts = {}) {
     // spoken phrase against the page's own accessibility names and click it.
     // Works on a page nobody tagged for Cue, which is the whole point.
     case "search": {
-      const q = String(args.query || "").trim().slice(0, 80);
+      const q = String(args.query || "").trim().slice(0, 120);
       if (q.length < 2) {
         bus.emit("SAY", { text: "What should I search for?" });
         return false;
       }
       void runSearch(q);
+      break;
+    }
+    case "open_link": {
+      const item = resolveKnown(args.target);
+      const link = item && knowledge.linkFor(item, args.part || "product");
+      if (!link) {
+        const near = scanAll().slice(0, 2).map((p) => p.product.title.slice(0, 40)).filter(Boolean);
+        bus.emit("SAY", { text: item ? `I don't have its ${args.part || "page"} link.`
+          : near.length ? `I can't place that one. I can see the ${near.join(", and the ")}.`
+          : "I'm not sure which item you mean." });
+        return false;
+      }
+      discussed = briefProduct({ ...item, url: item.url }) ?? discussed;
+      persistShopper();
+      sayThen(args.part === "reviews" ? `Opening the reviews for ${item.title.slice(0, 50)}.`
+        : `Opening ${item.title.slice(0, 60)}.`, () => location.assign(link));
       break;
     }
     case "click_named":
@@ -1118,9 +1330,8 @@ function perform(verb, args, opts = {}) {
       const page = c ? null : matchPage(args.name ?? args.text ?? "", site);
       if (!c && page?.url) {
         const link = [...document.querySelectorAll("a[href]")].find((a) => a.href === page.url);
-        bus.emit("SAY", { text: `Opening ${page.name || page.title}.` });
-        if (link) link.click();
-        else location.assign(page.url);
+        sayThen(`Opening ${page.name || page.title}.`,
+          () => (link ? link.click() : location.assign(page.url)));
         break;
       }
       if (!c) {
@@ -1142,10 +1353,11 @@ function perform(verb, args, opts = {}) {
       }
       // Say what is about to happen before it happens — on a page the user
       // cannot see well, a silent navigation is disorienting.
-      bus.emit("SAY", { text: `Opening ${c.name}.` });
-      const r = c.el.getBoundingClientRect();
-      if (r.bottom <= 0 || r.top >= innerHeight) c.el.scrollIntoView({ block: "center", behavior: "instant" });
-      c.el.click();
+      sayThen(`Opening ${c.name}.`, () => {
+        const r = c.el.getBoundingClientRect();
+        if (r.bottom <= 0 || r.top >= innerHeight) c.el.scrollIntoView({ block: "center", behavior: "instant" });
+        c.el.click();
+      });
       break;
     }
     // "type john into the name field" — fills a field, never touches
@@ -1192,8 +1404,8 @@ function perform(verb, args, opts = {}) {
         return false;
       }
       break;
-    case "back": history.back(); break;
-    case "forward": history.forward(); break;
+    case "back": sayThen("Going back.", () => history.back()); break;
+    case "forward": sayThen("Going forward.", () => history.forward()); break;
     case "history":
       if (args.dir === "back") history.back();
       else if (args.dir === "forward") history.forward();
@@ -1241,7 +1453,6 @@ async function clearCalibration() {
 async function recalibrate() {
   if (recalibrating) return;
   recalibrating = true;
-  badges.setEnabled(false);
   try {
     await clearCalibration();
     if (gaze.getState().mode !== "webgazer") {
@@ -1266,7 +1477,7 @@ async function recalibrate() {
     await persistCalibration();
     return true;
   }
-  finally { badges.setEnabled(true); recalibrating = false; }
+  finally { recalibrating = false; }
 }
 
 // ── Boot ────────────────────────────────────────────────────────────────────
@@ -1278,7 +1489,6 @@ export async function exitCue() {
   voice.exitPrivateMode?.();
   voice.stopListening();
   gaze.stop();
-  badges.clear();
   document.querySelectorAll("#aura-root,.cue-splash,.aura-cal,.cue-modal").forEach((el) => el.remove());
   try { globalThis.__cueExternalCleanup?.(); } catch {}
   globalThis.__cueExternalActive = false;
@@ -1306,6 +1516,21 @@ export async function boot() {
     }, point, { workers: 2, limit: 3 }).then((found) => { if (!globalThis.__cueEnded) site = found; }).catch(() => {});
   };
   document.addEventListener("routechange", refreshSite);
+  if (CONFIG.injected) {
+    // Read the products on screen in the background so answers are instant.
+    const warm = () => {
+      if (document.visibilityState !== "visible" || globalThis.__cueEnded) return;
+      learnPage();
+      const urls = detailUrls(null).map((p) => p.url);
+      details.prefetch(urls, 12);
+      for (const u of urls) {
+        const facts = details.peek(u);
+        if (facts && !knowledge.factsFor(u)) knowledge.setFacts(u, facts);
+      }
+    };
+    setInterval(warm, 3000);
+    warm();
+  }
   bus.on("STATE", (s) => { if (s.calibrated) refreshSite(); });
 
   // Ask for the mic BEFORE the camera prompt and before calibration. Chrome
@@ -1410,14 +1635,13 @@ function stopCue() {
 }
 bus.on("STOP", stopCue);
 
-window.cue = { bus, gaze, voice, badges, context, perform, boot, say, recalibrate, exit: exitCue, CONFIG,
+window.cue = { bus, gaze, voice, context, perform, boot, say, recalibrate, exit: exitCue, CONFIG,
                measure: (...a) => gaze.measure(...a),
                experiment: (...a) => gaze.experiment(...a),
                head: () => gaze.getHead(),
                get pending() { return pendingConfirm; } };
 window.aura = window.cue;          // nothing that already says aura.* breaks
 
-// DOMContentLoaded may already have fired — it will have, for anything
-// injected into a live page — so check rather than assume.
+
 if (document.readyState === "loading") addEventListener("DOMContentLoaded", boot, { once: true });
 else boot();

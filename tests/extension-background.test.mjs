@@ -74,17 +74,18 @@ test('activation requires a shopping tab and a reachable Cue server', async () =
   healthy = true;
 });
 
-test('activation injects packaged models and code once', async () => {
+test('with gaze off, WebGazer and its models are never injected', async () => {
   const result = await send({ type: 'cue:start', tab }, popup);
   assert.equal(result.ok, true);
   assert.equal(calls.filter(([kind]) => kind === 'css').length, 1);
   assert.deepEqual(calls.filter(([kind, options]) => kind === 'script' && options.files)
     .map(([, options]) => options.files), [
-      ['vendor/webgazer.js'], ['extension/extract.js', 'extension/content.js'],
+      ['extension/extract.js', 'extension/content.js'],
     ]);
   const config = calls.find(([kind, options]) => kind === 'script' && options.args);
   assert.equal(config[1].args[0], 'http://localhost:4173');
-  assert.match(config[1].args[1].facemesh, /^chrome-extension:\/\/cue-test\/vendor\/models/);
+  assert.equal(config[1].args[1], null);
+  assert.equal(config[1].args[4], 'mouse');
   assert.equal(config[1].args[2], 'chrome-extension://cue-test/extension/assets/cue-splash.jpg');
   active = true;
   assert.equal((await send({ type: 'cue:start', tab }, popup)).ok, true);
