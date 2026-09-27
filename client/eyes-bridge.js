@@ -18,10 +18,17 @@ const state = { running: false, latest: null, listener: null, stats: {} };
 // sample twice — once from the broadcast, once from background's own relay
 // to it specifically. Only accept what background actually relayed via
 // chrome.tabs.sendMessage; a message straight from offscreen is discarded.
-const OFFSCREEN_URL = chrome.runtime.getURL("extension/offscreen.html");
+//
+// Computed lazily, not at module load: this file is statically imported by
+// aura.js so gaze.js's setEngine() can reach it, and aura.js loads on the
+// demo store too, where there is no `chrome` at all. A top-level
+// chrome.runtime.getURL() here crashed the whole module graph on that page —
+// found live, not in a test, because nothing here throws until executed.
+let offscreenUrl = null;
+const OFFSCREEN_URL = () => offscreenUrl ??= chrome.runtime.getURL("extension/offscreen.html");
 
 function onMessage(message, sender) {
-  if (message?.type !== "cue:gaze:sample" || sender.url === OFFSCREEN_URL) return;
+  if (message?.type !== "cue:gaze:sample" || sender.url === OFFSCREEN_URL()) return;
   state.latest = message.sample;
   state.stats = message.stats || {};
   try { state.listener?.(message.sample); } catch (e) { console.error("[cue] gaze listener", e); }

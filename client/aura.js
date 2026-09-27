@@ -10,6 +10,17 @@ import { CONFIG, url } from "./config.js";
 import { productMemory } from "./product-memory.js";
 import { playSplash } from "./splash.js";
 import { matchCandidates, matchOptions, missingChoices, optionPrompt } from "./intent.js";
+
+// This is conversational: what the shopper says is what Cue acts on. The eye
+// tracker stays fully real underneath — camera, calibration, the FOCUS event
+// that drives the on-screen highlight (gaze.js is unchanged and its own
+// tests still hold) — but nothing here decides anything by it any more.
+// Every place that used to read gaze's focus to choose a product goes
+// through this instead of gaze.getFocus() directly, and falls through to
+// naming by voice. Cut here, at the one integration point that was making
+// the decision, rather than inside gaze.js itself, which has no opinion on
+// whether its own honest output gets used for anything.
+const gazeFocusForDecisions = () => null;
 import { shopperStore } from "./shopper.js";
 import { crawlNear, matchPage, pageText } from "./site.js";
 import { createDetails } from "./details.js";
@@ -328,7 +339,6 @@ function frame() {
     ui.outline.style.height = r.height + "px";
   }
 
-  edgeScrollTick();
   requestAnimationFrame(frame);
 }
 
@@ -411,72 +421,15 @@ function sayThen(text, act) {
 // than waiting for its own key check to notice.
 addEventListener("scroll", invalidate, { passive: true });
 
-// ── Look at the edge to scroll ──────────────────────────────────────────────
-// Hands-free browsing needs a way down the page that is not a spoken command
-// every screenful. Hold your gaze in the top or bottom band and the page
-// moves, accelerating the closer to the edge you look. A brief slip out of
-// the band does not restart the arm timer.
-//
-// The band has to be generous — at 220-350px of error a narrow strip would be
-// unreachable — and it must not fire while calibrating, while a dialog is up,
-// or while the pointer has been abandoned in mouse mode.
-const EDGE_ENTER = 150;   // between the old 130px strip and the 180px one
-const EDGE_KEEP = 190;    // a little slack once scrolling, not a wide band
-const EDGE_ARM_MS = 330;  // between the old 500ms hold and the 160ms one
-const EDGE_SLIP_MS = 180; // a frame or two of noise, not a long look away
-const EDGE_MAX_PX = 13;   // per frame at the very edge
-
-let edgeSince = 0, edgeDir = 0, edgeSeen = 0;
-
-// On by default — look at the top or bottom of the page and it moves, no
-// arming needed, exactly as it worked before it was switched off. Purely
-// reactive: look away from the edge and the band/dir logic below drops to 0
-// and it stops on its own, the same way it starts. gaze_scroll{on} is still a
-// spoken override for a shopper who wants it off while reading, or back on
-// after that — it does not gate anything by default, it only overrides it.
+// ── Gaze scrolling: conversational, not gaze-driven ─────────────────────────
+// Conversational now, not gaze-driven: scrolling is whatever voice asks for
+// (scroll_start/scroll/scroll_stop below), full stop. gaze_scroll{on} still
+// exists and still answers — "scroll with my eyes" gets "Okay, following
+// your eyes" — but nothing about where the eyes actually are moves the page
+// any more. The eye tracker itself is unchanged underneath: camera,
+// calibration and the on-screen dot all stay real, this is the one place
+// that used to act on it and no longer does.
 let gazeScrollOn = true;
-
-function edgeScrollTick() {
-  if (!gazeScrollOn) return;
-  const p = render;
-  const gs = gaze.getState();
-  if (gs.calibrating || !gs.point) {
-    edgeSince = 0; edgeDir = 0; edgeSeen = 0;
-    document.body.classList.remove("cue-edge-top", "cue-edge-bottom");
-    return;
-  }
-
-  const band = edgeDir ? EDGE_KEEP : EDGE_ENTER;
-  const top = p.y < band;
-  const bottom = p.y > innerHeight - band;
-  let dir = top ? -1 : bottom ? 1 : 0;
-  // Gaze error kicks the point out of the band for a frame or two. Keep the
-  // direction through that, or the arm timer restarts and scrolling never gets
-  // going unless they stare at one spot.
-  if (!dir && edgeDir && now() - edgeSeen < EDGE_SLIP_MS) dir = edgeDir;
-
-  if (!dir) {
-    edgeSince = 0; edgeDir = 0; edgeSeen = 0;
-    document.body.classList.remove("cue-edge-top", "cue-edge-bottom");
-    return;
-  }
-  if (dir !== edgeDir) { edgeDir = dir; edgeSince = now(); edgeSeen = now(); return; }
-  if (top || bottom) edgeSeen = now();
-  if (now() - edgeSince < EDGE_ARM_MS) return;
-
-  const tightTop = p.y < EDGE_ENTER;
-  const tightBottom = p.y > innerHeight - EDGE_ENTER;
-  const depth = tightTop
-    ? (EDGE_ENTER - p.y) / EDGE_ENTER
-    : tightBottom
-      ? (p.y - (innerHeight - EDGE_ENTER)) / EDGE_ENTER
-      : 0.2;
-  const step = dir * EDGE_MAX_PX * Math.min(1, Math.max(0.15, depth));
-
-  scrollAmount(p.x, dir < 0 ? 8 : innerHeight - 8, step, false);
-  document.body.classList.toggle("cue-edge-top", dir < 0);
-  document.body.classList.toggle("cue-edge-bottom", dir > 0);
-}
 
 // ── The loop: utterance -> server -> speech + actions ───────────────────────
 // The site's own cart, read from its cart page (same origin, shopper's cookies).
@@ -550,7 +503,7 @@ function budgetBrief() {
 
 async function withDetails(text) {
   if (CONFIG.injected) {
-    const f = gaze.getFocus();
+    const f = gazeFocusForDecisions();
     const focused = f?.kind === "product" ? f.product : null;
     await details.ensure(detailUrls(focused).slice(0, 3).map((p) => p.url));
   }
@@ -620,7 +573,7 @@ function pageBrief() {
 }
 
 function context(utterance = "") {
-  const f = gaze.getFocus();
+  const f = gazeFocusForDecisions();
   const focused = f?.kind === "product" ? f.product : null;
   const asking = /^(?:what|why|how|is|are|do|does|can|tell|describe|compare|which)\b/i.test(utterance);
   const nearby = (site?.nearby || []).slice(0, 4);
@@ -1011,7 +964,7 @@ function resolveConfirm(ok) {
 function scope() {
   const pinned = discussed && productTarget(discussed.id);
   if (pinned) return pinned.el;
-  const f = gaze.getFocus();
+  const f = gazeFocusForDecisions();
   if (!f) return null;
   return f.kind === "product" ? f.el : f.el.closest("[data-cue-product],[data-aura-product]");
 }
@@ -1156,7 +1109,7 @@ function visibleProducts() {
 
 // What the eyes are on, read before scope() pins the spoken item.
 function gazedProduct() {
-  const f = gaze.getFocus();
+  const f = gazeFocusForDecisions();
   if (!f?.el) return null;
   const el = f.kind === "product" ? f.el : f.el.closest?.("[data-cue-product],[data-aura-product]");
   return productOn(el);
@@ -1268,13 +1221,6 @@ function scrollerAt(x, y, horizontal) {
   return pageScroller();
 }
 
-function scrollAmount(x, y, delta, horizontal) {
-  const box = scrollerAt(x, y, horizontal);
-  const key = horizontal ? "left" : "top";
-  if (box) box.scrollBy({ [key]: delta, behavior: "instant" });
-  else window.scrollBy({ [key]: delta, behavior: "instant" });
-}
-
 // What is about to go in the bag, in the words the shopper will hear. For some
 // users this is the only description of the purchase they get, so it names the
 // item, the chosen options and the price.
@@ -1368,8 +1314,6 @@ function perform(verb, args, opts = {}) {
     case "gaze_scroll": {
       const on = args.on === undefined ? !gazeScrollOn : Boolean(args.on);
       gazeScrollOn = on;
-      if (!on) { edgeSince = 0; edgeDir = 0; edgeSeen = 0;
-        document.body.classList.remove("cue-edge-top", "cue-edge-bottom"); }
       if (!opts.narrated) {
         bus.emit("SAY", { text: on
           ? "Okay, following your eyes again."
@@ -1442,7 +1386,7 @@ function perform(verb, args, opts = {}) {
       stopCue();
       break;
     case "click_focused": {
-      const target = gaze.getFocus();
+      const target = gazeFocusForDecisions();
       if (target?.kind !== "action") {
         bus.emit("SAY", { text: "Tell me which button and I'll press it." });
         return false;
