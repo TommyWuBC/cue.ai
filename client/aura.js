@@ -27,6 +27,7 @@ import { createDetails } from "./details.js";
 import { createKnowledge } from "./knowledge.js";
 import { parseSearch, amazonSearchUrl, describeFilters } from "./search.js";
 import { analyticsCommand, createAnalytics } from "./analytics.js";
+import { createCompare } from "./compare.js";
 import { analyticsRequest as browserAnalyticsRequest, downloadAnalyticsCSV } from "./analytics-transport.js";
 
 const analyticsRequest = (kind, event = null) =>
@@ -39,6 +40,61 @@ const analytics = createAnalytics({ request: analyticsRequest,
 // The analytics feature itself is untouched — this is the one place its
 // writes originate, same shape as GAZE_MODE.
 const ANALYTICS_ENABLED = false;
+
+// Both products' own pages are read before the panel opens, so the comparison
+// is made of page facts rather than listing titles.
+const compare = createCompare({
+  request: async (a, b) => {
+    await details.ensure([a.url, b.url].filter(Boolean), 4000);
+    const side = (p) => ({ title: p.title, price: p.price,
+      facts: details.peek(p.url) || knowledge.factsFor(p.url) });
+    const res = await fetch(url("/compare"), {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ a: side(a), b: side(b), owns: await recentPurchases() }),
+    });
+    if (!res.ok) throw new Error(`compare ${res.status}`);
+    return res.json();
+  },
+  onAdd: (pick) => {
+    const item = comparing[pick];
+    if (!item) return;
+    discussed = briefProduct(item) ?? discussed;
+    persistShopper();
+    pinDiscussed();
+    perform("add_to_cart", {}, { narrated: false });
+  },
+});
+let comparing = { a: null, b: null };
+
+/**
+ * Demo history. Call window.cue.seedDemo() from the console before a run: it
+ * writes one clearly-marked purchase so the ecosystem line has something to
+ * connect to. Nothing seeds itself — invented purchase history that appears
+ * unbidden is indistinguishable from a real order in the same journal.
+ */
+async function seedDemo(title = "Apple iPhone 17 Pro", daysAgo = 7) {
+  const when = new Date(Date.now() - daysAgo * 864e5).toISOString();
+  await analyticsRequest("event", {
+    event_id: crypto.randomUUID(), kind: "purchase", site: "demo.seed",
+    product_title: title, order_id: `DEMO-SEED-${daysAgo}d`,
+    order_total_cents: 129900, timestamp: when,
+  });
+  console.log(`[cue] seeded a demo purchase: ${title} (${daysAgo}d ago)`);
+  return title;
+}
+
+/** What this browser already bought, for the line about staying in one ecosystem. */
+async function recentPurchases() {
+  try {
+    const summary = await analyticsRequest("summary");
+    // summarizeActivity's ranked() returns {label, count}. Reading .value here
+    // meant owns was always empty, so the ecosystem line never had anything to
+    // connect to and came back "" every time.
+    const items = summary?.top_purchased ?? [];
+    return items.map((p) => (typeof p === "string" ? p : p?.label))
+      .filter(Boolean).slice(0, 6);
+  } catch { return []; }
+}
 
 function recordActivity(kind, fields) {
   if (!ANALYTICS_ENABLED || globalThis.__cueEnded) return Promise.resolve();
@@ -146,7 +202,7 @@ function learnPage() {
   knowledge.observe(items.map((t) => ({ product: t.product, el: t.el })));
 }
 // Bumped by hand when the client changes, so the server log shows which build is running.
-const CLIENT_BUILD = "2026-09-27 stop-vs-quit";
+const CLIENT_BUILD = "2026-09-27 voices";
 
 const PRODUCT_VERBS = new Set(["add_to_cart", "select_variant", "select_color"]);
 
@@ -602,6 +658,16 @@ function context(utterance = "") {
     attention: gaze.getAttention?.() ?? null,
     nearby: asking ? nearby.map((p) => ({ title: p.title, text: (p.text || "").slice(0, 180) }))
       : nearby.map((p) => ({ title: p.title })),
+    // What Cue has open over the page. Without this the model was asked to
+    // "close the comparison" with no way to know one was open: it either said
+    // "I don't see what's open to close" or narrated closing it and proposed
+    // nothing.
+    panel: compare.isOpen() ? "comparison" : null,
+    // What Cue has open over the page. Without this the model was asked to
+    // "close the comparison" with no way to know one was open: it either said
+    // "I don't see what's open to close" or narrated closing it and proposed
+    // nothing at all.
+    panel: compare.isOpen() ? "comparison" : null,
     pending: pendingConfirm?.kind ?? null,
     session: sessionId(),
     url: location.href,
@@ -1413,6 +1479,22 @@ function perform(verb, args, opts = {}) {
       break;
     }
     case "add_to_cart": {
+      // "Close the comparison and add the AirPods" names the item, and after
+      // the panel closes there is nothing focused to scope by. Resolving the
+      // name first is what makes a two-part command land on the right product.
+      // Adding ends the comparison, the same way the panel's own Add button
+      // does. The model does not reliably pair dismiss with the add when both
+      // are asked for in one sentence, and it should not have to: once the
+      // item is chosen the panel has done its job.
+      compare.close();
+      if (args.item) {
+        const want = resolveKnown(args.item);
+        if (want) {
+          discussed = briefProduct(want) ?? discussed;
+          persistShopper();
+          pinDiscussed();
+        }
+      }
       // Nothing may be focused at all: gaze can be off and there are no badge
       // numbers any more, so on a detail page there is no signal to scope by.
       // The product that fills the page is the one meant — the same fallback
@@ -1555,7 +1637,28 @@ function perform(verb, args, opts = {}) {
           : how === "escaped" ? "Tried to close it — tell me if it's still there." : "Closed it." });
       }
       break;
+    case "compare": {
+      const a = resolveKnown(args.a), b = resolveKnown(args.b);
+      if (!a || !b || a.id === b.id) {
+        const seen = scanAll().slice(0, 2).map((p) => p.product.title.slice(0, 40));
+        bus.emit("SAY", { text: seen.length
+          ? `I need two things to compare. I can see the ${seen.join(", and the ")}.`
+          : "Tell me the two you want compared." });
+        return false;
+      }
+      comparing = { a, b };
+      if (!opts.narrated) bus.emit("SAY", { text: `Putting them side by side.` });
+      void compare.open(a, b);
+      break;
+    }
     case "dismiss": {
+      // Cue's own panel is a dialog like any other, but closing it by guessing
+      // at our own markup is silly when we hold the handle.
+      if (compare.isOpen()) {
+        compare.close();
+        if (!opts.narrated) bus.emit("SAY", { text: "Closed it." });
+        break;
+      }
       const how = dismissOverlay();
       if (how === "nothing") { bus.emit("SAY", { text: "There's nothing open to close." }); return false; }
       bus.emit("SAY", { text: how === "escaped" ? "Tried to close it — tell me if it's still there." : "Closed it." });
@@ -1960,7 +2063,7 @@ function stopCue() {
 }
 bus.on("STOP", stopCue);
 
-window.cue = { bus, gaze, voice, context, perform, boot, say, recalibrate, exit: exitCue, CONFIG,
+window.cue = { bus, gaze, voice, context, seedDemo, compare, perform, boot, say, recalibrate, exit: exitCue, CONFIG,
                measure: (...a) => gaze.measure(...a),
                experiment: (...a) => gaze.experiment(...a),
                head: () => gaze.getHead(),

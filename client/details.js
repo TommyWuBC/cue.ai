@@ -86,6 +86,21 @@ export function factsFromHtml(html, doc = null) {
       "[data-hook='review-body'] span, [data-hook='review-collapsed'] span")]
       .map((n) => clean(n.textContent, 220)).filter((s) => s.length > 20).slice(0, 3);
     if (reviews.length) facts.reviews = reviews;
+    // Measured on live listings: individual review text is not in the page at
+    // all any more, signed out — the reviews section carries only the star
+    // histogram. That histogram is honest, specific and always there, and a
+    // high one-star share is exactly what a shopper wants flagged. The
+    // aria-labels read "68 percent of reviews have 5 stars".
+    const stars = {};
+    for (const el of doc.querySelectorAll("[aria-label]")) {
+      const m = (el.getAttribute("aria-label") || "")
+        .match(/(\d+)\s*percent of reviews have (\d)\s*stars?/i);
+      if (m) stars[m[2]] = Number(m[1]);
+    }
+    if (Object.keys(stars).length >= 4) {
+      facts.star_breakdown = [5, 4, 3, 2, 1]
+        .filter((n) => stars[n] != null).map((n) => `${n} star ${stars[n]}%`);
+    }
     const says = t("[data-hook='cr-insights-widget-summary'], #product-summary p", 300);
     if (says) facts.customers_say = says;
     facts.about ||= t("#productDescription", 320) || clean(q("meta[name='description']")?.getAttribute("content"), 320);

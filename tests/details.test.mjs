@@ -64,3 +64,26 @@ test('review text is read from every hook Amazon ships, and the cap fits a real 
     assert.deepEqual(facts?.reviews, [long], hook);
   }
 });
+
+test('the star histogram is read, because review text often is not there', () => {
+  // Measured on two live listings: signed out, the reviews section carries the
+  // histogram and no review text at all. The aria-labels are the reliable part.
+  const labels = [[68, 5], [11, 4], [3, 3], [1, 2], [17, 1]]
+    .map(([pct, star]) => ({ getAttribute: () => `${pct} percent of reviews have ${star} stars` }));
+  const doc = {
+    querySelector: (sel) => (sel.includes('productTitle') ? { textContent: 'Jabra Evolve2 50' } : null),
+    querySelectorAll: (sel) => (sel === '[aria-label]' ? labels : []),
+  };
+  const facts = factsFromHtml('<html></html>', doc);
+  assert.deepEqual(facts.star_breakdown,
+    ['5 star 68%', '4 star 11%', '3 star 3%', '2 star 1%', '1 star 17%']);
+});
+
+test('a partial histogram is not reported as one', () => {
+  const labels = [{ getAttribute: () => '68 percent of reviews have 5 stars' }];
+  const doc = {
+    querySelector: (sel) => (sel.includes('productTitle') ? { textContent: 'X' } : null),
+    querySelectorAll: (sel) => (sel === '[aria-label]' ? labels : []),
+  };
+  assert.equal(factsFromHtml('<html></html>', doc)?.star_breakdown, undefined);
+});

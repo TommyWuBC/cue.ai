@@ -150,7 +150,9 @@ async function start(tab) {
       },
       args: [SERVER.origin, models, splashImage, session, GAZE_MODE],
     });
-    await chrome.scripting.insertCSS({ target, files: ['client/overlay.css', 'client/analytics.css'] });
+    await chrome.scripting.insertCSS({
+      target, files: ['client/overlay.css', 'client/analytics.css', 'client/compare.css'],
+    });
     // Gaze v2 loads its face tracker as a module from the package itself
     // (client/eyes.js -> vendor/mediapipe), so nothing is injected here.
     await chrome.scripting.executeScript({ target, files: ['extension/extract.js', 'extension/content.js'] });
