@@ -884,7 +884,7 @@ function perform(verb, args, opts = {}) {
     case "click_focused": {
       const target = gaze.getFocus();
       if (target?.kind !== "action") {
-        bus.emit("SAY", { text: "Look at a button before asking me to click it." });
+        bus.emit("SAY", { text: "Tell me which button and I'll press it." });
         return false;
       }
       target.el.click();
@@ -917,7 +917,7 @@ function perform(verb, args, opts = {}) {
       if (!el) {
         bus.emit("SAY", { text: named
           ? `I heard ${named}, but I don't see an add button for it on this page.`
-          : "Tell me which item to add." });
+          : "Which one? Say its number." });
         return false;
       }
 
@@ -1260,7 +1260,7 @@ export async function boot() {
   if (CONFIG.gazeMode === "webgazer" && actual !== "webgazer" && !CONFIG.resuming) {
     bus.emit("SAY", { text: "I couldn't use the camera, so I'm following the mouse instead. Everything else works." });
   } else if (!announced && !CONFIG.resuming) {
-    bus.emit("SAY", { text: "Cue is ready. Look at something and ask me about it." });
+    bus.emit("SAY", { text: "Cue is ready. What are you after?" });
   }
 }
 

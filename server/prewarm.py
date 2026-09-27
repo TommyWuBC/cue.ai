@@ -13,11 +13,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import tts
 
 LINES = [
-    "Cue is ready. Look at something and ask me about it.",
+    "Cue is ready. What are you after?",
     "Look at each dot and say Cue, next, or press space.",
     "Let's recalibrate your gaze.",
     "Calibration done. I can see where you're looking.",
-    "Calibration is a bit loose, but I can work with it. Look at something and ask me about it.",
+    "Calibration is a bit loose, but I can work with it. What are you after?",
     "Added.",
     "Okay.",
     "Sorry, say that again?",
@@ -25,9 +25,9 @@ LINES = [
     "Your cart is empty.",
     "I can't see that on the page.",
     "Which one do you mean, the first or the second?",
-    "Look at the item you want first.",
-    "Look at an item and I'll tell you about it.",
-    "Look at one of them and I'll compare it with the other.",
+    "Which one? Say its number.",
+    "Say an item's number and I'll tell you about it.",
+    "Tell me which two, by number, and I'll compare them.",
     "That would put you over your budget.",
     "Order approved.",
     "Cancelled. Nothing was charged.",

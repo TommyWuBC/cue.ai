@@ -58,18 +58,18 @@ def answer(text: str, ctx: dict) -> dict:
         other = previous if previous and focused and previous.get("id") != focused.get("id") else None
         wants_previous = bool(re.search(r"\b(last|previous|before|earlier)\b", t))
         if not other and wants_previous:
-            return {"say": "I don't have a previous product to compare yet. Ask me about one, then look at another.",
+            return {"say": "I don't have a previous product to compare yet. Ask me about one, then name another.",
                     "do": [], "source": "fallback"}
         if not other:
             other = next((p for p in visible if focused and p.get("id") != focused.get("id")), None)
         if focused and other:
             return {"say": f"{_summary(focused)}. Compared with {_summary(other)}.",
                     "do": [], "source": "fallback"}
-        return {"say": "Look at one of them and I'll compare it with another visible item.",
+        return {"say": "Tell me which two, by number, and I'll compare them.",
                 "do": [], "source": "fallback"}
 
     if not focused:
-        return {"say": "Look at an item and I'll tell you about it.", "do": [], "source": "fallback"}
+        return {"say": "Say an item's number and I'll tell you about it.", "do": [], "source": "fallback"}
 
     title = focused.get("title") or "This item"
     if re.search(r"\b(price|cost|how much)\b", t):
