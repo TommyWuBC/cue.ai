@@ -4,6 +4,9 @@ Moved out of `CLAUDE.md` unchanged. Read the section for whatever you are touchi
 
 ## The accuracy problem, and why the UI looks the way it does
 
+> **Gaze v2 replaced WebGazer** (see `docs/GAZE.md`). The numbers below were measured
+> with WebGazer and still shape the UI until v2 is measured on real faces.
+
 This is the single most important thing to understand about this codebase.
 
 **Measured gaze error on a real face is 220–350px**, varying run to run

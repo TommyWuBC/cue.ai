@@ -2,221 +2,193 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { bus } from '../client/bus.js';
 
-// Exercise the real calibration event handlers and timers with controllable
-// camera results. No webcam or network is required in CI.
-async function setup(t) {
-  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+// Globals the harness replaces, captured once so every teardown restores the
+// real ones (a test can build several harnesses, and they tear down in order).
+const GLOBAL_KEYS = ['innerWidth', 'innerHeight', 'addEventListener', 'removeEventListener',
+  'requestAnimationFrame', 'cancelAnimationFrame', 'document', 'navigator'];
+const ORIGINAL = new Map(GLOBAL_KEYS.map((k) => [k, Object.getOwnPropertyDescriptor(globalThis, k)]));
+const restoreGlobals = () => {
+  for (const [key, d] of ORIGINAL) {
+    if (d) Object.defineProperty(globalThis, key, d);
+    else delete globalThis[key];
+  }
+};
+
+// Exercise the real gaze v2 calibration (fixations, pursuit, validation) with a
+// fake eye engine whose features follow the calibration dot. No webcam, GPU or
+// network is needed; timings are shrunk so a whole calibration takes ~1s.
+async function setup(t, { face = true, beginMode = 'ok' } = {}) {
   const events = new EventTarget();
   const overlays = [];
   class Element extends EventTarget {
-    style = {};
-    className = '';
-    textContent = '';
-    classList = { add() {}, remove() {} };
+    style = {}; dataset = {}; className = ''; textContent = ''; disabled = false;
+    classes = new Set();
+    classList = {
+      add: (c) => this.classes.add(c), remove: (c) => this.classes.delete(c),
+      toggle: (c, on) => (on ?? !this.classes.has(c)) ? this.classes.add(c) : this.classes.delete(c),
+      contains: (c) => this.classes.has(c),
+    };
     children = new Map();
     setAttribute() {}
     focus() { document.activeElement = this; }
-    querySelector(selector) {
-      if (!this.children.has(selector)) this.children.set(selector, new Element());
-      return this.children.get(selector);
-    }
+    querySelector(sel) { if (!this.children.has(sel)) this.children.set(sel, new Element()); return this.children.get(sel); }
     remove() { const i = overlays.indexOf(this); if (i >= 0) overlays.splice(i, 1); }
   }
-  const data = [];
-  let captureMode = 'ok', predictions = true, beginMode = 'ok';
-  const regression = {
-    getData: () => data,
-    setData: samples => data.push(...samples),
+
+  const control = { face, beginMode };
+  const feat = (x, y) => {
+    // A perfect, slightly noisy eye: features are a smooth function of the dot.
+    const f = new Array(20).fill(0).map(() => (Math.random() - 0.5) * 0.002);
+    f[0] = f[2] = x / 1000; f[1] = f[3] = y / 800; f[4] = f[5] = 0.3 - y / 4000;
+    return f;
   };
-  const wg = {
-    begin: async () => {
-      if (beginMode === 'fail') throw new Error('camera unavailable');
-      return wg;
+  const engine = {
+    running: false, listener: null, last: null, timer: null,
+    async begin() {
+      if (control.beginMode === 'fail') throw new Error('camera unavailable');
+      this.running = true;
+      this.timer = setInterval(() => this.emit(), 5);
     },
-    clearData: async () => { data.length = 0; },
-    getRegression: () => [regression],
-    recordScreenPosition(x, y) {
-      if (captureMode === 'throw') throw new Error('camera frame unavailable');
-      if (captureMode === 'missing') return; // WebGazer silently drops missing eye features.
-      const eye = () => ({ width: 10, height: 6, imagex: 0, imagey: 0,
-        patch: { width: 10, height: 6, data: new Uint8ClampedArray(240).fill(120) } });
-      data.push({ eyes: { left: eye(), right: eye() }, screenPos: [x, y], type: 'click' });
+    emit() {
+      const dot = overlays.at(-1)?.querySelector('.aura-cal-dot');
+      const x = parseFloat(dot?.style.left) || 500, y = parseFloat(dot?.style.top) || 400;
+      const s = control.face
+        ? { ok: true, features: feat(x, y), head: { x: 0.5, y: 0.5, iod: 0.12 }, t: performance.now() }
+        : { ok: false, reason: 'face', t: performance.now() };
+      this.last = s;
+      this.listener?.(s);
     },
-    getTracker: () => ({ getPositions: () => Array.from({ length: 468 }, (_,i) => [i, 100, 0]) }),
-    getCurrentPrediction: async () => {
-      if (!predictions) return null;
-      const dot = overlays.at(-1).querySelector('.aura-cal-dot');
-      return { x: parseFloat(dot.style.left), y: parseFloat(dot.style.top) };
-    },
+    setListener(fn) { this.listener = fn; },
+    latest() { return this.last; },
+    isRunning() { return this.running; },
+    showPreview() {}, stats() { return {}; },
+    end() { clearInterval(this.timer); this.running = false; },
   };
-  for (const name of ['setRegression', 'setTracker', 'setGazeListener', 'saveDataAcrossSessions',
-    'removeMouseEventListeners', 'showVideoPreview', 'showPredictionPoints', 'showFaceOverlay',
-    'showFaceFeedbackBox', 'applyKalmanFilter']) wg[name] = () => wg;
+
   const globals = {
-    window: { webgazer: wg }, innerWidth: 1000, innerHeight: 800,
-    addEventListener: (type, fn, options) => events.addEventListener(type, fn,
-      typeof options === 'boolean' ? { capture: options } : options),
-    removeEventListener: (type, fn, options) => events.removeEventListener(type, fn,
-      typeof options === 'boolean' ? { capture: options } : options),
+    innerWidth: 1000, innerHeight: 800,
+    addEventListener: (type, fn, o) => events.addEventListener(type, fn, typeof o === 'boolean' ? { capture: o } : o),
+    removeEventListener: (type, fn, o) => events.removeEventListener(type, fn, typeof o === 'boolean' ? { capture: o } : o),
+    requestAnimationFrame: (cb) => setTimeout(() => cb(performance.now()), 8),
+    cancelAnimationFrame: (id) => clearTimeout(id),
     document: {
       activeElement: null,
-      body: { appendChild: el => overlays.push(el) },
-      createElement: tag => tag === 'canvas' ? { getContext: () => ({}) } : new Element(),
+      body: { appendChild: (el) => overlays.push(el) },
+      createElement: () => new Element(),
       querySelectorAll: () => [],
     },
   };
-  const previous = new Map(Object.keys(globals).map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]));
   Object.assign(globalThis, globals);
+  Object.defineProperty(globalThis, 'navigator', { value: { mediaDevices: { getUserMedia() {} } }, configurable: true, writable: true });
+
   const off = [];
   const originalOn = bus.on.bind(bus);
   t.mock.method(bus, 'on', (type, fn) => { const stop = originalOn(type, fn); off.push(stop); return stop; });
-  t.after(() => {
-    off.forEach(stop => stop());
-    for (const [key, descriptor] of previous) {
-      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
-      else delete globalThis[key];
-    }
-  });
+  const said = [];
+  off.push(originalOn('SAY', ({ text }) => said.push(text)));
+
   const gaze = await import('../client/gaze.js?test=' + Math.random());
-  await gaze.start();
-  const advance = async ms => {
-    t.mock.timers.tick(ms);
-    for (let i = 0; i < 8; i++) await Promise.resolve();
-  };
-  const press = (properties = { code: 'Space', key: ' ' }) => {
+  gaze.setEngine(engine);
+  Object.assign(gaze.TIMING, { settle: 5, hold: 40, pursuit: 400, validateSettle: 5, lead: 5 });
+  t.after(() => {
+    engine.end();                         // first: a live timer keeps the process up
+    try { gaze.stop(); } catch { /* globals may already be restored by an earlier harness */ }
+    off.forEach((stop) => stop());
+    restoreGlobals();
+  });
+
+  const press = () => {
     const e = new Event('keydown', { cancelable: true });
-    Object.assign(e, properties);
+    Object.assign(e, { code: 'Space', key: ' ', repeat: false });
     events.dispatchEvent(e);
   };
-  const finish = async () => {
-    for (let i = 0; i < 13; i++) { press(); await advance(800); }
-    for (let i = 0; i < 200; i++) await advance(1000);
-  };
-  return { gaze, overlays, advance, press, finish,
-    hint: () => overlays.at(-1).querySelector('.aura-cal-hint').textContent,
-    capture: mode => { captureMode = mode; },
-    begin: mode => { beginMode = mode; },
-    move: (x, y) => {
-      const event = new Event('mousemove');
-      Object.assign(event, { clientX: x, clientY: y });
-      events.dispatchEvent(event);
-    },
-    predictions: enabled => { predictions = enabled; },
-  };
+  return { gaze, engine, overlays, press, said, control,
+    hint: () => overlays.at(-1)?.querySelector('.aura-cal-hint').textContent ?? '' };
 }
 
-test('camera retry leaves mouse fallback and opens calibration', async t => {
-  const h = await setup(t);
-  h.begin('fail');
+test('a camera that fails falls back to the mouse, and a retry gets the camera', async (t) => {
+  const h = await setup(t, { beginMode: 'fail' });
   assert.equal(await h.gaze.start(), 'mouse');
-  assert.equal(h.gaze.getState().gazeError, 'webgazer could not start the camera');
-  h.begin('ok');
+  assert.equal(h.gaze.getState().gazeError, 'the face tracker could not start the camera');
+  h.control.beginMode = 'ok';
   assert.equal(await h.gaze.start(), 'webgazer');
   assert.equal(h.gaze.getState().gazeError, null);
-  h.move(200, 300);
-  assert.equal(h.gaze.getState().point, null, 'old mouse listener must not steer gaze');
-  const done = h.gaze.calibrate({ allowRetry: false });
-  await h.advance(0);
-  assert.equal(h.overlays.length, 1);
-  await h.finish();
-  assert.equal((await done).after_px, 0);
 });
 
-test('duplicate calibration shares one screen; Space advances the visible dot and is released after completion', async t => {
+test('one gesture starts a hands-free calibration that fits and validates a model', async (t) => {
   const h = await setup(t);
+  await h.gaze.start();
   const first = h.gaze.calibrate({ allowRetry: false });
-  const second = h.gaze.calibrate();
-  assert.equal(first, second);
-  await h.advance(0);
+  const second = h.gaze.calibrate({ allowRetry: false });
+  assert.equal(first, second, 'a second request shares the running calibration');
+  await new Promise((r) => setTimeout(r, 20));
   assert.equal(h.overlays.length, 1);
-  assert.equal(document.activeElement, h.overlays[0]);
+  assert.match(h.hint(), /say “Cue, ready”/);
+  h.press();                                   // the only input needed
+  const acc = await first;
+  assert.ok(acc && acc.after_px < 40, `validated error ${acc?.after_px}px`);
+  assert.ok(acc.trained_on > 50 && ['ridge', 'krr'].includes(acc.model));
+  assert.equal(h.overlays.length, 0, 'the calibration screen is gone');
+  assert.equal(h.gaze.getState().calibrated, true);
+  assert.ok(h.said.some((s) => s.includes('Calibration done')));
+
+  // Space is released back to push-to-talk once calibration has finished.
+  const before = h.said.length;
   h.press();
-  assert.match(h.hint(), /capturing point 1/);
-  h.press({ code: 'Space', repeat: true });
-  await h.advance(800);
-  assert.match(h.hint(), /2 \/ 13/);
-  await h.finish();
-  assert.equal((await first).after_px, 0);
+  await new Promise((r) => setTimeout(r, 30));
   assert.equal(h.overlays.length, 0);
-  let received = false;
-  addEventListener('keydown', () => { received = true; });
-  h.press();
-  assert.equal(received, true);
+  assert.equal(h.said.length, before);
 });
 
-test('failed or empty camera samples show a retry message, then Space and voice can recover', async t => {
+test('voice starts calibration too, for people who cannot press a key', async (t) => {
   const h = await setup(t);
+  await h.gaze.start();
   const done = h.gaze.calibrate({ allowRetry: false });
-  await h.advance(0);
-  for (const failure of ['throw', 'missing']) {
-    h.capture(failure);
-    h.press();
-    await h.advance(800);
-    assert.match(h.hint(), /Couldn't capture your eyes/);
-  }
-  h.capture('ok');
-  // Accessibility keyboards can send key without the physical code.
-  h.press({ key: ' ' });
-  await h.advance(800);
-  assert.match(h.hint(), /2 \/ 13/);
-  bus.emit('UTTERANCE', { text: 'next', final: true });
-  await h.advance(800);
-  assert.match(h.hint(), /3 \/ 13/);
-  h.overlays[0].querySelector('.aura-cal-dot').dispatchEvent(new Event('click'));
-  await h.advance(800);
-  assert.match(h.hint(), /4 \/ 13/);
-  await h.finish();
-  assert.equal((await done).after_px, 0);
+  await new Promise((r) => setTimeout(r, 20));
+  bus.emit('UTTERANCE', { text: 'ready', final: true });
+  assert.ok((await done)?.after_px < 40);
 });
 
-test('failed validation never reuses old accuracy or announces successful calibration', async t => {
-  const h = await setup(t);
-  let done = h.gaze.calibrate({ allowRetry: false });
-  await h.advance(0);
-  await h.finish();
-  assert.equal((await done).after_px, 0);
-  h.predictions(false);
-  const messages = [];
-  bus.on('SAY', ({ text }) => messages.push(text));
-  done = h.gaze.calibrate({ allowRetry: false });
-  await h.advance(0);
-  await h.finish();
+test('no visible face ends without accuracy, and says how to recover', async (t) => {
+  const h = await setup(t, { face: false });
+  await h.gaze.start();
+  const done = h.gaze.calibrate({ allowRetry: false });
+  await new Promise((r) => setTimeout(r, 20));
+  h.press();
   assert.equal(await done, null);
   assert.equal(h.gaze.getState().calibrated, false);
-  assert.equal(h.gaze.isPrecise(), false);
   assert.equal(h.gaze.getAccuracy(), null);
-  assert.ok(messages.some(text => text.includes("couldn't measure")));
-  assert.ok(!messages.some(text => text.includes('Calibration done')));
+  assert.ok(h.said.some((s) => s.includes("couldn't measure")));
+  assert.ok(!h.said.some((s) => s.includes('Calibration done')));
 });
 
-test('stopping gaze cancels an active calibration without another input', async t => {
+test('stopping gaze cancels a running calibration', async (t) => {
   const h = await setup(t);
+  await h.gaze.start();
   const done = h.gaze.calibrate({ allowRetry: false });
-  await h.advance(0);
-  assert.equal(h.overlays.length, 1);
+  await new Promise((r) => setTimeout(r, 20));
   h.gaze.stop();
   assert.equal(await done, false);
   assert.equal(h.overlays.length, 0);
-  assert.equal(h.gaze.getState().running, false);
-  assert.equal(h.gaze.getState().calibrating, false);
 });
 
-test('a completed gaze model survives a document change without new calibration', async t => {
+test('a fitted model survives a page change without calibrating again', async (t) => {
   const h = await setup(t);
+  await h.gaze.start();
   const done = h.gaze.calibrate({ allowRetry: false });
-  await h.advance(0);
-  await h.finish();
-  assert.equal((await done).after_px, 0);
+  await new Promise((r) => setTimeout(r, 20));
+  h.press();
+  await done;
   const snapshot = JSON.parse(JSON.stringify(h.gaze.exportCalibration()));
-  assert.equal(snapshot.samples.length, 13 * 14);
-  assert.equal(snapshot.samples[0].eyes.left.patch.data.length, 240);
+  assert.equal(snapshot.version, 2);
+  assert.ok(JSON.stringify(snapshot).length < 400_000, 'small enough for session storage');
 
-  assert.equal(await h.gaze.start({ resume: snapshot }), 'webgazer');
-  assert.equal(h.gaze.getState().calibrated, true);
-  assert.equal(h.gaze.getAccuracy().after_px, 0);
-  assert.equal(h.overlays.length, 0);
+  const next = await setup(t);
+  assert.equal(await next.gaze.start({ resume: snapshot }), 'webgazer');
+  assert.equal(next.gaze.getState().calibrated, true);
+  assert.equal(next.gaze.getAccuracy().after_px, snapshot.accuracy.after_px);
 
-  const wrongViewport = { ...snapshot, viewport: { width: 500, height: 800 } };
-  assert.equal(await h.gaze.start({ resume: wrongViewport }), 'webgazer');
-  assert.equal(h.gaze.getState().calibrated, false);
+  const other = await setup(t);
+  await other.gaze.start({ resume: { ...snapshot, viewport: { width: 1, height: 1 } } });
+  assert.equal(other.gaze.getState().calibrated, false, 'a different window size is not reused');
 });

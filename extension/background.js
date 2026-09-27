@@ -104,17 +104,8 @@ async function start(tab) {
       args: [SERVER.origin, models, splashImage, session, GAZE_MODE],
     });
     await chrome.scripting.insertCSS({ target, files: ['client/overlay.css'] });
-    // WebGazer bundles TensorFlow.js, which registers its WebGL kernels on the
-    // page's own global. Evaluating it twice in one page re-registers every
-    // kernel and floods the console. Inject it only if it is not already there.
-    if (GAZE_MODE === 'webgazer') {
-      const [loaded] = await chrome.scripting.executeScript({
-        target, func: () => Boolean(globalThis.webgazer),
-      });
-      if (!loaded?.result) {
-        await chrome.scripting.executeScript({ target, files: ['vendor/webgazer.js'] });
-      }
-    }
+    // Gaze v2 loads its face tracker as a module from the package itself
+    // (client/eyes.js -> vendor/mediapipe), so nothing is injected here.
     await chrome.scripting.executeScript({ target, files: ['extension/extract.js', 'extension/content.js'] });
     await updateSession(tab.id, async () => {
       const key = sessionKey(tab.id);
@@ -224,7 +215,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       let calibration = null;
       if (message.type === 'cue:calibration:write') {
         calibration = message.value;
-        if (calibration?.version !== 1 || !Array.isArray(calibration.samples) ||
+        if (![1, 2].includes(calibration?.version) || !Array.isArray(calibration.samples) ||
             JSON.stringify(calibration).length > 4_000_000) return { ok: false };
       }
       await chrome.storage.session.set({ [sessionKey(tabId)]: { ...current, calibration } });

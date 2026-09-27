@@ -50,6 +50,13 @@ export const CONFIG = {
   // chrome-extension:// URLs, which is the only way past a host page's CSP.
   models: injectedCfg.models || null,
 
+  // The face tracker (gaze v2, see docs/GAZE.md). Served by our own server so
+  // it works offline; the extension passes packaged chrome-extension:// URLs.
+  mediapipe: injectedCfg.mediapipe || null,
+
+  // ?gazedebug=1: camera preview with eye landmarks, fps, latency, accuracy.
+  gazeDebug: injectedCfg.gazeDebug ?? (q("gazedebug") === "1"),
+
   // Packaged artwork for the extension's short startup screen.
   splashImage: injectedCfg.splashImage || null,
   resuming: Boolean(injectedCfg.resuming),

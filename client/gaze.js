@@ -1,5 +1,24 @@
 import { bus } from "./bus.js";
 import { scan, resolve } from "./resolver.js";
+import * as realEyes from "./eyes.js";
+import { fitGazeModel, loadGazeModel, bestPursuitLag } from "./gaze-model.js";
+import { fixationFilter } from "./fixation.js";
+
+// The engine is swappable so tests can drive calibration with synthetic frames.
+let eyes = realEyes;
+export function setEngine(engine) { eyes = engine ?? realEyes; }
+
+// Gaze v2 (docs/GAZE.md). The camera path is MediaPipe Face Landmarker ->
+// landmark features -> a per-user model fitted at calibration -> outlier gate
+// -> One Euro -> fixation stabiliser. The mode is still called "webgazer"
+// everywhere (aura.js, the extension) and now simply means "the camera".
+const VENDOR = new URL("../vendor/", import.meta.url).href;
+const MEDIAPIPE = {
+  bundle: VENDOR + "mediapipe/vision_bundle.mjs",
+  wasmLoader: VENDOR + "mediapipe/wasm/vision_wasm_internal.js",
+  wasmBinary: VENDOR + "mediapipe/wasm/vision_wasm_internal.wasm",
+  model: VENDOR + "models/face_landmarker.task",
+};
 
 // ── Tuning ──────────────────────────────────────────────────────────────────
 // One Euro filter. A fixed EMA forces a choice between "stable" and "keeps up";
@@ -31,10 +50,24 @@ const TUNINGS = [
   { upTo: Infinity, minCutoff: 0.10, beta: 0.0005, dCutoff: 0.30 },  // swept at sigma 242
 ];
 
-function tuningFor(px) {
-  const t = TUNINGS.find((x) => px <= x.upTo) ?? TUNINGS.at(-1);
+// Camera tunings for gaze v2. The fixation stabiliser is what keeps the
+// estimate still while you look at something, so One Euro only has to take the
+// edge off and can stay light, which is where the lag used to come from.
+const CAMERA_TUNINGS = [
+  { upTo: 120,      minCutoff: 1.0, beta: 0.020, dCutoff: 1.0 },
+  { upTo: 200,      minCutoff: 0.7, beta: 0.012, dCutoff: 1.0 },
+  { upTo: Infinity, minCutoff: 0.5, beta: 0.008, dCutoff: 1.0 },
+];
+
+function tuningFor(px, table = state.mode === "webgazer" ? CAMERA_TUNINGS : TUNINGS) {
+  const t = table.find((x) => px <= x.upTo) ?? table.at(-1);
   return { minCutoff: t.minCutoff, beta: t.beta, dCutoff: t.dCutoff };
 }
+
+// How far the eyes can wander and still count as the same fixation. Scales
+// with how good the calibration turned out: a sloppy fit needs a wider net or
+// every sample looks like a saccade.
+const fixRadiusFor = (px) => Math.max(45, Math.min(120, 0.4 * (px ?? 150)));
 
 // Outlier gate. Webgazer emits 300px+ flyers that are not eye movements. One
 // far sample is a flyer and gets dropped; three that agree with each other are
@@ -70,6 +103,11 @@ const state = {
   accuracy: null,
   lastSampleAt: 0, lowSince: 0, qualityLow: false, calibrating: false,
 };
+
+// Gaze v2: the per-user model and the samples it was fitted on.
+let model = null;
+let training = [];
+let fixer = fixationFilter();
 
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
 const mean   = (a) => a.reduce((s, v) => s + v, 0) / a.length;
@@ -162,9 +200,6 @@ export function oneEuro({ minCutoff, beta, dCutoff }) {
 //   3. Subtract a linear estimate of the induced error, with the gain LEARNED
 //      from spoken selections rather than guessed — see fitHeadGain().
 
-// MediaPipe FaceMesh indices: outer corners of each eye.
-const EYE_L = 33, EYE_R = 263;
-
 // How far the head can drift, as a fraction of interocular distance, before we
 // stop trusting the mapping. One IOD is roughly the width of an eye socket —
 // moving that far genuinely invalidates the fit.
@@ -174,17 +209,12 @@ const HEAD_HARD = 1.10;   // suggest recalibrating
 const head = { base: null, now: null, samples: [], gain: null };
 
 function readHead() {
-  try {
-    const pos = window.webgazer?.getTracker?.()?.getPositions?.();
-    if (!pos || pos.length <= EYE_R) return null;
-    const a = pos[EYE_L], b = pos[EYE_R];
-    if (!a || !b) return null;
-    const iod = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    if (!(iod > 1)) return null;
-    // Interocular distance doubles as a distance-from-camera proxy: lean in and
-    // it grows. Normalising by it makes the offsets comparable across depths.
-    return { x: (a[0] + b[0]) / 2, y: (a[1] + b[1]) / 2, iod };
-  } catch { return null; }
+  // The engine reports head position in normalised image units with the
+  // interocular distance as a depth proxy, so offsets stay comparable across
+  // distances from the camera. A face lost for over half a second is lost.
+  const s = eyes.latest();
+  if (!s?.head || performance.now() - s.t > 500) return null;
+  return { x: s.head.x, y: s.head.y, iod: s.head.iod };
 }
 
 /** Head offset from the calibration pose, in interocular-distance units. */
@@ -280,6 +310,9 @@ function confidence() {
     c *= Math.max(0.15, 1 - over);
   }
   if (state.mode === "webgazer" && !head.now) c = 0;   // face lost entirely
+  // A steady estimate from a loose calibration is steadily wrong by that much.
+  const acc = state.accuracy?.after_px;
+  if (state.mode === "webgazer" && acc) c *= Math.max(0.3, Math.min(1, 1 - (acc - 80) / 300));
   return c;
 }
 
@@ -313,10 +346,20 @@ function ingest(rawX, rawY) {
     state.head = off;
   }
 
+  bus.emit("GAZE_RAW", { x, y });
   const kept = gate(x, y, t);
   if (!kept) return;
   x = state.fx.filter(kept.x, t);
   y = state.fy.filter(kept.y, t);
+
+  // Report where the eyes are resting, not every sample (fixation.js). The
+  // mouse is ground truth and needs none of this.
+  let fixating = false;
+  if (state.mode !== "mouse") {
+    const f = fixer.push(x, y, t * 1000);
+    x = f.x; y = f.y; fixating = f.fixating;
+  }
+  state.fixating = fixating;
 
   x = Math.max(EDGE, Math.min(innerWidth - EDGE, x));
   y = Math.max(EDGE, Math.min(innerHeight - EDGE, y));
@@ -350,7 +393,7 @@ export function stop() {
   state.point = null;
   setFocus(null, 0);
   if (dwellTimer) { clearInterval(dwellTimer); dwellTimer = null; }
-  try { window.webgazer?.end(); } catch {}
+  try { eyes.end(); } catch {}
   document.querySelectorAll(".aura-cal,.cue-modal").forEach((el) => {
     try { el.hidePopover?.(); } catch {}
     el.remove();
@@ -425,23 +468,9 @@ function commitDwell(x, y) {
 }
 
 // ── Calibration ─────────────────────────────────────────────────────────────
-// Training points sit closer to the edges than before. Ridge regression does
-// not extrapolate: whatever box you train inside is the box you can reach, and
-// the old grid stopped at 10%/15% from each edge.
-// 13 points, not 9. Removing webgazer's implicit click-training was right —
-// it was training on a lie — but it left the ridge fit thin, and a thin fit is
-// why gain_x came back at 0.60 with a 260px offset. The extra four points give
-// 78 pairs against 54 and, unlike more samples per point, cost no extra time
-// holding still: each point is still six frames.
-const TRAIN = [
-  [.06, .08], [.50, .08], [.94, .08],
-  [.06, .50], [.50, .50], [.94, .50],
-  [.06, .92], [.50, .92], [.94, .92],
-  [.28, .28], [.72, .28], [.28, .72], [.72, .72],
-];
-
-// Then a short pass where we watch what webgazer ACTUALLY predicts while the
-// user looks at known points, and fit a correction. This is what buys back the
+// Training is FIX_POINTS + a smooth pursuit (see runCalibration below).
+// Then a short pass where we watch what the model ACTUALLY predicts while the
+// user looks at known points it never trained on, and fit a correction. This is what buys back the
 // corners, and it gives us an accuracy number worth showing a judge.
 const VALIDATE = [[.06, .08], [.94, .08], [.5, .5], [.06, .92], [.94, .92]];
 
@@ -470,94 +499,120 @@ const POOR_PX = 220;
 let cancelCalibration = null;
 
 // Chrome destroys the page's JS world on a full store navigation. Keep the
-// trained ridge samples and Cue's correction in extension session storage so
-// the next document in this tab can resume without asking for 13 dots again.
-// ImageData's data property does not JSON-serialize as an array, so copy it
-// explicitly before sending the snapshot through Chrome messaging.
-function packEye(eye) {
-  const patch = eye?.patch;
-  if (!patch?.data) return null;
-  // Ridge regression reduces every eye patch to 10 x 6 before fitting. Save
-  // those 60 pixels rather than hundreds of full camera crops per session.
-  const width = 10, height = 6;
-  let data = patch.data;
-  if (patch.width !== width || patch.height !== height) {
-    const source = document.createElement("canvas");
-    source.width = patch.width; source.height = patch.height;
-    source.getContext("2d").putImageData(patch, 0, 0);
-    const reduced = document.createElement("canvas");
-    reduced.width = width; reduced.height = height;
-    const ctx = reduced.getContext("2d", { willReadFrequently: true });
-    ctx.drawImage(source, 0, 0, width, height);
-    data = ctx.getImageData(0, 0, width, height).data;
-  }
-  return { ...eye, width, height,
-    patch: { width, height, data: Array.from(data) } };
-}
-
-function validEye(eye) {
-  const patch = eye?.patch;
-  return Number.isInteger(patch?.width) && patch.width > 0 && patch.width <= 256 &&
-    Number.isInteger(patch.height) && patch.height > 0 && patch.height <= 256 &&
-    Array.isArray(patch.data) && patch.data.length === patch.width * patch.height * 4;
-}
+// fitted model and its samples in extension session storage so the next
+// document in this tab can resume without calibrating again. Gaze v2 samples
+// are 20 numbers each, not eye-image patches, so this is a few KB.
+const SNAPSHOT_VERSION = 2;
 
 export function canResume(snapshot) {
-  return snapshot?.version === 1 && snapshot.viewport?.width === innerWidth &&
-    snapshot.viewport?.height === innerHeight &&
-    Array.isArray(snapshot.samples) && snapshot.samples.length >= 20 &&
-    snapshot.samples.length <= 500 && snapshot.samples.every(sample =>
-      sample?.type === "click" && Array.isArray(sample.screenPos) &&
-      sample.screenPos.length === 2 && sample.screenPos.every(Number.isFinite) &&
-      validEye(sample.eyes?.left) && validEye(sample.eyes?.right)) &&
-    [snapshot.cal?.ax, snapshot.cal?.bx, snapshot.cal?.ay, snapshot.cal?.by,
+  return snapshot?.version === SNAPSHOT_VERSION &&
+    snapshot.viewport?.width === innerWidth && snapshot.viewport?.height === innerHeight &&
+    Array.isArray(snapshot.samples) && snapshot.samples.length >= 12 && snapshot.samples.length <= 2000 &&
+    snapshot.samples.every((x) => Array.isArray(x?.f) && x.f.every(Number.isFinite) &&
+      Number.isFinite(x.x) && Number.isFinite(x.y)) &&
+    !!snapshot.model && [snapshot.cal?.ax, snapshot.cal?.bx, snapshot.cal?.ay, snapshot.cal?.by,
       snapshot.accuracy?.after_px].every(Number.isFinite);
 }
 
 export function exportCalibration() {
-  if (state.mode !== "webgazer" || !state.calibrated || !state.accuracy) return null;
-  try {
-    const samples = window.webgazer.getRegression()[0].getData().map(sample => ({
-      eyes: { left: packEye(sample.eyes?.left), right: packEye(sample.eyes?.right) },
-      screenPos: sample.screenPos, type: sample.type,
-    }));
-    const snapshot = { version: 1, viewport: { width: innerWidth, height: innerHeight },
-      samples, cal: { ...state.cal }, accuracy: { ...state.accuracy } };
-    return canResume(snapshot) ? snapshot : null;
-  } catch (error) {
-    console.warn("[cue] Could not save gaze calibration", error);
-    return null;
-  }
+  if (state.mode !== "webgazer" || !state.calibrated || !state.accuracy || !model) return null;
+  const round = (v) => Math.round(v * 1e4) / 1e4;
+  const snapshot = {
+    version: SNAPSHOT_VERSION, viewport: { width: innerWidth, height: innerHeight },
+    samples: training.slice(-1500).map((x) => ({ f: x.f.map(round), x: Math.round(x.x), y: Math.round(x.y), g: x.g })),
+    model: model.toJSON(), cal: { ...state.cal }, accuracy: { ...state.accuracy },
+  };
+  return canResume(snapshot) ? snapshot : null;
 }
 
 async function restoreCalibration(snapshot) {
   if (!canResume(snapshot)) return false;
-  try {
-    window.webgazer.getRegression()[0].setData(snapshot.samples);
-    state.cal = { ...snapshot.cal };
-    state.accuracy = { ...snapshot.accuracy };
-    state.calibrated = true;
-    state.precise = state.accuracy.after_px <= POOR_PX;
-    state.qualityLow = false;
-    state.lowSince = 0;
-    head.base = readHead();
-    head.samples = []; head.gain = null;
-    if (!state.tuneLocked) {
-      state.tuning = tuningFor(state.accuracy.after_px);
-      state.fx = oneEuro(state.tuning);
-      state.fy = oneEuro(state.tuning);
-    }
-    recent.length = 0; pending = [];
-    state.fx.reset(innerWidth / 2, performance.now() / 1000);
-    state.fy.reset(innerHeight / 2, performance.now() / 1000);
-    bus.emit("STATE", { calibrated: true, accuracy: state.accuracy,
-      precise: state.precise });
-    return true;
-  } catch (error) {
-    console.warn("[cue] Could not restore gaze calibration", error);
-    try { await window.webgazer.clearData(); } catch {}
-    return false;
+  const m = loadGazeModel(snapshot.model);
+  if (!m) return false;
+  model = m;
+  training = snapshot.samples.map((x) => ({ ...x }));
+  state.cal = { ...snapshot.cal };
+  state.accuracy = { ...snapshot.accuracy };
+  state.calibrated = true;
+  state.precise = state.accuracy.after_px <= POOR_PX;
+  state.qualityLow = false;
+  state.lowSince = 0;
+  head.base = readHead();
+  head.samples = []; head.gain = null;
+  retune();
+  bus.emit("STATE", { calibrated: true, accuracy: state.accuracy, precise: state.precise });
+  return true;
+}
+
+function retune() {
+  if (!state.tuneLocked && state.accuracy) {
+    state.tuning = tuningFor(state.accuracy.after_px);
+    state.fx = oneEuro(state.tuning);
+    state.fy = oneEuro(state.tuning);
   }
+  fixer = fixationFilter({ radius: fixRadiusFor(state.accuracy?.after_px) });
+  recent.length = 0; pending = [];
+  state.fx.reset(innerWidth / 2, performance.now() / 1000);
+  state.fy.reset(innerHeight / 2, performance.now() / 1000);
+}
+
+// ── Frames ──────────────────────────────────────────────────────────────────
+// Calibration and validation wait for real camera frames, not timer ticks: a
+// timer happily re-reads the same frame and inflates the sample count.
+let frameWaiters = [];
+const nextFrame = (ms = 400) => new Promise((resolve) => {
+  const t = setTimeout(() => { frameWaiters = frameWaiters.filter((w) => w !== done); resolve(null); }, ms);
+  const done = (sample) => { clearTimeout(t); resolve(sample); };
+  frameWaiters.push(done);
+});
+
+function onEyes(sample) {
+  const waiting = frameWaiters; frameWaiters = [];
+  waiting.forEach((w) => w(sample));
+  if (sample.head) head.now = { x: sample.head.x, y: sample.head.y, iod: sample.head.iod };
+  // A blink is not a stale feed; keep the clock alive but predict nothing.
+  if (sample.features) state.lastSampleAt = performance.now();
+  if (!sample.ok || !model || state.calibrating) return;
+  const p = model.predict(sample.features);
+  if (Number.isFinite(p.x) && Number.isFinite(p.y)) ingest(p.x, p.y);
+}
+
+// ── Calibration (gaze v2): fixations, then a pursuit, then validation ───────
+// Nine fixation points that advance on their own, then one smooth-pursuit
+// sweep, then five points the model never trains on. No key presses: someone
+// who cannot use a trackpad should not have to press space thirteen times.
+const FIX_POINTS = [
+  [.08, .10], [.50, .10], [.92, .10],
+  [.08, .50], [.50, .50], [.92, .50],
+  [.08, .90], [.50, .90], [.92, .90],
+];
+// SETTLE: the eye is still travelling, discard. HOLD: then collect this long.
+// Exported so tests can run a whole calibration in a second.
+export const TIMING = { settle: 450, hold: 750, pursuit: 9000, validateSettle: 650, lead: 700 };
+
+// A rounded tour of the screen: along the top, down the right, back along the
+// bottom, up the left, then a diagonal through the middle.
+function pursuitAt(tMs) {
+  const u = Math.max(0, Math.min(1, tMs / TIMING.pursuit));
+  const W = innerWidth, H = innerHeight, m = 0.08;
+  const pts = [[m, m], [1 - m, m], [1 - m, 1 - m], [m, 1 - m], [m, m], [1 - m, 1 - m]];
+  const seg = Math.min(pts.length - 2, Math.floor(u * (pts.length - 1)));
+  const k = u * (pts.length - 1) - seg;
+  const e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;      // ease in and out of corners
+  const [ax, ay] = pts[seg], [bx, by] = pts[seg + 1];
+  return [(ax + (bx - ax) * e) * W, (ay + (by - ay) * e) * H];
+}
+
+async function collectAt(px, py, group, out, cancelled) {
+  await sleep(TIMING.settle);
+  const until = performance.now() + TIMING.hold;
+  let good = 0;
+  while ((performance.now() < until || good < 8) && performance.now() < until + 1200) {
+    if (cancelled()) return 0;
+    const s = await nextFrame();
+    if (s?.ok) { out.push({ f: s.features, x: px, y: py, g: group }); good++; }
+  }
+  return good;
 }
 
 function runCalibration(attempt) {
@@ -568,12 +623,13 @@ function runCalibration(attempt) {
     ov.tabIndex = -1;
     ov.setAttribute("role", "dialog");
     ov.setAttribute("aria-label", "Eye tracking calibration");
-    ov.innerHTML = `<div class="aura-cal-hint" role="status" aria-live="polite"></div><button type="button" class="aura-cal-dot" aria-label="Capture this calibration point"></button>`;
+    ov.innerHTML = `<div class="aura-cal-hint" role="status" aria-live="polite"></div><button type="button" class="aura-cal-dot" aria-label="Start calibration"></button>`;
     document.body.appendChild(ov);
     ov.focus({ preventScroll: true });
     const dot  = ov.querySelector(".aura-cal-dot");
     const hint = ov.querySelector(".aura-cal-hint");
-    let i = 0;
+    let cancelled = false;
+    const isCancelled = () => cancelled;
 
     // Space is push-to-talk everywhere else. Tell voice.js to stand down.
     state.calibrating = true;
@@ -585,137 +641,125 @@ function runCalibration(attempt) {
     bus.emit("GAZE_QUALITY", { low: false });
     bus.emit("STATE", { calibrating: true });
 
-    const finish = async () => {
-      // Must match the capture flag it was added with, or it is never removed
-      // and space keeps re-triggering calibration points under the store page.
+    const place = (x, y, instant = false) => {
+      dot.classList.toggle("moving", !instant);
+      dot.style.left = x + "px"; dot.style.top = y + "px";
+      if (hint.dataset) hint.dataset.pos = y > innerHeight * 0.6 ? "top" : "bottom";
+    };
+    const say = (text) => { hint.textContent = text; };
+
+    const run = async () => {
+      const anchors = [];
+      for (let k = 0; k < FIX_POINTS.length; k++) {
+        const [fx, fy] = FIX_POINTS[k];
+        const px = fx * innerWidth, py = fy * innerHeight;
+        place(px, py);
+        dot.classList.remove("armed");
+        say(`Look at the dot · ${k + 1} / ${FIX_POINTS.length}`);
+        setTimeout(() => dot.classList.add("armed"), TIMING.settle);
+        const got = await collectAt(px, py, `fix${k}`, anchors, isCancelled);
+        if (cancelled) return null;
+        // Nothing usable at the first two points means the face is not in view.
+        // Say so now rather than walking someone through a dead screen.
+        if (k >= 1 && anchors.length === 0) break;
+        if (got < 4) say("I can't see your eyes. Face the camera, in good light.");
+      }
+      if (anchors.length < 40) {
+        say("I couldn't see your eyes clearly enough. Face the camera in good light, then say “Cue, recalibrate”.");
+        return { obs: [], lag: 0, n: 0 };
+      }
+
+      // Smooth pursuit: the dot moves; the eye follows it.
+      say("Now follow the dot with your eyes");
+      dot.classList.remove("armed");
+      const [sx, sy] = pursuitAt(0);
+      place(sx, sy);
+      await sleep(TIMING.lead);
+      dot.classList.add("pursuit");
+      const pursuit = [];
+      const t0 = performance.now();
+      let raf = 0;
+      const tick = () => {
+        const [x, y] = pursuitAt(performance.now() - t0);
+        place(x, y, true);
+        if (performance.now() - t0 < TIMING.pursuit && !cancelled) raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+      while (performance.now() - t0 < TIMING.pursuit && !cancelled) {
+        const s = await nextFrame();
+        if (s?.ok) pursuit.push({ f: s.features, t: s.t - t0 });
+      }
+      cancelAnimationFrame(raf);
+      dot.classList.remove("pursuit");
+      if (cancelled) return null;
+
+      say("Working out where you look…");
+      await sleep(30);
+      const lag = pursuit.length > 60 ? bestPursuitLag(pursuit, pursuitAt, anchors) : 0;
+      const pursuitSamples = pursuit
+        .filter((p) => p.t - lag > 300 && p.t - lag < TIMING.pursuit)       // skip the start-up
+        .map((p, n) => { const [x, y] = pursuitAt(p.t - lag); return { f: p.f, x, y, g: `pur${Math.floor(n / 10)}` }; });
+      training = [...anchors, ...pursuitSamples];
+      model = fitGazeModel(training);
+      console.log(`[cue] gaze model: ${model.kind}, cross-validated ${model.cv_px}px, pursuit lag ${lag}ms,`,
+                  `${anchors.length} fixation + ${pursuitSamples.length} pursuit samples`);
+
+      say("Now just look at each dot — checking accuracy");
+      const obs = await sweep(dot, null, isCancelled);
+      if (cancelled) return null;
+      return { obs, lag, n: training.length };
+    };
+
+    const finish = (res) => {
+      if (!res) return;
+      const { obs, lag, n } = res;
+      if (obs.length >= 25) {
+        const fx = fit1d(obs.map((o) => o[0]), obs.map((o) => o[2]));
+        const fy = fit1d(obs.map((o) => o[1]), obs.map((o) => o[3]));
+        const before = rms(obs, 1, 0, 1, 0);
+        const after  = rms(obs, fx.a, fx.b, fy.a, fy.b);
+        // Only keep a range correction that clearly helps: it is fitted on the
+        // same five points it is scored on, so a small gain is overfitting.
+        if (after < before * 0.85) state.cal = { ax: fx.a, bx: fx.b, ay: fy.a, by: fy.b };
+        state.accuracy = {
+          before_px: Math.round(before),
+          after_px: Math.round(after < before * 0.85 ? after : before),
+          gain_x: +fx.a.toFixed(2), gain_y: +fy.a.toFixed(2),
+          samples: obs.length, model: model.kind, cv_px: model.cv_px, lag_ms: lag, trained_on: n,
+        };
+        console.log("[cue] calibration", state.accuracy, state.cal);
+      }
+      state.calibrated = !!state.accuracy;
+      // Whatever pose they calibrated in is the pose the mapping is valid for.
+      head.base = readHead();
+      head.samples = []; head.gain = null;
+      retune();
+      // NOTE: calibrating stays true — the wrapper may still put a modal up,
+      // and space must not become push-to-talk underneath it.
+      bus.emit("STATE", { calibrated: state.calibrated, accuracy: state.accuracy });
+      done(state.accuracy);
+    };
+
+    let started = false;
+    const begin = () => {
+      if (started) return;
+      started = true;
       removeEventListener("keydown", onKey, true);
-      cleanup.forEach((fn) => fn());
       dot.disabled = true;
-      hint.textContent = "Now just look at each dot — no key, checking accuracy";
-      try {
-        const obs = await sweep(dot);
-
-        if (obs.length >= 25) {
-          const fx = fit1d(obs.map((o) => o[0]), obs.map((o) => o[2]));
-          const fy = fit1d(obs.map((o) => o[1]), obs.map((o) => o[3]));
-          const before = rms(obs, 1, 0, 1, 0);
-          const after  = rms(obs, fx.a, fx.b, fy.a, fy.b);
-          // Only keep the correction if it actually helps.
-          if (after < before) {
-            state.cal = { ax: fx.a, bx: fx.b, ay: fy.a, by: fy.b };
-          }
-          state.accuracy = {
-            before_px: Math.round(before),
-            after_px: Math.round(Math.min(before, after)),
-            gain_x: +fx.a.toFixed(2), gain_y: +fy.a.toFixed(2),
-            samples: obs.length,
-          };
-          console.log("[cue] calibration", state.accuracy, state.cal);
-        }
-
-        state.calibrated = !!state.accuracy;
-        // Whatever pose they calibrated in is the pose the mapping is valid for.
-        head.base = readHead();
-        head.samples = []; head.gain = null;
-
-        // Retune the filter to the signal we actually got.
-        if (state.accuracy && state.mode === "webgazer" && !state.tuneLocked) {
-          const t = tuningFor(state.accuracy.after_px);
-          state.tuning = t;
-          state.fx = oneEuro(t);
-          state.fy = oneEuro(t);
-          console.log("[cue] filter tuned for", state.accuracy.after_px + "px:", t);
-        }
-
-        recent.length = 0; pending = [];
-        state.fx.reset(innerWidth / 2, performance.now() / 1000);
-        state.fy.reset(innerHeight / 2, performance.now() / 1000);
-        // NOTE: calibrating stays true — the wrapper may still put a modal up,
-        // and space must not become push-to-talk underneath it.
-        bus.emit("STATE", { calibrated: state.calibrated, accuracy: state.accuracy });
-        done(state.accuracy);
-      } catch (error) {
-        reject(error);
-      } finally {
+      run().then(finish, reject).finally(() => {
+        cleanup.forEach((fn) => fn());
         if (cancelCalibration === cancel) cancelCalibration = null;
         ov.remove();
-      }
+      });
     };
-
-    const show = () => {
-      if (i >= TRAIN.length) { finish(); return; }
-      const [fx, fy] = TRAIN[i];
-      dot.style.left = fx * innerWidth + "px";
-      dot.style.top  = fy * innerHeight + "px";
-      dot.classList.remove("armed");
-      const again = attempt > 1 ? `  ·  attempt ${attempt}` : "";
-      hint.textContent = `Look at the dot. Press SPACE, tap it, or say “Cue, next” · ${i + 1} / ${TRAIN.length}${again}`;
-      // The hint is pinned to the bottom of the screen and three training
-      // points sit on the bottom edge, so it landed directly on top of the dot
-      // the user was being told to look at. Flip it out of the way.
-      if (hint.dataset) hint.dataset.pos = fy > 0.6 ? "top" : "bottom";
-    };
-
-    // Advancing must not require a key. Someone who cannot use a trackpad
-    // cannot press space either, and calibration is the very first thing they
-    // meet — so "Cue, next" advances the same way.
-    let recording = false;
-    // Each capture run carries a token. A run that has been superseded — by a
-    // failure, or by the point moving on — must not keep recording, and must
-    // not advance the dot. clearInterval alone is not enough: a tick already
-    // dispatched still runs, and a failed attempt would resume advancing the
-    // moment the camera recovered.
-    let captureId = 0;
-
-    const capture = () => {
-      if (recording || i >= TRAIN.length) return;
-      recording = true;
-      const myId = ++captureId;
-      const [fx, fy] = TRAIN[i];
-      const px = fx * innerWidth, py = fy * innerHeight;
-      dot.classList.add("armed");
-      hint.textContent = `Hold your gaze — capturing point ${i + 1} / ${TRAIN.length}`;
-      // Feed several samples per point — one is far too few for the ridge fit.
-      let n = 0;
-      const tick = setInterval(() => {
-        if (myId !== captureId) { clearInterval(tick); return; }
-        try {
-          const wg = window.webgazer;
-          // recordScreenPosition silently ignores samples before eye features
-          // are ready. Count actual training pairs, not timer ticks.
-          const regression = wg.getRegression()[0];
-          const before = regression.getData().slice();
-          wg.recordScreenPosition(px, py, "click");
-          if (!regression.getData().some((pair, index) => pair !== before[index])) {
-            throw new Error("No eye features available for calibration");
-          }
-          // 14 is load-bearing for tests/calibration.test.mjs: its mocked timer
-          // does not honour clearInterval mid-batch, so advance(800) fires
-          // exactly 14 ticks and the count must match or the run races ahead.
-          if (++n >= 14) {
-            clearInterval(tick); captureId++;      // retire this run
-            i++; recording = false; show();
-          }
-        } catch (error) {
-          clearInterval(tick); captureId++;        // retire this run
-          recording = false;
-          dot.classList.remove("armed");
-          hint.textContent = "Couldn't capture your eyes. Face the camera, then press SPACE or say “Cue, next” to retry.";
-          console.warn("[cue] calibration capture failed", error);
-        }
-      }, 55);
-    };
-
     const onKey = (e) => {
       if ((e.code !== "Space" && e.key !== " ") || e.repeat) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      capture();
+      begin();
     };
-
     const cancel = () => {
-      captureId++;
-      recording = false;
+      cancelled = true;
       removeEventListener("keydown", onKey, true);
       cleanup.forEach((fn) => fn());
       ov.remove();
@@ -725,18 +769,21 @@ function runCalibration(attempt) {
     };
     cancelCalibration = cancel;
 
-    // Utterances still reach us during calibration; aura.js declines to send
-    // them to the server while calibrating, so this is the only consumer.
+    // One gesture starts it: space, a tap, or "Cue, ready". Everything after
+    // that is hands-free. aura.js declines to send utterances to the server
+    // while calibrating, so this is the only consumer.
     const stopVoice = bus.on("UTTERANCE", ({ text, final }) => {
-      if (final && /^(next|ready|capture|ok|okay|go|done)\b/i.test(text.trim())) capture();
+      if (final && /^(next|ready|start|begin|go|ok|okay|done)\b/i.test(text.trim())) begin();
     });
     cleanup.push(stopVoice);
-
-    dot.addEventListener("click", capture);
-    cleanup.push(() => dot.removeEventListener("click", capture));
+    dot.addEventListener("click", begin);
+    cleanup.push(() => dot.removeEventListener("click", begin));
     addEventListener("keydown", onKey, true);
-    if (attempt === 1) bus.emit("SAY", { text: "Look at each dot and press space, or say Cue, next." });
-    show();
+
+    place(innerWidth / 2, innerHeight / 2, true);
+    const again = attempt > 1 ? " · attempt " + attempt : "";
+    say(`Keep your head still and follow the dot with your eyes. Press SPACE, tap the dot, or say “Cue, ready”${again}`);
+    if (attempt === 1) bus.emit("SAY", { text: "Keep your head still and follow the dot with your eyes. Say ready when you're set." });
   });
 }
 
@@ -816,33 +863,34 @@ function qualityModal(acc, attempt) {
 // Walk the validation points and collect (predicted, actual) pairs. Used both
 // at the end of calibration and, on its own, to answer "is it any better now?"
 // with a number instead of a feeling.
-async function sweep(dot, hint) {
+async function sweep(dot, hint, cancelled = () => false) {
   const obs = [];
   let nulls = 0, errors = 0, noFace = 0;
   for (let k = 0; k < VALIDATE.length; k++) {
+    if (cancelled()) break;
     const [fx, fy] = VALIDATE[k];
     const px = fx * innerWidth, py = fy * innerHeight;
+    dot.classList.add("moving");
     dot.style.left = px + "px"; dot.style.top = py + "px";
     dot.classList.remove("armed");
-    await sleep(650);                       // let the eye land
+    await sleep(TIMING.validateSettle);     // let the eye land
     dot.classList.add("armed");
     // Keep sampling until we have enough GOOD ones, not just enough attempts.
-    // A few dropped frames per point used to silently halve the sample count.
     let good = 0;
-    for (let n = 0; n < 30 && good < 14; n++) {
+    for (let n = 0; n < 45 && good < 14; n++) {
       try {
-        const p = await window.webgazer.getCurrentPrediction();
-        if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {
-          obs.push([p.x, p.y, px, py]); good++;
+        const s = await nextFrame();
+        if (s?.ok && model) {
+          const p = model.predict(s.features);
+          if (Number.isFinite(p.x) && Number.isFinite(p.y)) { obs.push([p.x, p.y, px, py]); good++; }
+          else nulls++;
         } else {
           nulls++;
-          if (!readHead()) noFace++;
+          if (!s?.features) noFace++;
         }
       } catch { errors++; }
-      await sleep(45);
     }
-    if (hint) hint.textContent =
-      `Just look at each dot — ${k + 1} / ${VALIDATE.length}`;
+    if (hint) hint.textContent = `Just look at each dot — ${k + 1} / ${VALIDATE.length}`;
   }
   obs.stats = { nulls, errors, noFace };
   return obs;
@@ -858,8 +906,8 @@ async function sweep(dot, hint) {
  *   await cue.gaze.measure()
  */
 export async function measure() {
-  if (state.mode !== "webgazer" || !window.webgazer) {
-    console.warn("[cue] measure() needs the camera");
+  if (state.mode !== "webgazer" || !eyes.isRunning() || !model) {
+    console.warn("[cue] measure() needs the camera and a calibration");
     return null;
   }
   const ov = document.createElement("div");
@@ -874,7 +922,7 @@ export async function measure() {
       const why = st.noFace > st.nulls / 2
         ? "your face wasn't detected — check lighting and that you're in frame"
         : st.errors
-          ? "webgazer threw on most frames — is the camera still live?"
+          ? "the face tracker threw on most frames — is the camera still live?"
           : "the tracker returned no prediction for most frames";
       console.warn(`[cue] measure failed: only ${obs.length} good samples. ${why}`, st);
       bus.emit("SAY", { text: "I couldn't measure — I lost track of your face." });
@@ -976,7 +1024,7 @@ export function calibrate(options = {}) {
 }
 
 async function calibrateOnce({ allowRetry = true, maxAttempts = 2 } = {}) {
-  window.webgazer.showVideoPreview(true);
+  eyes.showPreview(true);
   for (let attempt = 1; ; attempt++) {
     const acc = await runCalibration(attempt);
 
@@ -1014,8 +1062,10 @@ const gauss = () => {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 };
 
+let debugOn = false;
 export async function start({ mode = "webgazer", sigma = 70, tune = null,
-  keepData = false, resume = null } = {}) {
+  keepData = false, resume = null, debug = false } = {}) {
+  debugOn = debug || (typeof location !== "undefined" && new URLSearchParams(location.search).get("gazedebug") === "1");
   state.mode = mode;
   state.running = false;
   state.calibrated = false;
@@ -1042,6 +1092,10 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null,
   // run through the real filter chain. This is how you feel what the gaze
   // experience is actually like, and tune it, without a camera or a face.
   if (mode === "sim") {
+    // Size the filters for the noise being simulated, exactly as a real
+    // calibration sizes them for the error it measured.
+    if (!tune) { state.tuning = tuningFor(sigma, TUNINGS); state.fx = oneEuro(state.tuning); state.fy = oneEuro(state.tuning); }
+    fixer = fixationFilter({ radius: fixRadiusFor(sigma * 1.1) });
     let tx = innerWidth / 2, ty = innerHeight / 2;
     addEventListener("mousemove", (e) => { touchPointer(); tx = e.clientX; ty = e.clientY; });
     setInterval(() => {
@@ -1056,73 +1110,35 @@ export async function start({ mode = "webgazer", sigma = 70, tune = null,
     bus.emit("STATE", { calibrated: true, mode: "sim" });
     return "sim";
   }
-  const wg = window.webgazer;
-  if (!wg) return degrade("webgazer did not load", sigma);
+  if (!navigator.mediaDevices?.getUserMedia) return degrade("this page cannot use the camera", sigma);
+  let startTimer = 0;
 
-  // Webgazer's face mesh runs on TF.js, which needs WebGL. Brave's
-  // fingerprinting protection farbles canvas/WebGL readback and can take it
-  // away entirely — in which case begin() hangs instead of failing, and the
-  // page sits there forever with no calibration and no explanation.
-  if (!webglAvailable()) {
-    return degrade("this browser is blocking WebGL (Brave Shields?)", sigma);
-  }
-
-  wg.setRegression("ridge").setTracker("TFFacemesh");
-  wg.setGazeListener((d) => { if (d && state.mode === "webgazer") ingest(d.x, d.y); });
-
-  // Webgazer persists its training data across sessions by default, and
-  // begin() installs capture-phase click/mousemove listeners on document that
-  // keep training the ridge model on the assumption that you were looking
-  // wherever you clicked. Together those two defaults are poison: every click
-  // in every past session — including the mouse- and sim-mode runs, where the
-  // cursor had nothing to do with the eyes — wrote a false training pair into
-  // a model that survives reloads. Measured cost: 242px error against
-  // webgazer's own published ~130px.
-  if (!keepData) {
-    try { wg.saveDataAcrossSessions(false); } catch {}
-  }
-
+  // Models are ours and local (vendor/), so a saturated venue network or a
+  // store's CSP cannot take eye tracking away. The GPU is used when it can be;
+  // otherwise the tracker falls back to the CPU rather than failing.
   const began = await Promise.race([
-    wg.begin().then(() => true).catch((e) => { console.warn("[cue] webgazer.begin", e); return false; }),
-    new Promise((r) => setTimeout(() => r("timeout"), 15000)),
+    eyes.begin(MEDIAPIPE).then(() => true).catch((e) => {
+      console.warn("[cue] face tracker could not start", e);
+      return e?.name === "NotAllowedError" ? "denied" : false;
+    }),
+    new Promise((r) => { startTimer = setTimeout(() => r("timeout"), 20000); }),
   ]);
+  clearTimeout(startTimer);
   if (began !== true) {
-    return degrade(began === "timeout"
-      ? "the camera did not start within 15 seconds"
-      : "webgazer could not start the camera", sigma);
+    return degrade(began === "timeout" ? "the camera did not start within 20 seconds"
+      : began === "denied" ? "camera permission was refused"
+      : "the face tracker could not start the camera", sigma);
   }
-
-  if (!keepData) {
-    // clearData() is async and only exists after begin(); it wipes localForage
-    // and re-inits the regression, so it has to run here, not before.
-    try { await wg.clearData(); console.log("[cue] cleared stored gaze model"); }
-    catch (e) { console.warn("[cue] clearData", e); }
-  } else {
-    console.warn("[cue] ?keepdata=1 — reusing the stored gaze model");
-  }
-
-  // Kill the implicit click/mousemove training for good. From here the ONLY
-  // thing that trains the model is our own calibration points, which are the
-  // only moments we actually know where the eyes were.
-  try { wg.removeMouseEventListeners(); } catch (e) { console.warn("[cue] removeMouseEventListeners", e); }
-
-  try {
-    wg.showVideoPreview(true).showPredictionPoints(false)
-      .showFaceOverlay(false).showFaceFeedbackBox(true).applyKalmanFilter(true);
-  } catch { /* version drift in the show* chain is not fatal */ }
+  if (!keepData) { model = null; training = []; }
+  eyes.setListener(onEyes);
+  eyes.showPreview(true);
   startDwellLoop();
   guardStrayClicks();
   state.running = true;
   const restored = await restoreCalibration(resume);
+  if (debugOn) import("./gaze-debug.js").then((m) => m.mount({ eyes, getState })).catch(() => {});
   bus.emit("STATE", { mode: "webgazer", calibrated: restored });
   return "webgazer";
-}
-
-function webglAvailable() {
-  try {
-    const c = document.createElement("canvas");
-    return !!(c.getContext("webgl2") || c.getContext("webgl"));
-  } catch { return false; }
 }
 
 // Never leave a blank page. If the camera cannot work, say why out loud and
@@ -1166,7 +1182,7 @@ const LEARN_MAX_PX = 420;     // beyond this the pair is not credible
 let learned = 0;
 
 export function learnFromSelection(target) {
-  if (state.mode !== "webgazer" || !state.calibrated || !target?.el) return false;
+  if (state.mode !== "webgazer" || !state.calibrated || !target?.el || !model) return false;
   const r = target.el.getBoundingClientRect();
   if (!r.width) return false;
   const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
@@ -1176,35 +1192,42 @@ export function learnFromSelection(target) {
   // work the calibration just did.
   const p = state.point;
   if (!p || Math.hypot(p.x - cx, p.y - cy) > LEARN_MAX_PX) return false;
+  const s = eyes.latest();
+  if (!s?.ok || performance.now() - s.t > 300) return false;
 
-  // Feed it in the raw prediction frame, undoing our affine correction —
-  // webgazer trains on its own output, not on ours.
-  try {
-    window.webgazer?.recordScreenPosition(cx, cy, "click");
-    learned++;
+  // A confirmed selection is one correct pair against hundreds from
+  // calibration, so it is weighted up (repeated) to matter.
+  for (let k = 0; k < 6; k++) training.push({ f: s.features, x: cx, y: cy, g: `learn${learned}` });
+  learned++;
+  scheduleRefit();
 
-    // The same pair tells us how much of the error the head accounts for:
-    // where we thought they were looking, where they actually were, and how
-    // far the head had moved at that moment.
-    const off = headOffset();
-    const est = state.uncomp ?? p;      // always the uncompensated estimate
-    if (off) {
-      head.samples.push({ dx: off.dx, dy: off.dy, ex: est.x - cx, ey: est.y - cy });
-      if (head.samples.length > 40) head.samples.shift();
-      const g = fitHeadGain();
-      if (g) {
-        const first = !head.gain;
-        head.gain = g;
-        if (first || learned % 5 === 0) {
-          console.log(`[cue] head compensation fitted from ${g.n} samples:`,
-                      `gx=${g.gx.toFixed(0)} gy=${g.gy.toFixed(0)} px per IOD`);
-        }
+  // The same pair tells us how much of the error the head accounts for.
+  const off = headOffset();
+  const est = state.uncomp ?? p;
+  if (off) {
+    head.samples.push({ dx: off.dx, dy: off.dy, ex: est.x - cx, ey: est.y - cy });
+    if (head.samples.length > 40) head.samples.shift();
+    const g = fitHeadGain();
+    if (g) head.gain = g;
+  }
+  if (learned % 5 === 0) console.log(`[cue] learned from ${learned} spoken selections`);
+  return true;
+}
+
+// Refit a moment after the last confirmed selection, off the critical path,
+// and only keep the new model if it does not cross-validate worse.
+let refitTimer = 0;
+function scheduleRefit() {
+  clearTimeout(refitTimer);
+  refitTimer = setTimeout(() => {
+    try {
+      const next = fitGazeModel(training.slice(-1500));
+      if (!model || next.cv_px <= model.cv_px * 1.1) {
+        console.log(`[cue] gaze model refit: ${model?.cv_px ?? "?"}px -> ${next.cv_px}px (${next.kind})`);
+        model = next;
       }
-    }
-
-    if (learned % 5 === 0) console.log(`[cue] learned from ${learned} spoken selections`);
-    return true;
-  } catch { return false; }
+    } catch (e) { console.warn("[cue] refit skipped", e); }
+  }, 1500);
 }
 
 export const getLearned = () => learned;
@@ -1223,6 +1246,42 @@ export function driftReason() {
   if (off && off.dz > 0.30) return "close";
   return "signal";
 }
+
+// ── Speech and gaze together ────────────────────────────────────────────────
+// People look at a thing, then refer to it, and by the end of the sentence the
+// eyes have often moved on. So remember what was being looked at over the last
+// few seconds, and when speech starts, pin whatever was under the eyes just
+// before it (docs/GAZE.md).
+const SPEECH_LOOKBACK_MS = 250;
+const focusHistory = [];         // [{ t, target }] oldest first
+
+function noteFocus(target) {
+  const t = performance.now();
+  focusHistory.push({ t, target });
+  while (focusHistory.length && t - focusHistory[0].t > 4000) focusHistory.shift();
+}
+
+function focusAt(t) {
+  let hit = null;
+  for (const h of focusHistory) { if (h.t <= t) hit = h.target; else break; }
+  return hit;
+}
+
+let lastSpeechAt = 0;
+function onSpeechStart() {
+  if (state.mode === "mouse" || !state.calibrated || state.calibrating) return;
+  if (performance.now() < state.lockUntil) return;          // voice already chose
+  const past = focusAt(performance.now() - SPEECH_LOOKBACK_MS);
+  if (past?.el?.isConnected && past.id !== state.focus?.id) setFocus(past, 6000);
+  else holdFocus(6000);
+}
+bus.on("STATE", (s) => { if (s?.ptt === true) onSpeechStart(); });
+bus.on("UTTERANCE", ({ final }) => {
+  const now = performance.now();
+  if (!final && now - lastSpeechAt > 1500) onSpeechStart();
+  lastSpeechAt = now;
+});
+bus.on("FOCUS", ({ target }) => noteFocus(target));
 
 // Voice-driven selection ("the second one"). Locks out dwell briefly so the
 // follow-up command acts on what was just named.
@@ -1260,8 +1319,10 @@ export function refreshFocus() {
   bus.emit("FOCUS", { target: state.focus, prev: focused });
 }
 
-export function hideCamera() { try { window.webgazer?.showVideoPreview(false); } catch {} }
+export function hideCamera() { if (!debugOn) eyes.showPreview(false); }
 export const getFocus = () => state.focus;
 export const getAccuracy = () => state.accuracy;
 export const isPrecise  = () => state.precise;
-export const getState = () => ({ ...state, fx: undefined, fy: undefined });
+export const getState = () => ({ ...state, fx: undefined, fy: undefined,
+  model: model ? { kind: model.kind, cv_px: model.cv_px, samples: training.length } : null });
+export const getEngine = () => eyes.stats();

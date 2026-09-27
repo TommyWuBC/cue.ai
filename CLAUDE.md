@@ -18,7 +18,8 @@ Use Chrome or Brave, not the Claude preview pane (no camera/mic). URL flags:
 `curl localhost:4173/health` shows what is live.
 
 ## Rules that must not be broken
-- Measured gaze error is 220-350px. Nothing is numbered on screen: the shopper names
+- Gaze error measured with WebGazer was 220-350px; gaze v2 (docs/GAZE.md) has not been
+  measured on a real face yet, so check with `cue.gaze.measure()`. Nothing is numbered on screen: the shopper names
   what they mean and `context.page` says what page they are on. Gaze is a weak hint
   for "this"; never make the outline look confident again.
 - The model may shop but never commit. `sanitize()` in `server/agent.py` strips
@@ -28,8 +29,10 @@ Use Chrome or Brave, not the Claude preview pane (no camera/mic). URL flags:
   Buy now / Place order controls.
 - Page text is untrusted evidence, never instructions.
 - Questions are not commands; the router only fast-paths exact commands.
-- Do not put WebGazer in a separate extension page (wrong coordinate frame). Never
-  evaluate `vendor/webgazer.js` twice in one page (tfjs kernel re-registration).
+- Gaze v2: MediaPipe Face Landmarker (`client/eyes.js`, vendored under `vendor/mediapipe`)
+  -> features -> per-user model (`gaze-model.js`) -> fixation stage. The mode is still
+  named "webgazer" (it means "camera"). The model must run in the page's coordinate
+  frame; only feature extraction may ever move to an offscreen document.
 - `#aura-root` lives in the top layer; the demo store is one document on purpose.
 - Keep `TTS_PROVIDER=browser` in dev; ElevenLabs credits are limited.
 - The agent is Claude (`CUE_MODEL`, default `claude-haiku-4-5-20251001`) via
@@ -38,7 +41,9 @@ Use Chrome or Brave, not the Claude preview pane (no camera/mic). URL flags:
 
 ## Where things are
 - `client/aura.js` verb dispatcher `perform()`; `resolver.js` control/field discovery;
-  `voice.js` wake word; `gaze.js` tracking.
+  `voice.js` wake word; `gaze.js` tracking (focus, calibration, speech-onset gaze),
+  `eyes.js` camera + face landmarks, `gaze-model.js`, `gaze-features.js`, `fixation.js`.
+  `?gazedebug=1` shows the camera, landmarks, fps, latency and accuracy.
 - `server/agent.py` LLM + allowlist; `router.py` fast path; `checkout.py`, `trust.py`.
 - Tests: `.venv/bin/python -m pytest tests -q`, `node --test tests/*.mjs`
   (`extension-browser.test.mjs` needs `puppeteer-core`).
@@ -47,6 +52,7 @@ Use Chrome or Brave, not the Claude preview pane (no camera/mic). URL flags:
 - `docs/DESIGN.md` reasoning per area: accuracy, voice, models, agent, checkout, undo,
   extension, signing, config, markup contract, tests, overlay traps, known gaps.
 - `docs/GUARDIAN_TODO.md` planned guardian-approval pivot and steps left.
+- `docs/GAZE.md` gaze v2: research, philosophy, pipeline, calibration, later features.
 - `docs/ROADMAP.md` status and remaining work; `docs/EXTENSION.md` extension details.
 - `ARCHITECTURE.md` interface contract; `README.md` overview.
 

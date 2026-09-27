@@ -3,15 +3,38 @@
   "name": "Cue: eyes and voice shopping",
   "version": "0.1.0",
   "description": "Browse a shopping page with gaze and voice. Checkout stays in the Cue demo store.",
-  "permissions": ["activeTab", "scripting", "storage"],
-  "optional_host_permissions": ["https://*/*"],
-  "host_permissions": ["http://localhost:4173/*"],
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
+  "host_permissions": [
+    "http://localhost:4173/*"
+  ],
   "action": {
     "default_title": "Start Cue on this page"
   },
-  "background": {"service_worker": "extension/background.js", "type": "module"},
-  "web_accessible_resources": [{
-    "resources": ["client/*.js", "extension/assets/cue-splash.jpg", "vendor/models/*/*"],
-    "matches": ["http://*/*", "https://*/*"]
-  }]
+  "background": {
+    "service_worker": "extension/background.js",
+    "type": "module"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "client/*.js",
+        "extension/assets/cue-splash.jpg",
+        "vendor/models/*/*",
+        "vendor/models/*",
+        "vendor/mediapipe/*",
+        "vendor/mediapipe/wasm/*"
+      ],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ]
+    }
+  ]
 }

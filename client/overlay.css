@@ -272,3 +272,37 @@ body.cue-edge-bottom::after { bottom: 0;
 @media (prefers-reduced-motion: reduce) {
   .aura-hud[data-cue-state], .aura-hud::after, .aura-hud-said.cue-enter, .aura-hud-heard.cue-live::after { animation: none; }
 }
+
+/* ── Gaze v2 (docs/GAZE.md) ───────────────────────────────────────────────── */
+/* The dot glides between fixation points, but must track its true position
+   exactly during the pursuit: a transition would make it trail, and the model
+   would learn the trail. */
+.aura-cal-dot.pursuit { transition: none !important; animation: none !important; }
+
+/* Camera preview with the eye landmarks. During calibration it sits where no
+   fixation point or pursuit path ever goes (right of centre, upper third), so
+   it never covers the dot being followed. */
+.cue-cam { position: fixed; z-index: 2147483620; top: 80px; right: 16px; width: 200px; height: 150px;
+  border-radius: 14px; background: #111; pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 12px 30px rgba(0,0,0,.35); }
+body:has(.aura-cal) .cue-cam { top: 28%; right: auto; left: 74%; transform: translate(-50%, -50%); }
+
+#cue-gaze-debug, #cue-gaze-debug[popover] { position: fixed; inset: 0; margin: 0; padding: 0; border: 0;
+  width: auto; height: auto; max-width: none; max-height: none; background: transparent;
+  overflow: visible; pointer-events: none; z-index: 2147483630; }
+#cue-gaze-debug .gd-dot { position: absolute; left: 0; top: 0; width: 12px; height: 12px; margin: -6px 0 0 -6px;
+  border-radius: 50%; will-change: transform; }
+#cue-gaze-debug .gd-raw { background: rgba(110,110,115,.55); }
+#cue-gaze-debug .gd-out { width: 16px; height: 16px; margin: -8px 0 0 -8px;
+  background: rgba(47,107,255,.85); box-shadow: 0 0 0 3px rgba(255,255,255,.8); }
+#cue-gaze-debug .gd-panel { position: absolute; top: 240px; right: 16px; width: 330px; padding: 10px 12px;
+  border-radius: 12px; background: rgba(20,20,20,.9); color: #f4f3ef;
+  font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+#cue-gaze-debug .gd-panel b { font: 600 12px -apple-system, sans-serif; }
+#cue-gaze-debug pre { margin: 6px 0 0; white-space: pre-wrap; font: inherit; }
+#cue-gaze-debug .gd-dot { opacity: 0; }
+#cue-gaze-debug .gd-dot.on { opacity: 1; }
+/* During calibration, keep the numbers clear of every fixation point and the
+   pursuit path (lower left interior). */
+body:has(.aura-cal) #cue-gaze-debug .gd-panel { top: auto; right: auto; bottom: 20%; left: 20%; }
+body:has(.aura-cal) #cue-gaze-debug .gd-dot { display: none; }
