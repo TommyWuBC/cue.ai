@@ -610,8 +610,14 @@ function onEyes(sample) {
   waiting.forEach((w) => w(sample));
   if (sample.head) head.now = { x: sample.head.x, y: sample.head.y, iod: sample.head.iod };
   // A blink is not a stale feed; keep the clock alive but predict nothing.
-  if (sample.features) state.lastSampleAt = performance.now();
-  if (!sample.ok || !model || state.calibrating) return;
+  if (sample.features || sample.x !== undefined) state.lastSampleAt = performance.now();
+  if (!sample.ok || state.calibrating) return;
+  // WebGazer (client/eyes-webgazer.js) resolves a screen position itself —
+  // image patch straight through its own ridge regression — so there is no
+  // separate per-user model to predict from here. Same pipeline either way
+  // past this point: gate, filter, fixation, FOCUS commit.
+  if (sample.x !== undefined) { ingest(sample.x, sample.y); return; }
+  if (!model) return;
   const p = model.predict(sample.features);
   if (Number.isFinite(p.x) && Number.isFinite(p.y)) ingest(p.x, p.y);
 }

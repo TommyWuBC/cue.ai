@@ -96,12 +96,15 @@ test('the injected config matches whichever gaze mode is configured, and nothing
   assert.equal(calls.filter(([kind]) => kind === 'css').length, 1);
   assert.deepEqual(calls.find(([kind]) => kind === 'css')[1].files,
     ['client/overlay.css', 'client/analytics.css', 'client/compare.css']);
-  // Gaze v2 loads its tracker as a module from client/eyes.js, so the only
-  // injected files are the page scripts — in either mode.
-  assert.deepEqual(calls.filter(([kind, options]) => kind === 'script' && options.files)
-    .map(([, options]) => options.files), [
-      ['extension/extract.js', 'extension/content.js'],
-    ]);
+  // The demo store's own MediaPipe engine loads as a module (client/eyes.js),
+  // nothing to inject for it — but a real site in 'webgazer' mode gets
+  // vendor/webgazer.js first, since the extension now runs WebGazer there
+  // (see boot()'s engine swap and background.js's own comment for why).
+  const fileInjections = calls.filter(([kind, options]) => kind === 'script' && options.files)
+    .map(([, options]) => options.files);
+  assert.deepEqual(fileInjections, mode === 'webgazer'
+    ? [['vendor/webgazer.js'], ['extension/extract.js', 'extension/content.js']]
+    : [['extension/extract.js', 'extension/content.js']]);
   const config = calls.find(([kind, options]) => kind === 'script' && options.args);
   assert.equal(config[1].args[0], 'http://localhost:4173');
   assert.equal(config[1].args[4], mode);

@@ -1,6 +1,6 @@
 import { bus } from "./bus.js";
 import * as gaze from "./gaze.js";
-import * as eyesBridge from "./eyes-bridge.js";
+import * as eyesWebgazer from "./eyes-webgazer.js";
 import "./attention-hint.js";
 import * as voice from "./voice.js";
 import { scan, scanAll, nth, invalidate, controls, controlName, findControl, fields, findField, setText,
@@ -1922,13 +1922,18 @@ export async function exitCue() {
 
 export async function boot() {
   exited = false;
-  // The extension on a real site cannot run MediaPipe in its own content
-  // script (docs/GAZE.md, "Known limits") — the camera and inference move to
-  // an offscreen document instead, and this swap is the only thing that
-  // changes; gaze.js's own logic, the per-user model, and the calibration UI
-  // are all identical either way. The demo store never sets CONFIG.injected,
-  // so it keeps talking to the camera directly, no extra message hop.
-  if (CONFIG.injected) gaze.setEngine(eyesBridge);
+  // The extension on a real site runs WebGazer, not gaze-v2's own MediaPipe
+  // engine. MediaPipe in an offscreen document (the first attempt here)
+  // could never get camera permission at all — offscreen documents have no
+  // window for Chrome to prompt on, confirmed live on Amazon as
+  // NotAllowedError every time. Running MediaPipe directly in the content
+  // script instead hits the isolated-world split documented in
+  // docs/GAZE.md's "Known limits". WebGazer runs in the real tab, so it gets
+  // a normal permission prompt tied to that site's own origin, same as any
+  // other camera feature — and since gaze is decorative now, its lower
+  // accuracy costs nothing. The demo store keeps gaze-v2's own engine, which
+  // already works there with no such split to work around.
+  if (CONFIG.injected) gaze.setEngine(eyesWebgazer);
   mountUI();
   requestAnimationFrame(frame);
   const splash = CONFIG.injected && CONFIG.autoCal && !CONFIG.resuming
@@ -1985,9 +1990,16 @@ export async function boot() {
   if (exited) return;
 
   let announced = false;
+  // Gaze-v2's fixation sweep fits a per-user model from sample.features,
+  // which WebGazer's samples do not carry (see gaze.js's onEyes — WebGazer
+  // resolves a screen position itself, there is no separate model to train).
+  // Running that sweep against this engine would fit nothing meaningful, so
+  // a real site skips it and goes straight to running: decorative, moving,
+  // uncalibrated, which costs nothing now that nothing reads it for a
+  // decision.
   if (actual === "webgazer" && gaze.getState().calibrated) {
     announced = true;
-  } else if (actual === "webgazer" && CONFIG.autoCal) {
+  } else if (actual === "webgazer" && CONFIG.autoCal && !CONFIG.injected) {
     await gaze.calibrate();
   }
   if (actual === "webgazer") {

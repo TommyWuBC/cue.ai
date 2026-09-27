@@ -153,8 +153,22 @@ async function start(tab) {
     await chrome.scripting.insertCSS({
       target, files: ['client/overlay.css', 'client/analytics.css', 'client/compare.css'],
     });
-    // Gaze v2 loads its face tracker as a module from the package itself
-    // (client/eyes.js -> vendor/mediapipe), so nothing is injected here.
+    // The demo store uses gaze-v2's own engine (client/eyes.js ->
+    // vendor/mediapipe), loaded as a module — nothing to inject here for
+    // that surface. A real site uses WebGazer instead (client/aura.js's
+    // boot() swaps the engine): an offscreen document can never get camera
+    // permission at all, and MediaPipe run directly in a content script hits
+    // the isolated-world split in docs/GAZE.md's "Known limits". WebGazer
+    // needs no such split — it is one script, loaded once, running in the
+    // same world as the rest of the content script.
+    if (GAZE_MODE === 'webgazer') {
+      const [hasWebgazer] = await chrome.scripting.executeScript({
+        target, func: () => Boolean(globalThis.webgazer),
+      });
+      if (!hasWebgazer?.result) {
+        await chrome.scripting.executeScript({ target, files: ['vendor/webgazer.js'] });
+      }
+    }
     await chrome.scripting.executeScript({ target, files: ['extension/extract.js', 'extension/content.js'] });
     await updateSession(tab.id, async () => {
       const key = sessionKey(tab.id);
