@@ -237,10 +237,12 @@ class GazeCompanion:
     def health(self) -> dict[str, Any]:
         installed = all(importlib.util.find_spec(name) is not None
                         for name in ("eyetrax", "cv2", "mediapipe", "numpy", "sklearn"))
+        sample = self.runtime.latest()
         return {
             "engine": "eyetrax", "installed": installed,
             "camera_running": bool(self.runtime._thread and self.runtime._thread.is_alive()),
             "calibrated": self.runtime.calibrated,
+            "frames_seen": sample.sequence,
         }
 
     async def websocket(self, ws: WebSocket, *, allow_without_token: bool = False) -> None:
@@ -260,7 +262,13 @@ class GazeCompanion:
                 raise ValueError("Expected hello")
             viewport = (int(first.get("width", 0)), int(first.get("height", 0)))
             await ws.send_json({"type": "status", "state": "loading"})
-            status = await asyncio.to_thread(self.runtime.start, viewport)
+            # AVFoundation must request camera authorization on the process's
+            # main thread. OpenCV cannot show the macOS permission prompt when
+            # VideoCapture is first opened inside asyncio.to_thread().
+            if sys.platform == "darwin":
+                status = self.runtime.start(viewport)
+            else:
+                status = await asyncio.to_thread(self.runtime.start, viewport)
             await ws.send_json({"type": "ready", **status})
             producer = asyncio.create_task(self._produce(ws, generation))
 

@@ -64,10 +64,19 @@ async function serverReady() {
 }
 
 async function createGazeSession() {
-  const response = await fetch(new URL('/api/gaze/session', SERVER), {
-    method: 'POST', cache: 'no-store',
-  });
-  if (!response.ok) throw new Error('The EyeTrax companion rejected the extension.');
+  let response;
+  try {
+    response = await fetch(new URL('/api/gaze/session', SERVER), {
+      method: 'POST', cache: 'no-store',
+    });
+  } catch (error) {
+    throw new Error(`Cue reached the server health check, but could not start EyeTrax: ${error.message}`);
+  }
+  if (!response.ok) {
+    let detail = '';
+    try { detail = (await response.json()).detail ?? ''; } catch {}
+    throw new Error(detail || `The EyeTrax companion rejected the extension (${response.status}).`);
+  }
   const body = await response.json();
   if (typeof body.token !== 'string' || body.token.length < 20) {
     throw new Error('The EyeTrax companion returned an invalid session.');
@@ -118,7 +127,10 @@ async function start(tab) {
     return { ok: true, active: true };
   } catch (error) {
     console.error('[cue] Could not start on this page:', error);
-    return { ok: false, error: 'Chrome blocked Cue on this page. Try a normal shopping tab.' };
+    const detail = error instanceof Error && error.message
+      ? error.message
+      : 'Chrome blocked Cue on this page.';
+    return { ok: false, error: `Cue could not start: ${detail}` };
   }
 }
 

@@ -19,7 +19,8 @@ backend.
    start automatically on later visits to the same store. Its icon badge changes
    to **ON** when startup succeeds or **!** if it fails; hover to read the error.
 6. Cue shows its logo for about two seconds, fading in and out. Grant microphone
-   permission in Chrome and camera permission to Terminal/Cursor when macOS asks,
+   permission in Chrome and camera permission to the app running the backend
+   (Terminal, VS Code, or Cursor) when macOS asks,
    then follow the calibration dots
    with Space, a click, or “Cue, next.” Calibration closes over the same
    shopping page; it does not open a new tab or change the page URL. Cue keeps

@@ -1,5 +1,8 @@
 import time
 import unittest
+import threading
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from fastapi import FastAPI, WebSocket
 from fastapi.testclient import TestClient
@@ -37,8 +40,10 @@ class FakeRuntime:
         self.calibrated = False
         self._thread = None
         self.stopped = False
+        self.started_thread = None
 
     def start(self, viewport):
+        self.started_thread = threading.get_ident()
         return {'calibrated': self.calibrated, 'viewport': list(viewport), 'accuracy': None}
 
     def latest(self):
@@ -127,6 +132,29 @@ class GazeCompanionTests(unittest.TestCase):
                 reply = ws.receive_json()
             self.assertTrue(reply['ok'])
         self.assertTrue(runtime.stopped)
+
+    def test_macos_camera_opens_on_websocket_main_thread(self):
+        runtime = FakeRuntime()
+        companion = GazeCompanion(runtime)
+        app = FastAPI()
+        event_loop_thread = None
+
+        @app.websocket('/gaze')
+        async def gaze(ws: WebSocket):
+            nonlocal event_loop_thread
+            event_loop_thread = threading.get_ident()
+            await companion.websocket(ws)
+
+        with patch('gaze_companion.sys', SimpleNamespace(platform='darwin')):
+            with TestClient(app).websocket_connect('/gaze?token=' + companion.issue_token()) as ws:
+                ws.send_json({'type': 'hello', 'width': 1200, 'height': 800})
+                self.assertEqual(ws.receive_json()['state'], 'loading')
+                self.assertEqual(ws.receive_json()['type'], 'ready')
+                ws.send_json({'type': 'shutdown', 'id': 1})
+                while ws.receive_json().get('type') != 'shutdown':
+                    pass
+
+        self.assertEqual(runtime.started_thread, event_loop_thread)
 
 
 if __name__ == '__main__':
