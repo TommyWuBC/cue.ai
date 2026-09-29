@@ -1,3 +1,7 @@
+<p align="center">
+  <img alt="Cue" src=".github/assets/logo-banner.png" width="100%">
+</p>
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/assets/banner-dark.svg">
   <img alt="Cue: a multimodal shopping assistant driven by speech and eye tracking" src=".github/assets/banner-light.svg" width="100%">
