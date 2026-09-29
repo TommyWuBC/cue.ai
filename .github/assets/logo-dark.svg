@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480" width="480" height="480" role="img" aria-label="Cue logo">
+  <g fill="none" stroke="#ece8e1" stroke-width="24">
+    <path d="M420 110 A216 216 0 1 0 420 370"/>
+    <path d="M256 152 A122 122 0 1 0 256 328"/>
+  </g>
+  <circle cx="288" cy="240" r="34" fill="#ece8e1"/>
+</svg>

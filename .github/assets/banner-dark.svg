@@ -4,8 +4,8 @@
   <rect width="1280" height="360" fill="#15171c"/>
   <rect x="24.5" y="24.5" width="1231" height="311" fill="none" stroke="#2c3039"/>
   <text x="80" y="104" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" letter-spacing="2.5" fill="#9a958b">TOMMYWUBC / CUE.AI</text>
-  <line x1="80" y1="124" x2="140" y2="124" stroke="#5c8dff" stroke-width="2"/>
-  <text x="78" y="200" font-family="ui-serif, Georgia, 'Times New Roman', serif" font-size="70" fill="#ece8e1">Cue</text>
+  <text x="158" y="194" font-family="ui-serif, Georgia, 'Times New Roman', serif" font-size="70" fill="#ece8e1">Cue</text>
+  <g transform="translate(74 132) scale(0.145)"><g fill="none" stroke="#5c8dff" stroke-width="24"><path d="M420 110 A216 216 0 1 0 420 370"/><path d="M256 152 A122 122 0 1 0 256 328"/></g><circle cx="288" cy="240" r="34" fill="#5c8dff"/></g>
   <text x="80" y="244" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" fill="#9a958b">Shop any site by voice and eye. It spends only when you say yes.</text>
   <text x="80" y="292" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" letter-spacing="1.5" fill="#9a958b">SPEECH · EYE TRACKING · CLAUDE · PASSKEY-GATED CHECKOUT</text>
 

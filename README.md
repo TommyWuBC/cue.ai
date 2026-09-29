@@ -7,6 +7,7 @@
   <a href="https://github.com/TommyWuBC/cue.ai/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/TommyWuBC/cue.ai/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-2f6bff">
   <img alt="Chrome, Manifest V3" src="https://img.shields.io/badge/chrome-manifest%20v3-5c584f">
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-2f6bff">
   <img alt="Status: localhost demo" src="https://img.shields.io/badge/status-localhost%20demo-5c584f">
 </p>
 
@@ -21,6 +22,11 @@ Eye tracking is built and currently switched off (`GAZE_MODE` in
 screen: you name what you mean.
 
 [Quickstart](#quickstart) · [Using Cue](#using-cue) · [How it works](#how-it-works) · [Design principles](#design-principles) · [Signed requests](#signed-agent-requests) · [Status](#status-and-limits) · [Docs](#documentation)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/divider-dark.svg">
+  <img alt="" src=".github/assets/divider-light.svg" width="100%">
+</picture>
 
 ## Quickstart
 
@@ -157,6 +163,11 @@ site storage when using the demo store without the extension. The page can
 download a CSV from that browser data; analytics does not call the Cue server.
 On live stores, an add click is recorded as a request because the merchant cart
 cannot be verified by Cue.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/divider-dark.svg">
+  <img alt="" src=".github/assets/divider-light.svg" width="100%">
+</picture>
 
 ## How it works
 
@@ -304,6 +315,11 @@ consumer recognition tokens, and payment containers are not configured.
 It records passkey-approved demo orders but does not charge a card. Stripe/Visa
 sandbox payment remains to be built. See [the remaining work](docs/ROADMAP.md).
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/divider-dark.svg">
+  <img alt="" src=".github/assets/divider-light.svg" width="100%">
+</picture>
+
 ## Documentation
 
 | Doc | Topic |
@@ -315,3 +331,7 @@ sandbox payment remains to be built. See [the remaining work](docs/ROADMAP.md).
 | [docs/ROADMAP.md](./docs/ROADMAP.md) | Remaining work |
 | [docs/PLAN.md](./docs/PLAN.md) · [docs/GUARDIAN_TODO.md](./docs/GUARDIAN_TODO.md) | Planned guardian-approval flow (not built) and its ordered work list |
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | Local setup and running the tests |
+
+## License
+
+[MIT](./LICENSE).

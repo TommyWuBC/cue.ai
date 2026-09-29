@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 28" width="1280" height="28" role="presentation">
+  <line x1="0" y1="14" x2="596" y2="14" stroke="#2c3039"/>
+  <line x1="684" y1="14" x2="1280" y2="14" stroke="#2c3039"/>
+  <g transform="translate(626 -2) scale(0.065)"><g fill="none" stroke="#5c8dff" stroke-width="24"><path d="M420 110 A216 216 0 1 0 420 370"/><path d="M256 152 A122 122 0 1 0 256 328"/></g><circle cx="288" cy="240" r="34" fill="#5c8dff"/></g>
+</svg>
