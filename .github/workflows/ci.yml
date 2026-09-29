@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  server:
+    name: Server (pytest)
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ""
+      XAI_API_KEY: ""
+      ELEVENLABS_API_KEY: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: server/requirements.txt
+      - run: pip install -r server/requirements.txt pytest
+      - run: python -m pytest -q tests
+
+  client:
+    name: Client and extension (node:test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The real-browser test needs Chrome; run it locally with `npm run test:browser`.
+      - run: node --test $(ls tests/*.mjs | grep -v extension-browser)

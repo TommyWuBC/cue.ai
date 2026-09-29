@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" width="1280" height="360" role="img" aria-labelledby="title desc">
+  <title id="title">Cue</title>
+  <desc id="desc">A gaze dot focuses a product card, a spoken command becomes a waveform, and a spoken yes confirms the purchase.</desc>
+  <rect width="1280" height="360" fill="#faf8f5"/>
+  <rect x="24.5" y="24.5" width="1231" height="311" fill="none" stroke="#e4dfd6"/>
+  <text x="80" y="104" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" letter-spacing="2.5" fill="#5c584f">TOMMYWUBC / CUE.AI</text>
+  <line x1="80" y1="124" x2="140" y2="124" stroke="#2f6bff" stroke-width="2"/>
+  <text x="78" y="200" font-family="ui-serif, Georgia, 'Times New Roman', serif" font-size="70" fill="#2a2823">Cue</text>
+  <text x="80" y="244" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" fill="#5c584f">Shop any site by voice and eye. It spends only when you say yes.</text>
+  <text x="80" y="292" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" letter-spacing="1.5" fill="#5c584f">SPEECH · EYE TRACKING · CLAUDE · PASSKEY-GATED CHECKOUT</text>
+
+  <g transform="translate(830 0)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+    <!-- look: product card with focus brackets and gaze dot -->
+    <g fill="#faf8f5" stroke="#2a2823" stroke-width="1.5" stroke-linejoin="round">
+      <rect x="0" y="94" width="96" height="106"/>
+      <rect x="10" y="104" width="76" height="52" fill="#e6edff" stroke="none"/>
+      <line x1="10" y1="170" x2="70" y2="170"/>
+      <line x1="10" y1="184" x2="42" y2="184"/>
+    </g>
+    <g fill="none" stroke="#2f6bff" stroke-width="2" stroke-linecap="square">
+      <path d="M-8 108 V86 H14"/><path d="M104 108 V86 H82"/>
+      <path d="M-8 186 V208 H14"/><path d="M104 186 V208 H82"/>
+    </g>
+    <circle cx="62" cy="128" r="5" fill="#2f6bff"/>
+    <circle cx="62" cy="128" r="12" fill="none" stroke="#2f6bff" stroke-width="1"/>
+
+    <!-- say: waveform -->
+    <g fill="#2f6bff"><rect x="150" y="142.0" width="4" height="10" rx="2"/><rect x="159" y="138.0" width="4" height="18" rx="2"/><rect x="168" y="132.0" width="4" height="30" rx="2"/><rect x="177" y="125.0" width="4" height="44" rx="2"/><rect x="186" y="134.0" width="4" height="26" rx="2"/><rect x="195" y="121.0" width="4" height="52" rx="2"/><rect x="204" y="129.0" width="4" height="36" rx="2"/><rect x="213" y="136.0" width="4" height="22" rx="2"/><rect x="222" y="127.0" width="4" height="40" rx="2"/><rect x="231" y="139.0" width="4" height="16" rx="2"/><rect x="240" y="143.0" width="4" height="8" rx="2"/></g>
+    <line x1="120" y1="147" x2="140" y2="147" stroke="#5c584f" stroke-dasharray="2 4"/>
+    <line x1="250" y1="147" x2="272" y2="147" stroke="#5c584f" stroke-dasharray="2 4"/>
+
+    <!-- confirm: the only step that spends money -->
+    <rect x="284" y="131" width="96" height="32" rx="16" fill="#2f6bff"/>
+    <text x="332" y="152" text-anchor="middle" font-size="13" letter-spacing="1.5" fill="#ffffff">“YES”</text>
+
+    <g font-size="11" letter-spacing="1.2" fill="#5c584f">
+      <text x="48" y="238" text-anchor="middle">LOOK</text>
+      <text x="200" y="238" text-anchor="middle">SAY</text>
+      <text x="332" y="238" text-anchor="middle" fill="#2f6bff">CONFIRM</text>
+    </g>
+
+    <line x1="0" y1="258" x2="380" y2="258" stroke="#e4dfd6"/>
+    <text x="0" y="282" font-size="11" letter-spacing="1.5" fill="#5c584f">GAZE FOCUSES</text>
+    <text x="380" y="282" font-size="11" letter-spacing="1.5" fill="#5c584f" text-anchor="end">VOICE COMMITS</text>
+  </g>
+</svg>

@@ -11,3 +11,4 @@ graphify-out/
 server/data/
 dist/
 node_modules/
+.DS_Store
